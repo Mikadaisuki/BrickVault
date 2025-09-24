@@ -1,21 +1,34 @@
 # Dependencies
 node_modules/
-.pnp
-.pnp.js
+**/node_modules/
 
-# Production builds
+# Build outputs
 dist/
 build/
-out/
+**/dist/
+**/build/
 
-# Environment variables
+# Environment files
 .env
 .env.local
 .env.development.local
 .env.test.local
 .env.production.local
 
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
 # Logs
+logs/
+*.log
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -23,7 +36,7 @@ pnpm-debug.log*
 lerna-debug.log*
 
 # Runtime data
-pids
+pids/
 *.pid
 *.seed
 *.pid.lock
@@ -46,9 +59,6 @@ jspm_packages/
 
 # Optional eslint cache
 .eslintcache
-
-# Optional stylelint cache
-.stylelintcache
 
 # Microbundle cache
 .rpt2_cache/
@@ -88,60 +98,26 @@ tmp/
 temp/
 
 # Editor directories and files
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
-
-# OS generated files
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
 
 # Hardhat files
-cache/
 artifacts/
-typechain-types/
-
-# Foundry files
-out/
 cache/
-broadcast/
+typechain-types/
 
 # Clarinet files
 .clarinet/
 
-# Deployment files (keep example but ignore actual deployments)
-deployments/*.json
-!deployments/example.json
-
-# Test files that might contain sensitive data
-test-results/
-coverage/
-
-# Package manager lock files (keep pnpm-lock.yaml)
-package-lock.json
-yarn.lock
-
-# Local development files
-*.local
-*.dev
-
-# IDE files
-*.sublime-project
-*.sublime-workspace
-
-# Backup files
-*.bak
-*.backup
-*.old
+# Vercel
+.vercel
 
 # Archive files
 *.tar.gz
 *.zip
-*.rar

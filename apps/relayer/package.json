@@ -1,0 +1,44 @@
+{
+  "name": "@brickvault/relayer",
+  "version": "1.0.0",
+  "description": "Serverless cross-chain relayer for BrickVault",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "vercel dev",
+    "deploy": "vercel --prod",
+    "test": "vitest",
+    "test:unit": "vitest --run src/**/*.test.ts",
+    "test:integration": "vitest --run test/**/*.test.ts",
+    "test:all": "vitest --run",
+    "test:watch": "vitest --watch",
+    "type-check": "tsc --noEmit",
+    "config:show": "node dist/src/cli/config.js --show",
+    "config:validate": "node dist/src/cli/config.js --validate",
+    "config:generate": "node dist/src/cli/config.js --generate",
+    "config:dev": "node dist/src/cli/config.js --dev",
+    "config:staging": "node dist/src/cli/config.js --staging",
+    "config:prod": "node dist/src/cli/config.js --prod"
+  },
+  "dependencies": {
+    "@stacks/connect": "^7.10.1",
+    "@stacks/network": "^7.2.0",
+    "@stacks/transactions": "^7.2.0",
+    "axios": "^1.6.0",
+    "dotenv": "^16.3.1",
+    "ethers": "^6.8.0",
+    "node-cron": "^3.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.8.0",
+    "@types/node-cron": "^3.0.11",
+    "@vercel/node": "^3.0.12",
+    "typescript": "^5.2.0",
+    "vercel": "^32.0.0",
+    "vitest": "^1.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
