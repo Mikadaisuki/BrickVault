@@ -36,7 +36,8 @@ contract PropertyRegistryRateLimit is Ownable {
         uint256 currentTime = block.timestamp;
         
         // Reset creation count if outside the window
-        if (currentTime >= rateLimitData.lastPropertyCreation[user] + PROPERTY_CREATION_WINDOW) {
+        if (rateLimitData.lastPropertyCreation[user] > 0 && 
+            currentTime >= rateLimitData.lastPropertyCreation[user] + PROPERTY_CREATION_WINDOW) {
             rateLimitData.propertyCreationCount[user] = 0;
         }
         
@@ -45,10 +46,14 @@ contract PropertyRegistryRateLimit is Ownable {
             rateLimitData.propertyCreationCount[user] < MAX_PROPERTIES_PER_DAY,
             'PropertyRegistryRateLimit: property creation rate limit exceeded (20 per day max)'
         );
-        require(
-            currentTime >= rateLimitData.lastPropertyCreation[user] + PROPERTY_CREATION_COOLDOWN,
-            'PropertyRegistryRateLimit: property creation too frequent (1 minute cooldown)'
-        );
+        
+        // Check cooldown only if user has created properties before
+        if (rateLimitData.lastPropertyCreation[user] > 0) {
+            require(
+                currentTime >= rateLimitData.lastPropertyCreation[user] + PROPERTY_CREATION_COOLDOWN,
+                'PropertyRegistryRateLimit: property creation too frequent (1 minute cooldown)'
+            );
+        }
         
         // Update tracking
         rateLimitData.lastPropertyCreation[user] = currentTime;

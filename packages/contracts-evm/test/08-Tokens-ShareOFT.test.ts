@@ -1,11 +1,11 @@
 import { expect } from 'chai';
 import { ethers } from 'hardhat';
 import { ShareOFT } from '../typechain-types/src';
-import { SimpleMockLayerZeroEndpoint } from '../typechain-types/src/mocks';
+import { EndpointV2Mock } from '../typechain-types/src/mocks';
 
 describe('ShareOFT - LayerZero OFT for Vault Shares', function () {
   let shareOFT: ShareOFT;
-  let mockEndpoint: SimpleMockLayerZeroEndpoint;
+  let mockEndpoint: EndpointV2Mock;
   let owner: any;
   let user1: any;
   let user2: any;
@@ -17,9 +17,11 @@ describe('ShareOFT - LayerZero OFT for Vault Shares', function () {
   beforeEach(async function () {
     [owner, user1, user2] = await ethers.getSigners();
 
-    // Deploy mock LayerZero endpoint
-    const SimpleMockLayerZeroEndpoint = await ethers.getContractFactory('SimpleMockLayerZeroEndpoint');
-    mockEndpoint = await SimpleMockLayerZeroEndpoint.deploy();
+    // Deploy official LayerZero mock endpoint
+    const MockLayerZeroEndpointV2 = await ethers.getContractFactory('EndpointV2Mock');
+    mockEndpoint = await MockLayerZeroEndpointV2.deploy(
+      1 // eid (endpoint ID) for local testing
+    );
     await mockEndpoint.waitForDeployment();
 
     // Deploy ShareOFT

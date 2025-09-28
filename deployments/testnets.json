@@ -1,0 +1,44 @@
+{
+  "networks": {
+    "sepolia": {
+      "chainId": 11155111,
+      "name": "Sepolia",
+      "rpcUrl": "https://sepolia.infura.io/v3/YOUR_KEY",
+      "explorerUrl": "https://sepolia.etherscan.io",
+      "contracts": {
+        "MockUSDC": "",
+        "PropertyRegistry": "",
+        "PropertyVault": ""
+      }
+    },
+    "base-sepolia": {
+      "chainId": 84532,
+      "name": "Base Sepolia",
+      "rpcUrl": "https://sepolia.base.org",
+      "explorerUrl": "https://sepolia.basescan.org",
+      "contracts": {
+        "MockUSDC": "",
+        "PropertyRegistry": "",
+        "PropertyVault": ""
+      }
+    },
+    "stacks-testnet": {
+      "chainId": 2147483648,
+      "name": "Stacks Testnet",
+      "rpcUrl": "https://stacks-node-api.testnet.stacks.co",
+      "explorerUrl": "https://explorer.stacks.co",
+      "contracts": {
+        "Gateway": "",
+        "sSHARE": ""
+      }
+    }
+  },
+  "defaults": {
+    "evmHub": "sepolia",
+    "stacksNetwork": "stacks-testnet",
+    "confirmations": {
+      "evm": 2,
+      "stacks": 6
+    }
+  }
+}

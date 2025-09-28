@@ -1,0 +1,578 @@
+[
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_owner",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "nonpayable",
+    "type": "constructor"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "admin",
+        "type": "address"
+      }
+    ],
+    "name": "AdminAuthorized",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "admin",
+        "type": "address"
+      }
+    ],
+    "name": "AdminRevoked",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": true,
+        "internalType": "address",
+        "name": "manager",
+        "type": "address"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum EnvironmentConfig.EnvironmentType",
+        "name": "env",
+        "type": "uint8"
+      }
+    ],
+    "name": "CrossChainManagerUpdated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "EmergencyModeActivated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "uint256",
+        "name": "timestamp",
+        "type": "uint256"
+      }
+    ],
+    "name": "EmergencyModeDeactivated",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "enum EnvironmentConfig.EnvironmentType",
+        "name": "oldEnv",
+        "type": "uint8"
+      },
+      {
+        "indexed": false,
+        "internalType": "enum EnvironmentConfig.EnvironmentType",
+        "name": "newEnv",
+        "type": "uint8"
+      }
+    ],
+    "name": "EnvironmentChanged",
+    "type": "event"
+  },
+  {
+    "anonymous": false,
+    "inputs": [
+      {
+        "indexed": false,
+        "internalType": "enum EnvironmentConfig.EnvironmentType",
+        "name": "env",
+        "type": "uint8"
+      },
+      {
+        "components": [
+          {
+            "internalType": "bool",
+            "name": "strictErrorHandling",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "enableDebugEvents",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "maxGasLimit",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "allowMockContracts",
+            "type": "bool"
+          },
+          {
+            "internalType": "string",
+            "name": "environmentName",
+            "type": "string"
+          },
+          {
+            "internalType": "bool",
+            "name": "enableCrossChain",
+            "type": "bool"
+          },
+          {
+            "internalType": "address",
+            "name": "crossChainManager",
+            "type": "address"
+          }
+        ],
+        "indexed": false,
+        "internalType": "struct EnvironmentConfig.EnvironmentSettings",
+        "name": "settings",
+        "type": "tuple"
+      }
+    ],
+    "name": "EnvironmentSettingsUpdated",
+    "type": "event"
+  },
+  {
+    "inputs": [],
+    "name": "ADMIN_COOLDOWN",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "activateEmergencyMode",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_admin",
+        "type": "address"
+      }
+    ],
+    "name": "authorizeAdmin",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "authorizedAdmins",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "currentEnvironment",
+    "outputs": [
+      {
+        "internalType": "enum EnvironmentConfig.EnvironmentType",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "deactivateEmergencyMode",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "emergencyActivatedAt",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "emergencyMode",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "enum EnvironmentConfig.EnvironmentType",
+        "name": "",
+        "type": "uint8"
+      }
+    ],
+    "name": "environmentSettings",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "strictErrorHandling",
+        "type": "bool"
+      },
+      {
+        "internalType": "bool",
+        "name": "enableDebugEvents",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "maxGasLimit",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "allowMockContracts",
+        "type": "bool"
+      },
+      {
+        "internalType": "string",
+        "name": "environmentName",
+        "type": "string"
+      },
+      {
+        "internalType": "bool",
+        "name": "enableCrossChain",
+        "type": "bool"
+      },
+      {
+        "internalType": "address",
+        "name": "crossChainManager",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getCrossChainManager",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "manager",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getCurrentSettings",
+    "outputs": [
+      {
+        "components": [
+          {
+            "internalType": "bool",
+            "name": "strictErrorHandling",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "enableDebugEvents",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "maxGasLimit",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "allowMockContracts",
+            "type": "bool"
+          },
+          {
+            "internalType": "string",
+            "name": "environmentName",
+            "type": "string"
+          },
+          {
+            "internalType": "bool",
+            "name": "enableCrossChain",
+            "type": "bool"
+          },
+          {
+            "internalType": "address",
+            "name": "crossChainManager",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct EnvironmentConfig.EnvironmentSettings",
+        "name": "",
+        "type": "tuple"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "getMaxGasLimit",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "isCrossChainEnabled",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "enabled",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "isDebugEventsEnabled",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "isMockContractsAllowed",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "isStrictErrorHandling",
+    "outputs": [
+      {
+        "internalType": "bool",
+        "name": "",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "name": "lastAdminAction",
+    "outputs": [
+      {
+        "internalType": "uint256",
+        "name": "",
+        "type": "uint256"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "owner",
+    "outputs": [
+      {
+        "internalType": "address",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_admin",
+        "type": "address"
+      }
+    ],
+    "name": "revokeAdmin",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "enum EnvironmentConfig.EnvironmentType",
+        "name": "_newEnvironment",
+        "type": "uint8"
+      }
+    ],
+    "name": "setEnvironment",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "address",
+        "name": "_newOwner",
+        "type": "address"
+      }
+    ],
+    "name": "transferOwnership",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "enum EnvironmentConfig.EnvironmentType",
+        "name": "env",
+        "type": "uint8"
+      },
+      {
+        "internalType": "address",
+        "name": "manager",
+        "type": "address"
+      }
+    ],
+    "name": "updateCrossChainManager",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "enum EnvironmentConfig.EnvironmentType",
+        "name": "_env",
+        "type": "uint8"
+      },
+      {
+        "components": [
+          {
+            "internalType": "bool",
+            "name": "strictErrorHandling",
+            "type": "bool"
+          },
+          {
+            "internalType": "bool",
+            "name": "enableDebugEvents",
+            "type": "bool"
+          },
+          {
+            "internalType": "uint256",
+            "name": "maxGasLimit",
+            "type": "uint256"
+          },
+          {
+            "internalType": "bool",
+            "name": "allowMockContracts",
+            "type": "bool"
+          },
+          {
+            "internalType": "string",
+            "name": "environmentName",
+            "type": "string"
+          },
+          {
+            "internalType": "bool",
+            "name": "enableCrossChain",
+            "type": "bool"
+          },
+          {
+            "internalType": "address",
+            "name": "crossChainManager",
+            "type": "address"
+          }
+        ],
+        "internalType": "struct EnvironmentConfig.EnvironmentSettings",
+        "name": "_settings",
+        "type": "tuple"
+      }
+    ],
+    "name": "updateEnvironmentSettings",
+    "outputs": [],
+    "stateMutability": "nonpayable",
+    "type": "function"
+  }
+]
