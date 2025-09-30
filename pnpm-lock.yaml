@@ -35,6 +35,9 @@ importers:
       '@brickvault/abi':
         specifier: workspace:*
         version: link:../../packages/abi
+      '@layerzerolabs/lz-v2-utilities':
+        specifier: ^3.0.136
+        version: 3.0.136
       '@react-native-async-storage/async-storage':
         specifier: ^2.2.0
         version: 2.2.0(react-native@0.81.4(@babel/core@7.28.4)(@types/react@18.3.24)(bufferutil@4.0.9)(react@18.3.1)(utf-8-validate@5.0.10))
@@ -172,6 +175,9 @@ importers:
       '@layerzerolabs/lz-evm-v1-0.7':
         specifier: ^3.0.135
         version: 3.0.135(@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0))(@openzeppelin/contracts@5.4.0)(hardhat-deploy@0.12.4(bufferutil@4.0.9)(utf-8-validate@5.0.10))
+      '@layerzerolabs/lz-v2-utilities':
+        specifier: ^3.0.136
+        version: 3.0.136
       '@layerzerolabs/oapp-evm':
         specifier: ^0.3.2
         version: 0.3.2(4535315916989033db9a634ab78aed49)
@@ -1055,8 +1061,8 @@ packages:
       '@openzeppelin/contracts-upgradeable': 3.4.2-solc-0.7 || ^3.4.2 || ^4.0.0 || ^5.0.0
       hardhat-deploy: ^0.12.4
 
-  '@layerzerolabs/lz-v2-utilities@3.0.133':
-    resolution: {integrity: sha512-aRgUVQIuyfG7NXRkvNO+ytPoiMnPUTrqugVdGGOaaKZdog68plx1PVSsRQHg/FttdVoywC7P7UVZwwr2gs6hTw==}
+  '@layerzerolabs/lz-v2-utilities@3.0.136':
+    resolution: {integrity: sha512-NkZ7lD7UDlxBtkDN70Kl243RXVDjScg3YqJ9zd8DpD6V0vWFiWgWP77aOK94zzkznoq3eMTp/b3MqZPJ5tXkyQ==}
 
   '@layerzerolabs/oapp-evm@0.3.2':
     resolution: {integrity: sha512-QqazLEl9KEPsipU/3m5eFDhyse+sG4bO2FWUEf/Kuee4JW6P3iIBI9wg0QfalUqLj0HL0ChFHL3yRTZVqzxrww==}
@@ -8272,7 +8278,7 @@ snapshots:
       '@openzeppelin/contracts-upgradeable': 5.4.0(@openzeppelin/contracts@5.4.0)
       hardhat-deploy: 0.12.4(bufferutil@4.0.9)(utf-8-validate@5.0.10)
 
-  '@layerzerolabs/lz-v2-utilities@3.0.133':
+  '@layerzerolabs/lz-v2-utilities@3.0.136':
     dependencies:
       '@ethersproject/abi': 5.8.0
       '@ethersproject/address': 5.8.0
@@ -8310,7 +8316,7 @@ snapshots:
       '@layerzerolabs/lz-evm-messagelib-v2': 3.0.135(@axelar-network/axelar-gmp-sdk-solidity@5.10.0)(@chainlink/contracts-ccip@0.7.6(bufferutil@4.0.9)(ethers@6.15.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10))(@eth-optimism/contracts@0.6.0(bufferutil@4.0.9)(ethers@6.15.0(bufferutil@4.0.9)(utf-8-validate@5.0.10))(utf-8-validate@5.0.10))(@layerzerolabs/lz-evm-protocol-v2@3.0.135(@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0))(@openzeppelin/contracts@5.4.0)(hardhat-deploy@0.12.4(bufferutil@4.0.9)(utf-8-validate@5.0.10))(solidity-bytes-utils@0.8.4))(@layerzerolabs/lz-evm-v1-0.7@3.0.135(@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0))(@openzeppelin/contracts@5.4.0)(hardhat-deploy@0.12.4(bufferutil@4.0.9)(utf-8-validate@5.0.10)))(@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0))(@openzeppelin/contracts@5.4.0)(hardhat-deploy@0.12.4(bufferutil@4.0.9)(utf-8-validate@5.0.10))(solidity-bytes-utils@0.8.4)
       '@layerzerolabs/lz-evm-protocol-v2': 3.0.135(@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0))(@openzeppelin/contracts@5.4.0)(hardhat-deploy@0.12.4(bufferutil@4.0.9)(utf-8-validate@5.0.10))(solidity-bytes-utils@0.8.4)
       '@layerzerolabs/lz-evm-v1-0.7': 3.0.135(@openzeppelin/contracts-upgradeable@5.4.0(@openzeppelin/contracts@5.4.0))(@openzeppelin/contracts@5.4.0)(hardhat-deploy@0.12.4(bufferutil@4.0.9)(utf-8-validate@5.0.10))
-      '@layerzerolabs/lz-v2-utilities': 3.0.133
+      '@layerzerolabs/lz-v2-utilities': 3.0.136
       '@layerzerolabs/oapp-evm': 0.3.2(4535315916989033db9a634ab78aed49)
       '@layerzerolabs/scan-client-v2': 0.0.1(redaxios@0.5.1)
       '@openzeppelin/contracts': 5.4.0
@@ -11943,7 +11949,7 @@ snapshots:
       eslint: 8.57.1
       eslint-import-resolver-node: 0.3.9
       eslint-import-resolver-typescript: 3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.2))(eslint@8.57.1))(eslint@8.57.1)
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.2))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.2))(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.2))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
       eslint-plugin-jsx-a11y: 6.10.2(eslint@8.57.1)
       eslint-plugin-react: 7.37.5(eslint@8.57.1)
       eslint-plugin-react-hooks: 5.0.0-canary-7118f5dd7-20230705(eslint@8.57.1)
@@ -11977,7 +11983,7 @@ snapshots:
       tinyglobby: 0.2.15
       unrs-resolver: 1.11.1
     optionalDependencies:
-      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.2))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.2))(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1)
+      eslint-plugin-import: 2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.2))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1)
     transitivePeerDependencies:
       - supports-color
 
@@ -11992,7 +11998,7 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  eslint-plugin-import@2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.2))(eslint-import-resolver-typescript@3.10.1(eslint-plugin-import@2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.2))(eslint@8.57.1))(eslint@8.57.1))(eslint@8.57.1):
+  eslint-plugin-import@2.32.0(@typescript-eslint/parser@6.21.0(eslint@8.57.1)(typescript@5.9.2))(eslint-import-resolver-typescript@3.10.1)(eslint@8.57.1):
     dependencies:
       '@rtsao/scc': 1.1.0
       array-includes: 3.1.9
@@ -14117,7 +14123,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.1.0(typescript@5.9.2)(zod@4.1.11)
+      abitype: 1.1.0(typescript@5.9.2)(zod@3.22.4)
       eventemitter3: 5.0.1
     optionalDependencies:
       typescript: 5.9.2
@@ -15758,7 +15764,7 @@ snapshots:
       '@noble/hashes': 1.8.0
       '@scure/bip32': 1.7.0
       '@scure/bip39': 1.6.0
-      abitype: 1.1.0(typescript@5.9.2)(zod@4.1.11)
+      abitype: 1.1.0(typescript@5.9.2)(zod@3.22.4)
       isows: 1.0.7(ws@8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10))
       ox: 0.9.3(typescript@5.9.2)
       ws: 8.18.3(bufferutil@4.0.9)(utf-8-validate@5.0.10)

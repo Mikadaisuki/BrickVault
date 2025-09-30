@@ -7,8 +7,6 @@ import {
   PROPERTY_REGISTRY_ABI, 
   PROPERTY_VAULT_ABI 
 } from '@brickvault/abi'
-import { createPublicClient, http } from 'viem'
-import { localhost } from 'viem/chains'
 
 interface PropertyInfo {
   id: string
@@ -112,122 +110,21 @@ export function PropertyOverview() {
   })
 
   useEffect(() => {
-    console.log('PropertyOverview useEffect:', {
-      mounted,
-      isConnected,
-      chainId,
-      registryAddress,
-      // Wagmi states
-      countLoading,
-      countIsError,
-      countError,
-      propertyLoading,
-      propertyIsError,
-      propertyError,
-      // Wagmi data
-      propertyCount,
-      property1,
-      // Vault data
-      totalAssets,
-      totalSupply,
-      assetsPerShare,
-      // ABI info
-      abiLength: PROPERTY_REGISTRY_ABI.length,
-      abiFunctions: PROPERTY_REGISTRY_ABI.filter(item => item.type === 'function').map(f => f.name)
-    })
     
-    // Debug chain ID issue and auto-switch
-    if (mounted && isConnected) {
-      console.log('🔍 Chain ID Debug:', {
-        currentChainId: chainId,
-        expectedChainId: 31337,
-        isCorrectChain: chainId === 31337,
-        isConnected,
-        registryAddress
-      })
-      
-      // Auto-switch to localhost if on wrong network
-      if (chainId !== 31337) {
-        console.log('🔄 Auto-switching to localhost network...')
-        try {
-          switchChain({ chainId: 31337 })
-        } catch (error) {
-          console.error('Failed to switch chain:', error)
-          // If auto-switch fails, show user message
-          alert('Please switch to Localhost network (Chain ID: 31337) to view property data.')
-        }
-      }
-    }
-    
-    // Debug: Try direct contract calls
-    if (mounted && isConnected && registryAddress) {
-      console.log('🔍 Debug: Trying direct contract calls...')
-      
-      // Test if we can call the contract directly
+    // Auto-switch to localhost if on wrong network
+    if (mounted && isConnected && chainId !== 31337) {
       try {
-        // This won't work in browser, but let's see what happens
-        console.log('Registry address:', registryAddress)
-        console.log('ABI functions available:', PROPERTY_REGISTRY_ABI.filter(item => item.type === 'function').map(f => f.name))
-        
-        // Check if getPropertyCount function exists in ABI
-        const getPropertyCountFunction = PROPERTY_REGISTRY_ABI.find(item => 
-          item.type === 'function' && item.name === 'getPropertyCount'
-        )
-        console.log('getPropertyCount function in ABI:', getPropertyCountFunction)
-        
-        // Check if getProperty function exists in ABI
-        const getPropertyFunction = PROPERTY_REGISTRY_ABI.find(item => 
-          item.type === 'function' && item.name === 'getProperty'
-        )
-        console.log('getProperty function in ABI:', getPropertyFunction)
-        
-        // Try direct viem call
-        console.log('🔍 Testing direct viem contract call...')
-        const publicClient = createPublicClient({
-          chain: localhost,
-          transport: http('http://localhost:8545')
-        })
-        
-        // Test getPropertyCount
-        publicClient.readContract({
-          address: registryAddress as `0x${string}`,
-          abi: PROPERTY_REGISTRY_ABI,
-          functionName: 'getPropertyCount',
-        }).then(result => {
-          console.log('✅ Direct viem getPropertyCount result:', result)
-        }).catch(error => {
-          console.error('❌ Direct viem getPropertyCount error:', error)
-        })
-        
-        // Test getProperty
-        publicClient.readContract({
-          address: registryAddress as `0x${string}`,
-          abi: PROPERTY_REGISTRY_ABI,
-          functionName: 'getProperty',
-          args: [1],
-        }).then(result => {
-          console.log('✅ Direct viem getProperty result:', result)
-        }).catch(error => {
-          console.error('❌ Direct viem getProperty error:', error)
-        })
-        
+        switchChain({ chainId: 31337 })
       } catch (error) {
-        console.error('Debug contract call error:', error)
+        console.error('Failed to switch chain:', error)
       }
     }
+    
     
     // Create property info from actual contract data
     if (mounted && propertyCount && propertyCount > 0 && property1) {
       setLoading(true)
       
-    console.log('Creating property info from contract data:', {
-      propertyCount,
-      property1,
-      totalAssets,
-      totalSupply,
-      assetsPerShare,
-      propertyName
-    })
       
       // Create property info from the actual contract data
       const propertyInfo: PropertyInfo = {
@@ -339,24 +236,6 @@ export function PropertyOverview() {
           <p className="text-sm text-muted-foreground mt-2">
             Properties will appear here once they are created and funded
           </p>
-          <div className="mt-4 text-xs text-muted-foreground">
-            <p>Analytics Contract: {process.env.NEXT_PUBLIC_ANALYTICS_ADDRESS}</p>
-            <p>Property Registry: {process.env.NEXT_PUBLIC_PROPERTY_REGISTRY_ADDRESS}</p>
-            <p>Expected Property ID: 1 (from deployment script)</p>
-            <div className="mt-2 p-2 bg-gray-100 rounded text-xs">
-              <p><strong>Debug Info:</strong></p>
-              <p>Mounted: {mounted ? 'Yes' : 'No'}</p>
-              <p>Connected: {isConnected ? 'Yes' : 'No'}</p>
-              <p>Registry Address: {registryAddress}</p>
-              <p>Property Count: {propertyCount ? propertyCount.toString() : 'null'}</p>
-              <p>Count Error: {countError ? countError.message : 'none'}</p>
-              <p>Property 1: {property1 ? JSON.stringify(property1, (key, value) => typeof value === 'bigint' ? value.toString() : value) : 'null'}</p>
-              <p>Property Error: {propertyError ? propertyError.message : 'none'}</p>
-              <p>Total Assets: {totalAssets ? totalAssets.toString() : 'null'}</p>
-              <p>Total Supply: {totalSupply ? totalSupply.toString() : 'null'}</p>
-              <p>Assets Per Share: {assetsPerShare ? assetsPerShare.toString() : 'null'}</p>
-            </div>
-          </div>
         </div>
       ) : (
         <div className="space-y-4">

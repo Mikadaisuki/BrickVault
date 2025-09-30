@@ -119,7 +119,6 @@ export default function PropertiesPage() {
   useEffect(() => {
     if (mounted && loading) {
       const timeout = setTimeout(() => {
-        console.log('⏰ Loading timeout - setting loading to false')
         setLoading(false)
       }, 15000) // 15 second timeout
 
@@ -188,45 +187,13 @@ export default function PropertiesPage() {
 
   // Create property cards from contract data
   useEffect(() => {
-    console.log('🔍 Properties useEffect triggered:', {
-      mounted,
-      propertyCount,
-      property1,
-      totalAssets,
-      totalSupply,
-      propertyName,
-      isConnected,
-      chainId,
-      registryAddress,
-      // Loading states
-      countLoading,
-      propertyLoading,
-      // Errors
-      countError: countError?.message,
-      propertyError: propertyError?.message,
-      assetsError: assetsError?.message,
-      supplyError: supplyError?.message
-    })
-    
     if (!mounted) {
-      console.log('❌ Not mounted yet, returning')
       return
     }
     
-    // Debug: Log what we're getting from contracts
-    console.log('📊 Contract data analysis:', {
-      propertyCount: propertyCount ? Number(propertyCount) : 'undefined',
-      property1Type: typeof property1,
-      property1IsArray: Array.isArray(property1),
-      property1Length: Array.isArray(property1) ? property1.length : 'N/A',
-      property1Data: property1,
-      totalAssets: totalAssets ? Number(totalAssets) : 'undefined',
-      totalSupply: totalSupply ? Number(totalSupply) : 'undefined'
-    })
     
     // If we have property data, create property cards (use same logic as working PropertyOverview)
     if (mounted && propertyCount && propertyCount > 0 && property1) {
-      console.log('✅ Valid property data found, processing...')
       
       // Handle both array and object formats from contract
       let vault, depositCap, totalDeposited, status, isPurchased, createdAt;
@@ -243,21 +210,11 @@ export default function PropertiesPage() {
         isPurchased = property1.paused; // Use paused as isPurchased indicator
         createdAt = property1.createdAt;
       } else {
-        console.log('❌ Unexpected property1 format:', property1);
         setLoading(false);
         return;
       }
       
       const vaultAddress = vault as string;
-      
-      console.log('🏠 Processing property data:', {
-        vault: vaultAddress,
-        depositCap: Number(depositCap),
-        totalDeposited: Number(totalDeposited),
-        status: Number(status),
-        isPurchased,
-        createdAt: Number(createdAt)
-      })
       
       const fundingProgress = Number(depositCap) > 0 
         ? (Number(totalAssets) / Number(depositCap)) * 100 
@@ -286,22 +243,11 @@ export default function PropertiesPage() {
         category: getPropertyCategory(vaultAddress)
       }
       
-      console.log('🎯 Created property card:', propertyCard)
       setProperties([propertyCard])
       setLoading(false)
     } else if (mounted && propertyCount === 0) {
-      console.log('📭 Property count is 0, no properties exist')
       setProperties([])
       setLoading(false)
-    } else {
-      console.log('⏳ Still waiting for contract data...', {
-        waitingFor: {
-          propertyCount: propertyCount === undefined ? 'propertyCount' : null,
-          property1: !property1 ? 'property1' : null,
-          mounted: !mounted ? 'mounted' : null
-        }
-      })
-      // Don't set loading to false yet, we're still waiting for data
     }
   }, [mounted, propertyCount, property1, totalAssets, totalSupply, propertyName, isConnected, chainId])
 
@@ -504,17 +450,6 @@ export default function PropertiesPage() {
           <div className="flex flex-col items-center justify-center py-12">
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mb-4"></div>
             <p className="text-muted-foreground mb-2">Loading properties...</p>
-            <div className="text-xs text-muted-foreground text-center max-w-md space-y-1">
-              <p>Chain ID: {chainId} (Expected: 31337)</p>
-              <p>Connected: {isConnected ? 'Yes' : 'No'}</p>
-              <p>Registry: {registryAddress ? `${registryAddress.slice(0, 6)}...` : 'Not set'}</p>
-              <p>Count Loading: {countLoading ? 'Yes' : 'No'}</p>
-              <p>Property Loading: {propertyLoading ? 'Yes' : 'No'}</p>
-              {countError && <p className="text-red-500">Count Error: {countError.message}</p>}
-              {propertyError && <p className="text-red-500">Property Error: {propertyError.message}</p>}
-              {assetsError && <p className="text-red-500">Assets Error: {assetsError.message}</p>}
-              {supplyError && <p className="text-red-500">Supply Error: {supplyError.message}</p>}
-            </div>
           </div>
         ) : sortedProperties.length === 0 ? (
           <div className="text-center py-12">

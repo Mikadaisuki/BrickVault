@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { Header } from '@/components/Header'
-import { Building2, Settings, Activity, TrendingUp, Users, Globe } from 'lucide-react'
+import { Building2, Settings, Activity, TrendingUp, Users, Globe, Zap } from 'lucide-react'
 import Link from 'next/link'
 
 // Dynamically import components that use wagmi hooks with SSR disabled
@@ -54,6 +54,16 @@ export default function Home() {
               </div>
             </div>
           </Link>
+
+          <Link href="/demo" className="bg-card rounded-lg border p-6 hover:border-primary transition-colors">
+            <div className="flex items-center">
+              <Zap className="h-8 w-8 text-yellow-500 mr-3" />
+              <div>
+                <h3 className="font-semibold">Cross-Chain Demo</h3>
+                <p className="text-sm text-muted-foreground">Try the USDC flow</p>
+              </div>
+            </div>
+          </Link>
         </div>
 
         {/* Quick Overview */}
@@ -96,6 +106,9 @@ export default function Home() {
                 </Link>
                 <Link href="/management" className="block w-full bg-outline border px-4 py-2 rounded-md text-center hover:bg-accent transition-colors">
                   Platform Management
+                </Link>
+                <Link href="/demo" className="block w-full bg-yellow-500 text-white px-4 py-2 rounded-md text-center hover:bg-yellow-600 transition-colors">
+                  🚀 Try Cross-Chain Demo
                 </Link>
               </div>
             </div>

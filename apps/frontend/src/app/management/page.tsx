@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt } from 'wagmi'
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain } from 'wagmi'
 import { Building2, Users, Settings, Plus, Pause, Play, DollarSign, AlertTriangle, Eye, MapPin, Calendar } from 'lucide-react'
 import { PROPERTY_REGISTRY_ABI, PROPERTY_VAULT_ABI } from '@brickvault/abi'
 import { Header } from '@/components/Header'
@@ -18,6 +18,8 @@ interface PropertyData {
 
 export default function ManagementPage() {
   const { address, isConnected } = useAccount()
+  const chainId = useChainId()
+  const { switchChain } = useSwitchChain()
   const [mounted, setMounted] = useState(false)
   const [isOwner, setIsOwner] = useState(false)
   const [loading, setLoading] = useState(false)
@@ -32,7 +34,7 @@ export default function ManagementPage() {
     abi: PROPERTY_REGISTRY_ABI,
     functionName: 'owner',
     query: {
-      enabled: !!registryAddress && isConnected,
+      enabled: !!registryAddress && isConnected && chainId === 31337,
     },
   })
 
@@ -42,7 +44,7 @@ export default function ManagementPage() {
     abi: PROPERTY_REGISTRY_ABI,
     functionName: 'getPropertyCount',
     query: {
-      enabled: !!registryAddress && isConnected,
+      enabled: !!registryAddress && isConnected && chainId === 31337,
     },
   })
 
@@ -53,56 +55,51 @@ export default function ManagementPage() {
     functionName: 'getProperty',
     args: [1],
     query: {
-      enabled: !!registryAddress && isConnected && propertyCount && propertyCount > 0,
+      enabled: !!registryAddress && isConnected && chainId === 31337 && propertyCount && propertyCount > 0,
     },
   })
 
-  // Fetch all properties
+  // Fetch all properties using contract calls
   const fetchProperties = async () => {
     if (!propertyCount || propertyCount === 0) {
       setProperties([])
       return
     }
 
-    const propertyPromises = []
-    for (let i = 1; i <= Number(propertyCount); i++) {
-      propertyPromises.push(
-        fetch(`/api/property/${i}`).then(res => res.json()).catch(() => null)
-      )
-    }
-
-    // For now, we'll fetch directly using contract calls
-    // In a real app, you'd want to create an API endpoint
     const fetchedProperties: PropertyData[] = []
     
-    // This is a simplified approach - in production you'd want to batch these calls
-    for (let i = 1; i <= Number(propertyCount); i++) {
-      try {
-        // We'll add individual property fetching here
-        // For now, we'll use the existing property1 data if it's for property 1
-        if (i === 1 && property1) {
-          fetchedProperties.push({
-            id: i,
-            vault: property1.vault,
-            depositCap: property1.depositCap,
-            totalDeposited: property1.totalDeposited,
-            status: Number(property1.status),
-            paused: property1.paused,
-            createdAt: property1.createdAt
-          })
-        }
-      } catch (error) {
-        console.error(`Failed to fetch property ${i}:`, error)
-      }
+    // For now, we'll use the existing property1 data if it's for property 1
+    // In a real implementation, you'd want to fetch all properties using multiple contract calls
+    if (property1) {
+      fetchedProperties.push({
+        id: 1,
+        vault: property1.vault,
+        depositCap: property1.depositCap,
+        totalDeposited: property1.totalDeposited,
+        status: Number(property1.status),
+        paused: property1.paused,
+        createdAt: property1.createdAt
+      })
     }
 
     setProperties(fetchedProperties)
   }
 
-  // Check if current user is owner
+  // Check if current user is owner and handle network switching
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Auto-switch to localhost if on wrong network
+  useEffect(() => {
+    if (mounted && isConnected && chainId !== 31337) {
+      try {
+        switchChain({ chainId: 31337 })
+      } catch (error) {
+        console.error('Failed to switch chain:', error)
+      }
+    }
+  }, [mounted, isConnected, chainId, switchChain])
 
   useEffect(() => {
     if (mounted && owner && address) {
@@ -110,12 +107,12 @@ export default function ManagementPage() {
     }
   }, [mounted, owner, address])
 
-  // Fetch properties when propertyCount changes
+  // Fetch properties when propertyCount or property1 changes
   useEffect(() => {
     if (mounted && propertyCount !== undefined) {
       fetchProperties()
     }
-  }, [mounted, propertyCount])
+  }, [mounted, propertyCount, property1])
 
   // Create new property function
   const handleCreateProperty = async () => {
@@ -161,6 +158,31 @@ export default function ManagementPage() {
             <h2 className="text-lg font-semibold text-yellow-800">Wallet Not Connected</h2>
           </div>
           <p className="text-yellow-700 mt-2">Please connect your wallet to access the management panel.</p>
+        </div>
+      </div>
+    )
+  }
+
+  // Show network warning if not on localhost
+  if (mounted && isConnected && chainId !== 31337) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
+          <div className="flex items-center">
+            <AlertTriangle className="h-5 w-5 text-yellow-400 mr-2" />
+            <h2 className="text-lg font-semibold text-yellow-800">Wrong Network</h2>
+          </div>
+          <p className="text-yellow-700 mt-2">
+            Please switch to Localhost network (Chain ID: 31337) to access the management panel.
+          </p>
+          <div className="mt-4">
+            <button
+              onClick={() => switchChain({ chainId: 31337 })}
+              className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded text-sm"
+            >
+              Switch to Localhost
+            </button>
+          </div>
         </div>
       </div>
     )

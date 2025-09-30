@@ -13,6 +13,7 @@ import VaultBaseABI from '../abis/VaultBase.json';
 import VaultComposerSyncABI from '../abis/VaultComposerSync.json';
 import StacksCrossChainManagerABI from '../abis/StacksCrossChainManager.json';
 import EnvironmentConfigABI from '../abis/EnvironmentConfig.json';
+import MockUSDCABI from '../abis/MockUSDC.json';
 
 // Export all ABIs
 export const PROPERTY_REGISTRY_ABI = PropertyRegistryABI;
@@ -29,6 +30,7 @@ export const VAULT_BASE_ABI = VaultBaseABI;
 export const VAULT_COMPOSER_SYNC_ABI = VaultComposerSyncABI;
 export const STACKS_CROSS_CHAIN_MANAGER_ABI = StacksCrossChainManagerABI;
 export const ENVIRONMENT_CONFIG_ABI = EnvironmentConfigABI;
+export const MOCK_USDC_ABI = MockUSDCABI;
 
 // Export all ABIs as a single object for convenience
 export const ABIS = {
@@ -46,6 +48,7 @@ export const ABIS = {
   VaultComposerSync: VAULT_COMPOSER_SYNC_ABI,
   StacksCrossChainManager: STACKS_CROSS_CHAIN_MANAGER_ABI,
   EnvironmentConfig: ENVIRONMENT_CONFIG_ABI,
+  MockUSDC: MOCK_USDC_ABI,
 } as const;
 
 // Export types for better TypeScript support
