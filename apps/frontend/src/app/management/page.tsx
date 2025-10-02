@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from 'wagmi'
-import { Building2, Users, Settings, Plus, Pause, Play, DollarSign, AlertTriangle, Eye, MapPin, Calendar, CheckCircle, FileText, TrendingUp, X, Clock, Vote, Loader2, ExternalLink, Copy, CheckCircle2 } from 'lucide-react'
+import { Building2, Users, Settings, Plus, Pause, Play, DollarSign, AlertTriangle, Eye, MapPin, Calendar, CheckCircle, FileText, TrendingUp, X, Clock, Vote, Loader2, ExternalLink, Copy, CheckCircle2, Coins } from 'lucide-react'
 import { PROPERTY_REGISTRY_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, PROPERTY_DAO_ABI, PROPERTY_DAO_FACTORY_ABI } from '@brickvault/abi'
 import { CONTRACT_ADDRESSES } from '../../config/contracts'
 import { Header } from '@/components/Header'
@@ -90,6 +90,13 @@ export default function ManagementPage() {
   const [rentAmount, setRentAmount] = useState('')
   const [navUpdateAmount, setNavUpdateAmount] = useState('')
   const [propertyAddress, setPropertyAddress] = useState('')
+  const [propertyTokenTotalSupply, setPropertyTokenTotalSupply] = useState<bigint | null>(null)
+  
+  // Complete purchase modal state
+  const [showCompletePurchaseModal, setShowCompletePurchaseModal] = useState(false)
+  const [selectedPropertyForPurchase, setSelectedPropertyForPurchase] = useState<PropertyData | null>(null)
+  const [purchasePropertyAddress, setPurchasePropertyAddress] = useState('')
+  const [isCompletingPurchase, setIsCompletingPurchase] = useState(false)
   
   // Rent harvest modal state
   const [showRentModal, setShowRentModal] = useState(false)
@@ -316,7 +323,25 @@ export default function ManagementPage() {
 
   // Manual refresh function
   const refreshProperties = async () => {
-    await fetchProperties(true)
+    try {
+      // Force refresh by refetching property count first
+      if (publicClient) {
+        const newPropertyCount = await publicClient.readContract({
+          address: registryAddress,
+          abi: PROPERTY_REGISTRY_ABI,
+          functionName: 'getPropertyCount',
+        })
+        
+        // If property count changed, the useEffect will trigger fetchProperties
+        // Otherwise, manually call fetchProperties
+        if (newPropertyCount === propertyCount) {
+          await fetchProperties(true)
+        }
+      }
+    } catch (error) {
+      console.error('Error refreshing properties:', error)
+      setPropertiesError('Failed to refresh properties')
+    }
   }
 
   // Check if current user is owner and handle network switching
@@ -397,6 +422,31 @@ export default function ManagementPage() {
     setSelectedProperty(property)
     setShowPropertyModal(true)
     await fetchPropertyProposals(property.id)
+    
+    // Fetch property token total supply if token exists
+    if (property.propertyTokenAddress && publicClient) {
+      try {
+        const totalSupply = await publicClient.readContract({
+          address: property.propertyTokenAddress as `0x${string}`,
+          abi: [
+            {
+              "inputs": [],
+              "name": "totalSupply",
+              "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+              "stateMutability": "view",
+              "type": "function"
+            }
+          ],
+          functionName: 'totalSupply',
+        }) as bigint
+        setPropertyTokenTotalSupply(totalSupply)
+      } catch (error) {
+        console.error('Failed to fetch property token total supply:', error)
+        setPropertyTokenTotalSupply(null)
+      }
+    } else {
+      setPropertyTokenTotalSupply(null)
+    }
   }
 
   // Fetch proposals for a specific property
@@ -851,27 +901,33 @@ export default function ManagementPage() {
     }
   }
 
-  // Function to complete property purchase
-  const handleCompletePropertyPurchase = async (daoAddress: string) => {
-    if (!isOwner) return
+  // Function to open complete purchase modal
+  const handleOpenCompletePurchaseModal = (property: PropertyData) => {
+    setSelectedPropertyForPurchase(property)
+    setPurchasePropertyAddress('')
+    setShowCompletePurchaseModal(true)
+  }
 
-    const address = prompt('Enter property address:')
-    if (!address) {
-      alert('Please enter a property address')
-      return
-    }
+  // Function to complete property purchase
+  const handleCompletePropertyPurchase = async () => {
+    if (!isOwner || !selectedPropertyForPurchase || !purchasePropertyAddress) return
 
     try {
-      setLoading(true)
+      setIsCompletingPurchase(true)
       
       const hash = await writeContractAsync({
-        address: daoAddress as `0x${string}`,
+        address: selectedPropertyForPurchase.daoAddress as `0x${string}`,
         abi: PROPERTY_DAO_ABI,
         functionName: 'completePropertyPurchase',
-        args: [address]
+        args: [purchasePropertyAddress]
       })
       
-      alert(`Successfully completed property purchase at ${address}`)
+      // Close modal and reset state
+      setShowCompletePurchaseModal(false)
+      setSelectedPropertyForPurchase(null)
+      setPurchasePropertyAddress('')
+      
+      alert(`Successfully completed property purchase at ${purchasePropertyAddress}`)
       
       // Refresh properties after a short delay
       setTimeout(() => {
@@ -880,7 +936,7 @@ export default function ManagementPage() {
     } catch (error) {
       alert('Failed to complete property purchase. Please try again.')
     } finally {
-      setLoading(false)
+      setIsCompletingPurchase(false)
     }
   }
 
@@ -1262,19 +1318,64 @@ export default function ManagementPage() {
       </div>
 
       {/* Funded Properties Alert */}
-      {properties.filter(p => p.daoIsFullyFunded).length > 0 && (
+      {properties.filter(p => p.daoIsFullyFunded && p.daoStage === 1).length > 0 && (
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 mb-6">
           <div className="flex items-center">
             <CheckCircle className="h-6 w-6 text-blue-500 mr-3" />
             <div>
               <h3 className="text-lg font-semibold text-blue-800">Properties Ready for Purchase</h3>
               <p className="text-blue-700 mt-1">
-                {properties.filter(p => p.daoIsFullyFunded).length} property(ies) have reached their DAO funding goals and are ready for purchase proposals.
+                {properties.filter(p => p.daoIsFullyFunded && p.daoStage === 1).length} property(ies) have reached their DAO funding goals and are ready for purchase proposals.
               </p>
             </div>
           </div>
         </div>
       )}
+
+      {/* Management Actions */}
+      <div className="bg-card rounded-lg border p-6 mb-6">
+        <h2 className="text-xl font-semibold mb-4 flex items-center">
+          <Settings className="mr-2 h-5 w-5" />
+          Management Actions
+        </h2>
+        
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <button
+            onClick={() => setShowCreateModal(true)}
+            disabled={loading}
+            className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 transition-colors disabled:opacity-50"
+          >
+            <Plus className="h-6 w-6 mr-2" />
+            <div className="text-left">
+              <p className="font-semibold">Create New Property</p>
+              <p className="text-sm text-muted-foreground">Deploy a new property vault with DAO</p>
+            </div>
+          </button>
+
+          <button
+            onClick={() => setShowManagementModal(true)}
+            disabled={loading}
+            className="flex items-center justify-center p-4 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-400 transition-colors disabled:opacity-50 bg-blue-50"
+          >
+            <Settings className="h-6 w-6 mr-2 text-blue-600" />
+            <div className="text-left">
+              <p className="font-semibold text-blue-800">Property Management</p>
+              <p className="text-sm text-blue-600">Manage rent, NAV, and proposals</p>
+            </div>
+          </button>
+
+          <button
+            disabled
+            className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg opacity-50"
+          >
+            <Settings className="h-6 w-6 mr-2" />
+            <div className="text-left">
+              <p className="font-semibold">Platform Settings</p>
+              <p className="text-sm text-muted-foreground">Modify platform parameters</p>
+            </div>
+          </button>
+        </div>
+      </div>
 
       {/* Properties List */}
       <div className="bg-card rounded-lg border p-6 mb-6">
@@ -1397,7 +1498,7 @@ export default function ManagementPage() {
                         Paused
                       </span>
                     )}
-                    {property.daoIsFullyFunded && (
+                    {property.daoIsFullyFunded && property.daoStage < 2 && (
                       <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-800 flex items-center">
                         <CheckCircle className="h-3 w-3 mr-1" />
                         Ready for Purchase
@@ -1495,12 +1596,7 @@ export default function ManagementPage() {
                           <Eye className="h-3 w-3 inline mr-1" />
                           View Details
                         </button>
-                        {property.daoIsFullyFunded ? (
-                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded">
-                            <CheckCircle className="h-3 w-3 inline mr-1" />
-                            Auto-Proposal Created
-                          </span>
-                        ) : property.status === 1 ? (
+                        {property.status === 1 ? (
                           <button className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded hover:bg-yellow-200">
                             <Pause className="h-3 w-3 inline mr-1" />
                             Pause
@@ -1519,51 +1615,6 @@ export default function ManagementPage() {
             ))}
           </div>
         )}
-      </div>
-
-      {/* Management Actions */}
-      <div className="bg-card rounded-lg border p-6">
-        <h2 className="text-xl font-semibold mb-4 flex items-center">
-          <Settings className="mr-2 h-5 w-5" />
-          Management Actions
-        </h2>
-        
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button
-            onClick={() => setShowCreateModal(true)}
-            disabled={loading}
-            className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg hover:border-gray-400 transition-colors disabled:opacity-50"
-          >
-            <Plus className="h-6 w-6 mr-2" />
-            <div className="text-left">
-              <p className="font-semibold">Create New Property</p>
-              <p className="text-sm text-muted-foreground">Deploy a new property vault with DAO</p>
-            </div>
-          </button>
-
-          <button
-            onClick={() => setShowManagementModal(true)}
-            disabled={loading}
-            className="flex items-center justify-center p-4 border-2 border-dashed border-blue-300 rounded-lg hover:border-blue-400 transition-colors disabled:opacity-50 bg-blue-50"
-          >
-            <Settings className="h-6 w-6 mr-2 text-blue-600" />
-            <div className="text-left">
-              <p className="font-semibold text-blue-800">Property Management</p>
-              <p className="text-sm text-blue-600">Manage rent, NAV, and proposals</p>
-            </div>
-          </button>
-
-          <button
-            disabled
-            className="flex items-center justify-center p-4 border-2 border-dashed border-gray-300 rounded-lg opacity-50"
-          >
-            <Settings className="h-6 w-6 mr-2" />
-            <div className="text-left">
-              <p className="font-semibold">Platform Settings</p>
-              <p className="text-sm text-muted-foreground">Modify platform parameters</p>
-            </div>
-          </button>
-        </div>
       </div>
 
       {/* Property Detail Modal */}
@@ -1699,6 +1750,80 @@ export default function ManagementPage() {
                     </div>
                   </div>
                 </div>
+
+                {/* Management Actions for Under Management Properties */}
+                {selectedProperty.daoStage === 2 && (
+                  <div className="bg-accent rounded-lg p-4">
+                    <h3 className="font-semibold mb-3">Management Actions</h3>
+                    <div className="flex space-x-3">
+                      <button
+                        onClick={() => {
+                          setShowPropertyModal(false)
+                          handleOpenRentModal(selectedProperty)
+                        }}
+                        disabled={loading}
+                        className="flex items-center space-x-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 disabled:opacity-50 transition-colors"
+                      >
+                        <DollarSign className="h-4 w-4" />
+                        <span>Harvest Rent</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowPropertyModal(false)
+                          handleOpenNavModal(selectedProperty)
+                        }}
+                        disabled={loading}
+                        className="flex items-center space-x-2 px-4 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 disabled:opacity-50 transition-colors"
+                      >
+                        <TrendingUp className="h-4 w-4" />
+                        <span>Update NAV</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Property Token Information for Under Management Properties */}
+                {selectedProperty.daoStage === 2 && selectedProperty.propertyTokenAddress && (
+                  <div className="bg-accent rounded-lg p-4">
+                    <h3 className="font-semibold mb-3 flex items-center">
+                      <Coins className="h-5 w-5 mr-2 text-purple-600" />
+                      Property Token Information
+                    </h3>
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-sm text-muted-foreground">Token Address:</span>
+                        <span className="font-mono text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                          {selectedProperty.propertyTokenAddress.slice(0, 6)}...{selectedProperty.propertyTokenAddress.slice(-4)}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-muted-foreground">Token Symbol:</span>
+                        <span className="font-semibold">PROP</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-sm text-muted-foreground">Token Type:</span>
+                        <span className="text-sm">Property Ownership Token</span>
+                      </div>
+                      {propertyTokenTotalSupply !== null && (
+                        <div className="flex justify-between">
+                          <span className="text-sm text-muted-foreground">Total Supply (NAV):</span>
+                          <span className="font-semibold text-purple-800">
+                            {formatUnits(propertyTokenTotalSupply, 18)} PROP
+                          </span>
+                        </div>
+                      )}
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                        <div className="flex items-start">
+                          <Coins className="h-4 w-4 text-purple-600 mr-2 mt-0.5" />
+                          <div className="text-sm text-purple-800">
+                            <p className="font-medium">Property Token:</p>
+                            <p>This token represents ownership stake in the physical property.</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Proposals Section */}
@@ -1820,7 +1945,7 @@ export default function ManagementPage() {
                             )}
                             {proposal.executed && selectedProperty?.daoStage === 1 && (
                               <button
-                                onClick={() => handleCompletePropertyPurchase(selectedProperty?.daoAddress || '')}
+                                onClick={() => handleOpenCompletePurchaseModal(selectedProperty!)}
                                 disabled={loading}
                                 className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-sm hover:bg-blue-200 disabled:opacity-50 flex items-center"
                               >
@@ -2294,216 +2419,59 @@ export default function ManagementPage() {
                 </button>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {/* Rent Management */}
-                <div className="bg-accent rounded-lg p-4">
-                  <h3 className="font-semibold mb-3 flex items-center">
-                    <DollarSign className="h-5 w-5 mr-2" />
-                    Rent Management
-                  </h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Harvest rent income from properties and distribute to investors.
-                  </p>
-                  <div className="space-y-3">
-                    {properties.filter(p => p.daoStage >= 2).map((property) => (
-                      <div key={property.id} className="flex items-center justify-between p-3 bg-background rounded border">
-                        <div>
-                          <p className="font-medium">{property.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            Total Rent: {formatUnits(property.totalRentHarvested, 18)} OFTUSDC
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleOpenRentModal(property)}
-                          disabled={loading}
-                          className="px-3 py-1 bg-green-100 text-green-800 rounded text-sm hover:bg-green-200 disabled:opacity-50"
-                        >
-                          Harvest Rent
-                        </button>
-                      </div>
-                    ))}
-                    {properties.filter(p => p.daoStage >= 2).length === 0 && (
-                      <p className="text-sm text-muted-foreground text-center py-4">
-                        No properties under management yet
-                      </p>
-                    )}
-                  </div>
-                </div>
-
-                {/* NAV Updates */}
-                <div className="bg-accent rounded-lg p-4">
-                  <h3 className="font-semibold mb-3 flex items-center">
-                    <TrendingUp className="h-5 w-5 mr-2" />
-                    NAV Updates
-                  </h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Update property values to reflect appreciation or depreciation.
-                  </p>
-                  <div className="space-y-3">
-                    {properties.filter(p => p.daoStage >= 2).map((property) => (
-                      <div key={property.id} className="flex items-center justify-between p-3 bg-background rounded border">
-                        <div>
-                          <p className="font-medium">{property.name}</p>
-                          <p className="text-sm text-muted-foreground">
-                            Property Token: {property.propertyTokenAddress ? 
-                              `${property.propertyTokenAddress.slice(0, 6)}...${property.propertyTokenAddress.slice(-4)}` : 
-                              'Not created'
-                            }
-                          </p>
-                        </div>
-                        <button
-                          onClick={() => handleOpenNavModal(property)}
-                          disabled={loading || !property.propertyTokenAddress}
-                          className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-sm hover:bg-blue-200 disabled:opacity-50"
-                        >
-                          Update NAV
-                        </button>
-                      </div>
-                    ))}
-                    {properties.filter(p => p.daoStage >= 2).length === 0 && (
-                      <p className="text-sm text-muted-foreground text-center py-4">
-                        No properties under management yet
-                      </p>
-                    )}
-                  </div>
-                </div>
-
+              <div className="grid grid-cols-1 gap-6">
                 {/* Execute Purchase Flow */}
-                <div className="bg-accent rounded-lg p-4 md:col-span-2">
+                <div className="bg-accent rounded-lg p-4">
                   <h3 className="font-semibold mb-3 flex items-center">
-                    <Vote className="h-5 w-5 mr-2" />
-                    Execute Purchase Flow
+                    <Building2 className="h-5 w-5 mr-2" />
+                    Property Management
                   </h3>
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Complete the property purchase workflow: Execute proposals → Complete purchases → Manage properties.
-                  </p>
                   
-                  {/* Step-by-step flow */}
-                  <div className="space-y-4">
-                    {/* Step 1: Execute Proposals */}
-                    <div className="bg-background rounded border p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center">
-                          <div className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-semibold mr-3">
-                            1
-                          </div>
-                          <h4 className="font-medium">Execute Purchase Proposals</h4>
-                        </div>
-                        <span className="text-xs text-muted-foreground">Use Hardhat console to skip time</span>
+                  {/* Properties Under Management */}
+                  <div className="bg-background rounded border p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center">
+                        <h4 className="font-medium">Properties Under Management</h4>
                       </div>
-                      <div className="space-y-2">
-                        {properties.filter(p => p.daoAddress && p.daoStage === 1).map((property) => (
-                          <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
-                            <div className="flex items-center">
-                              <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
-                              <span className="text-sm font-medium">{property.name}</span>
-                            </div>
-                            <div className="flex space-x-2">
-                              <button
-                                onClick={() => handleExecuteProposal(1, property.daoAddress!)}
-                                disabled={loading}
-                                className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs hover:bg-green-200 disabled:opacity-50 flex items-center"
-                              >
-                                <CheckCircle className="h-3 w-3 mr-1" />
-                                Execute
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                        {properties.filter(p => p.daoAddress && p.daoStage === 1).length === 0 && (
-                          <p className="text-sm text-muted-foreground text-center py-2">
-                            No properties ready for proposal execution
-                          </p>
-                        )}
-                      </div>
+                      <span className="text-xs text-muted-foreground">Ready for rent & NAV</span>
                     </div>
-
-                    {/* Step 2: Complete Purchases */}
-                    <div className="bg-background rounded border p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center">
-                          <div className="w-6 h-6 bg-green-100 text-green-800 rounded-full flex items-center justify-center text-xs font-semibold mr-3">
-                            2
+                    <div className="space-y-2">
+                      {properties.filter(p => p.daoStage === 2).map((property) => (
+                        <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
+                          <div className="flex items-center">
+                           <span className="text-sm font-medium">{property.name}</span>
+                            {property.propertyAddress && (
+                              <span className="text-xs text-muted-foreground ml-2">
+                                ({property.propertyAddress})
+                              </span>
+                            )}
                           </div>
-                          <h4 className="font-medium">Complete Property Purchases</h4>
-                        </div>
-                        <span className="text-xs text-muted-foreground">After proposal execution</span>
-                      </div>
-                      <div className="space-y-2">
-                        {properties.filter(p => p.daoAddress && p.daoStage === 1).map((property) => (
-                          <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
-                            <div className="flex items-center">
-                              <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
-                              <span className="text-sm font-medium">{property.name}</span>
-                            </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
+                              Under Management
+                            </span>
                             <button
-                              onClick={() => handleCompletePropertyPurchase(property.daoAddress!)}
+                              onClick={() => handleOpenRentModal(property)}
                               disabled={loading}
-                              className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 disabled:opacity-50 flex items-center"
+                              className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs hover:bg-green-200 disabled:opacity-50"
                             >
-                              <Building2 className="h-3 w-3 mr-1" />
-                              Complete Purchase
+                              Harvest Rent
+                            </button>
+                            <button
+                              onClick={() => handleOpenNavModal(property)}
+                              disabled={loading}
+                              className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 disabled:opacity-50"
+                            >
+                              Update NAV
                             </button>
                           </div>
-                        ))}
-                        {properties.filter(p => p.daoAddress && p.daoStage === 1).length === 0 && (
-                          <p className="text-sm text-muted-foreground text-center py-2">
-                            No properties ready for purchase completion
-                          </p>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* Step 3: Under Management */}
-                    <div className="bg-background rounded border p-4">
-                      <div className="flex items-center justify-between mb-3">
-                        <div className="flex items-center">
-                          <div className="w-6 h-6 bg-purple-100 text-purple-800 rounded-full flex items-center justify-center text-xs font-semibold mr-3">
-                            3
-                          </div>
-                          <h4 className="font-medium">Properties Under Management</h4>
                         </div>
-                        <span className="text-xs text-muted-foreground">Ready for rent & NAV</span>
-                      </div>
-                      <div className="space-y-2">
-                        {properties.filter(p => p.daoStage === 2).map((property) => (
-                          <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
-                            <div className="flex items-center">
-                              <Building2 className="h-4 w-4 mr-2 text-green-600" />
-                              <span className="text-sm font-medium">{property.name}</span>
-                              {property.propertyAddress && (
-                                <span className="text-xs text-muted-foreground ml-2">
-                                  ({property.propertyAddress})
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
-                                Under Management
-                              </span>
-                              <button
-                                onClick={() => handleOpenRentModal(property)}
-                                disabled={loading}
-                                className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs hover:bg-green-200 disabled:opacity-50"
-                              >
-                                Harvest Rent
-                              </button>
-                              <button
-                                onClick={() => handleOpenNavModal(property)}
-                                disabled={loading}
-                                className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 disabled:opacity-50"
-                              >
-                                Update NAV
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                        {properties.filter(p => p.daoStage === 2).length === 0 && (
-                          <p className="text-sm text-muted-foreground text-center py-2">
-                            No properties under management yet
-                          </p>
-                        )}
-                      </div>
+                      ))}
+                      {properties.filter(p => p.daoStage === 2).length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-2">
+                          No properties under management yet
+                        </p>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -2749,6 +2717,87 @@ export default function ManagementPage() {
                       <>
                         <TrendingUp className="h-4 w-4" />
                         <span>Update NAV</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Complete Purchase Modal */}
+      {showCompletePurchaseModal && selectedPropertyForPurchase && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <Building2 className="h-5 w-5 mr-2 text-blue-600" />
+                  Complete Property Purchase
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowCompletePurchaseModal(false)
+                    setSelectedPropertyForPurchase(null)
+                    setPurchasePropertyAddress('')
+                  }}
+                  className="p-2 hover:bg-accent rounded-md transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-accent rounded-lg p-4">
+                  <h3 className="font-medium mb-2">{selectedPropertyForPurchase.name}</h3>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <p>DAO: {selectedPropertyForPurchase.daoAddress?.slice(0, 6)}...{selectedPropertyForPurchase.daoAddress?.slice(-4)}</p>
+                    <p>Vault: {selectedPropertyForPurchase.vault.slice(0, 6)}...{selectedPropertyForPurchase.vault.slice(-4)}</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Property Address <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={purchasePropertyAddress}
+                    onChange={(e) => setPurchasePropertyAddress(e.target.value)}
+                    placeholder="Enter property address"
+                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    required
+                  />
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowCompletePurchaseModal(false)
+                      setSelectedPropertyForPurchase(null)
+                      setPurchasePropertyAddress('')
+                    }}
+                    disabled={isCompletingPurchase}
+                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleCompletePropertyPurchase}
+                    disabled={isCompletingPurchase || !purchasePropertyAddress.trim()}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
+                  >
+                    {isCompletingPurchase ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Completing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Building2 className="h-4 w-4" />
+                        <span>Complete Purchase</span>
                       </>
                     )}
                   </button>
