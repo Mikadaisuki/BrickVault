@@ -44,6 +44,12 @@ export default function CrossChainDemo() {
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash,
   })
+  
+  // Track approval transaction separately
+  const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>()
+  const { isLoading: isApprovalConfirming, isSuccess: isApprovalConfirmed } = useWaitForTransactionReceipt({
+    hash: approvalHash,
+  })
   const publicClient = usePublicClient()
   
   // Handle hydration by tracking if we're on the client
@@ -57,6 +63,8 @@ export default function CrossChainDemo() {
   const [oftAmount, setOftAmount] = useState('')
   const [vaultAmount, setVaultAmount] = useState('')
   const [quotingFee, setQuotingFee] = useState(false)
+  const [approvalStep, setApprovalStep] = useState<'idle' | 'approving' | 'approved' | 'sending'>('idle')
+  const [vaultStep, setVaultStep] = useState<'idle' | 'approving' | 'approved' | 'depositing'>('idle')
 
   // Log errors from writeContract
   useEffect(() => {
@@ -64,6 +72,55 @@ export default function CrossChainDemo() {
       console.error('writeContract error:', error)
     }
   }, [error])
+
+  // Track approval transaction hash when it's created
+  useEffect(() => {
+    if (hash && approvalStep === 'approving') {
+      setApprovalHash(hash)
+    }
+    if (hash && vaultStep === 'approving') {
+      setApprovalHash(hash)
+    }
+  }, [hash, approvalStep, vaultStep])
+
+  // Auto-trigger cross-chain send after approval is confirmed
+  useEffect(() => {
+    if (isApprovalConfirmed && approvalStep === 'approving') {
+      setApprovalStep('approved')
+      // Proceed to cross-chain send after approval is confirmed
+      setTimeout(() => {
+        sendUSDCCrossChain()
+      }, 100) // Minimal delay to ensure state updates are processed
+    }
+  }, [isApprovalConfirmed, approvalStep])
+
+  // Auto-trigger vault deposit after OFT approval is confirmed
+  useEffect(() => {
+    if (isApprovalConfirmed && vaultStep === 'approving') {
+      setVaultStep('approved')
+      // Proceed to vault deposit after approval is confirmed
+      setTimeout(() => {
+        depositToVault()
+      }, 100) // Minimal delay to ensure state updates are processed
+    }
+  }, [isApprovalConfirmed, vaultStep])
+
+  // Reset approval step when transaction is completed or there's an error
+  useEffect(() => {
+    if (isConfirmed && approvalStep === 'sending') {
+      setApprovalStep('idle')
+      setApprovalHash(undefined)
+    }
+    if (isConfirmed && vaultStep === 'depositing') {
+      setVaultStep('idle')
+      setApprovalHash(undefined)
+    }
+    if (error) {
+      setApprovalStep('idle')
+      setVaultStep('idle')
+      setApprovalHash(undefined)
+    }
+  }, [isConfirmed, error, approvalStep, vaultStep])
 
   // Read user balances
   const { data: usdcBalance } = useReadContract({
@@ -114,6 +171,7 @@ export default function CrossChainDemo() {
     
     const amount = parseUnits(usdcAmount, TOKEN_DECIMALS.USDC)
     
+    setApprovalStep('approving')
     writeContract({
       address: CONTRACTS.MockUSDC as `0x${string}`,
       abi: MOCK_USDC_ABI_ARRAY,
@@ -123,11 +181,38 @@ export default function CrossChainDemo() {
     })
   }
 
+  // Combined function: Approve USDC then send cross-chain
+  const approveAndSendUSDC = async () => {
+    if (!usdcAmount || !address || !publicClient) return
+    
+    const amount = parseUnits(usdcAmount, TOKEN_DECIMALS.USDC)
+    
+    // Check if we already have sufficient allowance
+    const currentAllowance = usdcAllowance as bigint || BigInt(0)
+    if (currentAllowance >= amount) {
+      // We already have enough allowance, proceed directly to send
+      setApprovalStep('sending')
+      await sendUSDCCrossChain()
+      return
+    }
+    
+    // Step 1: Approve USDC
+    setApprovalStep('approving')
+    writeContract({
+      address: CONTRACTS.MockUSDC as `0x${string}`,
+      abi: MOCK_USDC_ABI_ARRAY,
+      functionName: 'approve',
+      args: [CONTRACTS.ShareOFTAdapter as `0x${string}`, amount],
+      gas: BigInt(100000),
+    })
+  }
+
   // Step 2: Send USDC cross-chain via OFTAdapter to get OFTUSDC
   const sendUSDCCrossChain = async () => {
     if (!usdcAmount || !address || !publicClient) return
     
     try {
+      setApprovalStep('sending')
       setQuotingFee(true)
       const amount = parseUnits(usdcAmount, TOKEN_DECIMALS.USDC)
       
@@ -215,6 +300,7 @@ export default function CrossChainDemo() {
     
     const amount = parseUnits(oftAmount, TOKEN_DECIMALS.OFTUSDC)
     
+    setVaultStep('approving')
     writeContract({
       address: CONTRACTS.OFTUSDC as `0x${string}`,
       abi: OFT_USDC_ABI_ARRAY,
@@ -224,12 +310,39 @@ export default function CrossChainDemo() {
     })
   }
 
+  // Combined function: Approve OFTUSDC then deposit to vault
+  const approveAndDepositOFT = async () => {
+    if (!oftAmount) return
+    
+    const amount = parseUnits(oftAmount, TOKEN_DECIMALS.OFTUSDC)
+    
+    // Check if we already have sufficient allowance
+    const currentAllowance = oftAllowance as bigint || BigInt(0)
+    if (currentAllowance >= amount) {
+      // We already have enough allowance, proceed directly to deposit
+      setVaultStep('depositing')
+      await depositToVault()
+      return
+    }
+    
+    // Step 1: Approve OFTUSDC
+    setVaultStep('approving')
+    writeContract({
+      address: CONTRACTS.OFTUSDC as `0x${string}`,
+      abi: OFT_USDC_ABI_ARRAY,
+      functionName: 'approve',
+      args: [CONTRACTS.PropertyVault as `0x${string}`, amount],
+      gas: BigInt(100000),
+    })
+  }
+
   // Step 4: Deposit OFTUSDC to Property Vault
   const depositToVault = async () => {
     if (!oftAmount) return
     
     const amount = parseUnits(oftAmount, TOKEN_DECIMALS.OFTUSDC)
     
+    setVaultStep('depositing')
     writeContract({
       address: CONTRACTS.PropertyVault as `0x${string}`,
       abi: PROPERTY_VAULT_GOVERNANCE_ABI_ARRAY,
@@ -458,14 +571,8 @@ export default function CrossChainDemo() {
         <div className="bg-card rounded-lg border p-6 mb-8">
           <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
             <ArrowRight className="h-6 w-6 text-primary" />
-            Step 1: Send USDC Cross-Chain to Get OFTUSDC
+            Step 1: Approve & Send USDC Cross-Chain to Get OFTUSDC
           </h2>
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-            <p className="text-sm text-blue-800">
-              <strong>Conversion Info:</strong> USDC (6 decimals) → OFTUSDC (18 decimals) via LayerZero cross-chain transfer. 
-              Your USDC will be automatically scaled to 18 decimals when converted to OFTUSDC.
-            </p>
-          </div>
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-foreground mb-2">
@@ -488,20 +595,47 @@ export default function CrossChainDemo() {
             </div>
             <div className="flex gap-4">
               <button
-                onClick={approveUSDC}
-                disabled={isPending || !usdcAmount}
-                className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                onClick={approveAndSendUSDC}
+                disabled={isPending || isApprovalConfirming || quotingFee || !usdcAmount}
+                className="px-6 py-3 bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 transition-all duration-200 font-semibold"
               >
-                {isPending ? 'Approving...' : 'Approve USDC'}
-              </button>
-              <button
-                onClick={sendUSDCCrossChain}
-                disabled={isPending || quotingFee || !usdcAmount}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
-              >
-                {quotingFee ? 'Quoting Fee...' : isPending ? 'Sending Cross-Chain...' : 'Send USDC Cross-Chain'}
+                {approvalStep === 'approving' && isPending ? 'Approving USDC...' :
+                 approvalStep === 'approved' && (quotingFee || isPending) ? 'Sending Cross-Chain...' :
+                 quotingFee ? 'Quoting Fee...' :
+                 isPending ? 'Processing...' :
+                 'Approve & Send USDC Cross-Chain'}
               </button>
             </div>
+            {/* Status indicator */}
+            {approvalStep !== 'idle' && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2">
+                  {approvalStep === 'approving' && (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                      <span className="text-sm text-blue-800">
+                        {isPending ? 'Step 1: Approving USDC... Please confirm the transaction in your wallet.' :
+                         isApprovalConfirming ? 'Step 1: Waiting for approval confirmation on-chain...' :
+                         'Step 1: Approving USDC...'}
+                      </span>
+                    </>
+                  )}
+                  {approvalStep === 'approved' && (
+                    <>
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="text-sm text-green-800">Step 1 Complete: USDC approved! Now sending cross-chain...</span>
+                    </>
+                  )}
+                  {approvalStep === 'sending' && (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                      <span className="text-sm text-blue-800">Step 2: Sending USDC cross-chain... Please confirm the transaction in your wallet.</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+            
             {usdcAllowance ? (
               <p className="text-sm text-muted-foreground">
                 USDC Allowance: {formatUnits(usdcAllowance as bigint, TOKEN_DECIMALS.USDC)} USDC
@@ -515,7 +649,7 @@ export default function CrossChainDemo() {
         <div className="bg-card rounded-lg border p-6 mb-8">
           <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
             <Building2 className="h-6 w-6 text-primary" />
-            Step 2: Deposit OFTUSDC to Property Vault
+            Step 2: Approve & Deposit OFTUSDC to Property Vault
           </h2>
           <div className="space-y-4">
             <div>
@@ -532,20 +666,47 @@ export default function CrossChainDemo() {
             </div>
             <div className="flex gap-4">
               <button
-                onClick={approveOFT}
-                disabled={isPending || !oftAmount}
-                className="px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
+                onClick={approveAndDepositOFT}
+                disabled={isPending || isApprovalConfirming || !oftAmount}
+                className="px-6 py-3 bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 transition-all duration-200 font-semibold"
               >
-                {isPending ? 'Approving...' : 'Approve OFTUSDC'}
-              </button>
-              <button
-                onClick={depositToVault}
-                disabled={isPending || !oftAmount}
-                className="px-4 py-2 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 transition-colors"
-              >
-                {isPending ? 'Depositing...' : 'Deposit to Vault'}
+                {vaultStep === 'approving' && isPending ? 'Approving OFTUSDC...' :
+                 vaultStep === 'approved' && isPending ? 'Depositing to Vault...' :
+                 isPending ? 'Processing...' :
+                 'Approve & Deposit OFTUSDC to Vault'}
               </button>
             </div>
+            
+            {/* Status indicator */}
+            {vaultStep !== 'idle' && (
+              <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                <div className="flex items-center gap-2">
+                  {vaultStep === 'approving' && (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                      <span className="text-sm text-blue-800">
+                        {isPending ? 'Step 1: Approving OFTUSDC... Please confirm the transaction in your wallet.' :
+                         isApprovalConfirming ? 'Step 1: Waiting for approval confirmation on-chain...' :
+                         'Step 1: Approving OFTUSDC...'}
+                      </span>
+                    </>
+                  )}
+                  {vaultStep === 'approved' && (
+                    <>
+                      <CheckCircle className="h-4 w-4 text-green-600" />
+                      <span className="text-sm text-green-800">Step 1 Complete: OFTUSDC approved! Now depositing to vault...</span>
+                    </>
+                  )}
+                  {vaultStep === 'depositing' && (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                      <span className="text-sm text-blue-800">Step 2: Depositing to vault... Please confirm the transaction in your wallet.</span>
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+            
             {oftAllowance ? (
               <p className="text-sm text-muted-foreground">
                 OFTUSDC Allowance: {formatUnits(oftAllowance as bigint, TOKEN_DECIMALS.OFTUSDC)} OFTUSDC
@@ -675,3 +836,4 @@ export default function CrossChainDemo() {
     </div>
   )
 }
+

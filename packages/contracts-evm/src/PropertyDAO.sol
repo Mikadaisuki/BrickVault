@@ -852,4 +852,5 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         
         emit StageChanged(PropertyStage.OpenToFund);
     }
+
 }

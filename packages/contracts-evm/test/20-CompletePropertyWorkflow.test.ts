@@ -34,11 +34,11 @@ describe('Complete Property Workflow Test', function () {
   
   const PROPERTY_NAME = 'Miami Luxury Condo';
   const USDC_DECIMALS = 6; // MockUSDC has 6 decimals
-  const DEPOSIT_CAP = ethers.parseUnits('1000000', 18); // 1M USDC cap (18 decimals for vault)
-  const FUNDING_TARGET = ethers.parseUnits('500000', 18); // 500K USDC target (18 decimals)
-  const INVESTOR1_AMOUNT_USDC = ethers.parseUnits('200000', USDC_DECIMALS); // 200K USDC (6 decimals)
-  const INVESTOR2_AMOUNT_USDC = ethers.parseUnits('200000', USDC_DECIMALS); // 200K USDC (6 decimals)
-  const INVESTOR3_AMOUNT_USDC = ethers.parseUnits('100000', USDC_DECIMALS); // 100K USDC (6 decimals)
+  const DEPOSIT_CAP = ethers.parseUnits('100000', 18); // 100K USDC cap (18 decimals for vault)
+  const FUNDING_TARGET = ethers.parseUnits('100000', 18); // 100K USDC target (18 decimals)
+  const INVESTOR1_AMOUNT_USDC = ethers.parseUnits('40000', USDC_DECIMALS); // 40K USDC (6 decimals)
+  const INVESTOR2_AMOUNT_USDC = ethers.parseUnits('40000', USDC_DECIMALS); // 40K USDC (6 decimals)
+  const INVESTOR3_AMOUNT_USDC = ethers.parseUnits('20000', USDC_DECIMALS); // 20K USDC (6 decimals)
   const RENT_AMOUNT = ethers.parseUnits('5000', 18); // 5K monthly rent (18 decimals)
 
   beforeEach(async function () {
@@ -480,22 +480,94 @@ describe('Complete Property Workflow Test', function () {
     const maxWithdrawable = await propertyVault.getMaxWithdrawable(investor1.address);
     console.log('   - Max withdrawable:', ethers.formatUnits(maxWithdrawable, 18), 'USDC');
 
-    // Withdraw income
+    // Withdraw income using withdraw() function (new contract logic)
     const investor1USDCBefore = await oftUSDC.balanceOf(investor1.address);
-    const sharesToBurn = await propertyVault.convertToShares(maxWithdrawable);
-    await propertyVault.connect(investor1).redeem(sharesToBurn, investor1.address, investor1.address);
+    const investor1SharesBefore = await propertyVault.balanceOf(investor1.address);
+    
+    // Use withdraw() instead of redeem() for rent income
+    await propertyVault.connect(investor1).withdraw(maxWithdrawable, investor1.address, investor1.address);
+    
     const investor1USDCAfter = await oftUSDC.balanceOf(investor1.address);
+    const investor1SharesAfter = await propertyVault.balanceOf(investor1.address);
     
     console.log('✅ Investor 1 withdrew:', ethers.formatUnits(investor1USDCAfter - investor1USDCBefore, 18), 'USDC');
+    console.log('✅ Investor 1 shares before:', ethers.formatUnits(investor1SharesBefore, 18));
+    console.log('✅ Investor 1 shares after:', ethers.formatUnits(investor1SharesAfter, 18));
+    console.log('✅ Shares preserved (no shares burned):', investor1SharesBefore.toString() === investor1SharesAfter.toString());
 
-    // Verify principal is locked (investor1 already withdrew all available income)
+    // Verify principal is locked (investor1 still has remaining share of current period income)
     console.log('\n🔒 Verifying principal is locked...');
     const investor1SharesRemaining = await propertyVault.balanceOf(investor1.address);
     const maxWithdrawableAfter = await propertyVault.getMaxWithdrawable(investor1.address);
     console.log('   - Remaining shares:', ethers.formatUnits(investor1SharesRemaining, 18));
     console.log('   - Max withdrawable now:', ethers.formatUnits(maxWithdrawableAfter, 18));
-    expect(maxWithdrawableAfter).to.equal(0); // No more income to withdraw
-    console.log('✅ Principal correctly locked - only income withdrawable, none remaining');
+    
+    // Investor 1 should have 0 maxWithdrawable after withdrawing their full share
+    expect(maxWithdrawableAfter).to.equal(0);
+    console.log('✅ Principal correctly locked - Investor 1 has withdrawn their full period share');
+
+    // Test that shares are preserved after income withdrawal
+    expect(investor1SharesRemaining).to.equal(investor1SharesBefore);
+    console.log('✅ Shares correctly preserved - no shares burned during income withdrawal');
+
+    // Test totalIncomeDistributed tracking (using any to bypass type checking for now)
+    const totalIncomeDistributed = await (propertyVault as any).totalIncomeDistributed();
+    console.log('✅ Total income distributed:', ethers.formatUnits(totalIncomeDistributed, 18), 'USDC');
+    expect(totalIncomeDistributed).to.equal(maxWithdrawable);
+    console.log('✅ Income distribution correctly tracked');
+
+    // Test that maxWithdrawable decreases after withdrawal
+    const maxWithdrawableBefore = maxWithdrawable;
+    const maxWithdrawableAfterWithdrawal = await propertyVault.getMaxWithdrawable(investor1.address);
+    console.log('✅ Max withdrawable before:', ethers.formatUnits(maxWithdrawableBefore, 18), 'USDC');
+    console.log('✅ Max withdrawable after:', ethers.formatUnits(maxWithdrawableAfterWithdrawal, 18), 'USDC');
+    expect(maxWithdrawableAfterWithdrawal).to.be.lessThan(maxWithdrawableBefore);
+    console.log('✅ Max withdrawable correctly decreased after withdrawal');
+
+    // Test Investor 2 withdrawing remaining income
+    console.log('\n👤 Investor 2 withdrawing remaining income...');
+    const investor2MaxWithdrawable = await propertyVault.getMaxWithdrawable(investor2.address);
+    console.log('   - Investor 2 max withdrawable:', ethers.formatUnits(investor2MaxWithdrawable, 18), 'USDC');
+    
+    const investor2USDCBefore = await oftUSDC.balanceOf(investor2.address);
+    const investor2SharesBefore = await propertyVault.balanceOf(investor2.address);
+    
+    await propertyVault.connect(investor2).withdraw(investor2MaxWithdrawable, investor2.address, investor2.address);
+    
+    const investor2USDCAfter = await oftUSDC.balanceOf(investor2.address);
+    const investor2SharesAfter = await propertyVault.balanceOf(investor2.address);
+    
+    console.log('✅ Investor 2 withdrew:', ethers.formatUnits(investor2USDCAfter - investor2USDCBefore, 18), 'USDC');
+    console.log('✅ Investor 2 shares preserved:', investor2SharesBefore.toString() === investor2SharesAfter.toString());
+    
+    // Verify total income distributed is updated
+    const totalIncomeDistributedAfter = await (propertyVault as any).totalIncomeDistributed();
+    console.log('✅ Total income distributed after Investor 2:', ethers.formatUnits(totalIncomeDistributedAfter, 18), 'USDC');
+    expect(totalIncomeDistributedAfter).to.equal(totalIncomeDistributed + investor2MaxWithdrawable);
+    console.log('✅ Income distribution correctly updated for multiple investors');
+
+    // Withdraw remaining income for investor 3
+    console.log('\n👤 Investor 3 withdrawing remaining income...');
+    const investor3MaxWithdrawable = await propertyVault.getMaxWithdrawable(investor3.address);
+    console.log('   - Investor 3 max withdrawable:', ethers.formatUnits(investor3MaxWithdrawable, 18), 'USDC');
+    
+    if (investor3MaxWithdrawable > 0) {
+      await propertyVault.connect(investor3).withdraw(investor3MaxWithdrawable, investor3.address, investor3.address);
+      console.log('✅ Investor 3 withdrew:', ethers.formatUnits(investor3MaxWithdrawable, 18), 'USDC');
+    }
+    
+    // After all investors withdraw, maxWithdrawable should be 0
+    const investor1MaxAfterAll = await propertyVault.getMaxWithdrawable(investor1.address);
+    const investor2MaxAfterAll = await propertyVault.getMaxWithdrawable(investor2.address);
+    const investor3MaxAfterAll = await propertyVault.getMaxWithdrawable(investor3.address);
+    console.log('✅ Max withdrawable after all withdrawals:');
+    console.log('   - Investor 1:', ethers.formatUnits(investor1MaxAfterAll, 18), 'USDC');
+    console.log('   - Investor 2:', ethers.formatUnits(investor2MaxAfterAll, 18), 'USDC');
+    console.log('   - Investor 3:', ethers.formatUnits(investor3MaxAfterAll, 18), 'USDC');
+    expect(investor1MaxAfterAll).to.equal(0);
+    expect(investor2MaxAfterAll).to.equal(0);
+    expect(investor3MaxAfterAll).to.equal(0);
+    console.log('✅ No more income available for withdrawal - all period income distributed');
 
     // ============================================================================
     // PHASE 8: NAV UPDATE (PROPERTY APPRECIATION)
@@ -534,6 +606,7 @@ describe('Complete Property Workflow Test', function () {
 
     console.log('\n💰 Financial Summary:');
     console.log('   - Total Rent Collected:', ethers.formatUnits(totalRentHarvested, 18), 'USDC');
+    console.log('   - Total Income Distributed:', ethers.formatUnits(await (propertyVault as any).totalIncomeDistributed(), 18), 'USDC');
     console.log('   - Property Appreciation:', ethers.formatUnits(appreciationAmount, 18), 'tokens');
     console.log('   - PropertyToken Supply:', ethers.formatUnits(tokenSupplyAfter, 18));
 
@@ -556,6 +629,41 @@ describe('Complete Property Workflow Test', function () {
 
     console.log('\n✅ COMPLETE WORKFLOW TEST PASSED! 🎉');
     console.log('='.repeat(80));
+  });
+
+  it('⏭️ Test Time Skip Functionality', async function () {
+    console.log('\n' + '='.repeat(60));
+    console.log('⏭️ TIME SKIP TEST (Using Hardhat time.increase)');
+    console.log('='.repeat(60));
+
+    // This test demonstrates how to skip time using Hardhat's time.increase()
+    // instead of modifying the contract
+    
+    console.log('\n📋 Current time before skip:');
+    const timeBefore = await time.latest();
+    console.log('   - Time:', new Date(Number(timeBefore) * 1000).toLocaleString());
+    
+    console.log('\n⏭️ Skipping 7 days + 1 second using time.increase()...');
+    await time.increase(7 * 24 * 60 * 60 + 1);
+    
+    console.log('\n📋 Time after skip:');
+    const timeAfter = await time.latest();
+    console.log('   - Time:', new Date(Number(timeAfter) * 1000).toLocaleString());
+    console.log('   - Time difference:', Number(timeAfter - timeBefore), 'seconds');
+    console.log('   - Expected:', 7 * 24 * 60 * 60 + 1, 'seconds');
+    
+    // Verify the time skip worked
+    const expectedTime = timeBefore + BigInt(7 * 24 * 60 * 60 + 1);
+    expect(timeAfter).to.equal(expectedTime);
+    console.log('✅ Time skip verification passed!');
+
+    console.log('\n💡 Usage in Hardhat console:');
+    console.log('   1. npx hardhat console --network localhost');
+    console.log('   2. const { time } = require("@nomicfoundation/hardhat-network-helpers");');
+    console.log('   3. await time.increase(7 * 24 * 60 * 60 + 1);');
+
+    console.log('\n✅ TIME SKIP TEST PASSED! 🎉');
+    console.log('='.repeat(60));
   });
 
   it('🔍 Simple Test: Get Property Name and Verify Contract Functions', async function () {
@@ -698,6 +806,129 @@ describe('Complete Property Workflow Test', function () {
 
     console.log('\n✅ SIMPLE TEST PASSED! 🎉');
     console.log('='.repeat(60));
+  });
+
+  it('💰 Test Rent Income Distribution (New Contract Logic)', async function () {
+    console.log('\n' + '='.repeat(80));
+    console.log('💰 RENT INCOME DISTRIBUTION TEST');
+    console.log('='.repeat(80));
+
+    // Create property and setup
+    console.log('\n📋 Setting up property for income distribution test...');
+    const createTx = await propertyRegistry.connect(platformOwner).createProperty(
+      'Test Property for Income Distribution',
+      DEPOSIT_CAP,
+      await oftUSDC.getAddress()
+    );
+    const receipt = await createTx.wait();
+    
+    const propertyCreatedEvent = receipt?.logs.find(
+      (log: any) => log.fragment?.name === 'PropertyCreated'
+    );
+    const vaultAddress = propertyCreatedEvent?.args?.vault;
+    const propertyId = propertyCreatedEvent?.args?.propertyId;
+    
+    const testVault = await ethers.getContractAt('PropertyVaultGovernance', vaultAddress);
+    
+    // Deploy DAO and link
+    const PropertyDAO = await ethers.getContractFactory('PropertyDAO');
+    const testDAO = await PropertyDAO.deploy(vaultAddress, platformOwner.address);
+    await testDAO.waitForDeployment();
+    await testVault.connect(platformOwner).setDAO(await testDAO.getAddress());
+    
+    // Set funding target and complete funding
+    const fundingDeadline = (await time.latest()) + 30 * 24 * 60 * 60;
+    await testDAO.connect(platformOwner).setFundingTarget(FUNDING_TARGET, fundingDeadline);
+    
+    // Investor deposits (this will trigger auto-creation of proposal when funding target is reached)
+    const investorAmount = ethers.parseUnits('100000', USDC_DECIMALS); // 100K USDC to reach funding target
+    await mockUSDC.connect(platformOwner).mint(investor1.address, investorAmount);
+    await mockUSDC.connect(investor1).approve(await oftAdapter.getAddress(), investorAmount);
+    
+    const options = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
+    const sendParam = [2, ethers.zeroPadValue(investor1.address, 32), investorAmount, investorAmount, options, '0x', '0x'];
+    const [nativeFee] = await oftAdapter.quoteSend(sendParam, false);
+    await oftAdapter.connect(investor1).send(sendParam, [nativeFee, 0n], investor1.address, { value: nativeFee });
+    
+    const oftAmount = investorAmount * BigInt(10 ** 12);
+    await oftUSDC.connect(investor1).approve(vaultAddress, oftAmount);
+    await testVault.connect(investor1).deposit(oftAmount, investor1.address);
+    
+    // Check that proposal was auto-created
+    const proposalCount = await testDAO.proposalCount();
+    console.log('✅ Proposal count after funding:', proposalCount);
+    expect(proposalCount).to.be.greaterThan(0);
+    
+    // Vote on the proposal
+    console.log('🗳️ Voting on proposal...');
+    await testDAO.connect(investor1).vote(1, true);
+    console.log('✅ Investor 1 voted YES');
+    
+    // Complete property purchase (need to wait for 7-day deadline)
+    console.log('⏭️ Fast forwarding past 7-day voting deadline...');
+    await time.increase(7 * 24 * 60 * 60 + 1);
+    
+    await testDAO.connect(platformOwner).executeProposal(1);
+    await testDAO.connect(platformOwner).completePropertyPurchase('Test Property Address');
+    
+    // Harvest rent
+    const rentAmount = ethers.parseUnits('10000', USDC_DECIMALS);
+    await mockUSDC.connect(platformOwner).mint(platformOwner.address, rentAmount);
+    await mockUSDC.connect(platformOwner).approve(await oftAdapter.getAddress(), rentAmount);
+    
+    const rentOptions = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
+    const rentSendParam = [2, ethers.zeroPadValue(platformOwner.address, 32), rentAmount, rentAmount, rentOptions, '0x', '0x'];
+    const [rentNativeFee] = await oftAdapter.quoteSend(rentSendParam, false);
+    await oftAdapter.connect(platformOwner).send(rentSendParam, [rentNativeFee, 0n], platformOwner.address, { value: rentNativeFee });
+    
+    const rentAmountOFT = rentAmount * BigInt(10 ** 12);
+    await oftUSDC.connect(platformOwner).approve(vaultAddress, rentAmountOFT);
+    await testVault.connect(platformOwner).harvestRent(rentAmountOFT);
+    
+    console.log('✅ Rent harvested:', ethers.formatUnits(rentAmountOFT, 18), 'USDC');
+
+    // Test income distribution
+    console.log('\n📍 Testing Income Distribution...');
+    
+    const totalRentHarvested = await testVault.totalRentHarvested();
+    const totalIncomeDistributedBefore = await (testVault as any).totalIncomeDistributed();
+    const maxWithdrawable = await testVault.getMaxWithdrawable(investor1.address);
+    
+    console.log('   - Total rent harvested:', ethers.formatUnits(totalRentHarvested, 18), 'USDC');
+    console.log('   - Total income distributed before:', ethers.formatUnits(totalIncomeDistributedBefore, 18), 'USDC');
+    console.log('   - Max withdrawable:', ethers.formatUnits(maxWithdrawable, 18), 'USDC');
+    
+    // Withdraw income
+    const sharesBefore = await testVault.balanceOf(investor1.address);
+    const usdcBefore = await oftUSDC.balanceOf(investor1.address);
+    
+    await testVault.connect(investor1).withdraw(maxWithdrawable, investor1.address, investor1.address);
+    
+    const sharesAfter = await testVault.balanceOf(investor1.address);
+    const usdcAfter = await oftUSDC.balanceOf(investor1.address);
+    const totalIncomeDistributedAfter = await (testVault as any).totalIncomeDistributed();
+    
+    console.log('\n📊 Results:');
+    console.log('   - USDC received:', ethers.formatUnits(usdcAfter - usdcBefore, 18), 'USDC');
+    console.log('   - Shares before:', ethers.formatUnits(sharesBefore, 18));
+    console.log('   - Shares after:', ethers.formatUnits(sharesAfter, 18));
+    console.log('   - Shares preserved:', sharesBefore.toString() === sharesAfter.toString());
+    console.log('   - Total income distributed after:', ethers.formatUnits(totalIncomeDistributedAfter, 18), 'USDC');
+    
+    // Verify results
+    expect(sharesBefore).to.equal(sharesAfter);
+    expect(totalIncomeDistributedAfter).to.equal(totalIncomeDistributedBefore + maxWithdrawable);
+    expect(usdcAfter - usdcBefore).to.equal(maxWithdrawable);
+    
+    console.log('✅ All income distribution tests passed!');
+    
+    // Test that maxWithdrawable is now 0
+    const maxWithdrawableAfter = await testVault.getMaxWithdrawable(investor1.address);
+    expect(maxWithdrawableAfter).to.equal(0);
+    console.log('✅ Max withdrawable correctly set to 0 after full withdrawal');
+    
+    console.log('\n✅ RENT INCOME DISTRIBUTION TEST PASSED! 🎉');
+    console.log('='.repeat(80));
   });
 });
 

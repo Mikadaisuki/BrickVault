@@ -46,6 +46,7 @@ interface Proposal {
   votesFor: bigint
   votesAgainst: bigint
   status: string
+  canExecute: boolean
 }
 
 export default function ManagementPage() {
@@ -64,6 +65,7 @@ export default function ManagementPage() {
   const [showPropertyModal, setShowPropertyModal] = useState(false)
   const [propertyProposals, setPropertyProposals] = useState<Proposal[]>([])
   const [loadingProposals, setLoadingProposals] = useState(false)
+  const [proposalExecutable, setProposalExecutable] = useState<boolean>(false)
   
   // Property creation modal state
   const [showCreateModal, setShowCreateModal] = useState(false)
@@ -88,11 +90,32 @@ export default function ManagementPage() {
   const [rentAmount, setRentAmount] = useState('')
   const [navUpdateAmount, setNavUpdateAmount] = useState('')
   const [propertyAddress, setPropertyAddress] = useState('')
+  
+  // Rent harvest modal state
+  const [showRentModal, setShowRentModal] = useState(false)
+  const [selectedPropertyForRent, setSelectedPropertyForRent] = useState<PropertyData | null>(null)
+  const [rentHarvestAmount, setRentHarvestAmount] = useState('')
+  const [isHarvestingRent, setIsHarvestingRent] = useState(false)
+  const [isApprovingRent, setIsApprovingRent] = useState(false)
+  const [rentApprovalStatus, setRentApprovalStatus] = useState<'none' | 'approving' | 'approved'>('none')
+  const [rentStep, setRentStep] = useState<'idle' | 'approving' | 'approved' | 'harvesting'>('idle')
+  const [rentApprovalHash, setRentApprovalHash] = useState<`0x${string}` | undefined>()
+  
+  // NAV update modal state
+  const [showNavModal, setShowNavModal] = useState(false)
+  const [selectedPropertyForNav, setSelectedPropertyForNav] = useState<PropertyData | null>(null)
+  const [navUpdateValue, setNavUpdateValue] = useState('')
+  const [isUpdatingNav, setIsUpdatingNav] = useState(false)
 
   const registryAddress = CONTRACT_ADDRESSES.PropertyRegistry
   const propertyDAOAddress = CONTRACT_ADDRESSES.PropertyDAO
-  const { writeContract, writeContractAsync } = useWriteContract()
+  const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract()
   const publicClient = usePublicClient()
+  
+  // Track rent approval transaction separately
+  const { isLoading: isRentApprovalConfirming, isSuccess: isRentApprovalConfirmed } = useWaitForTransactionReceipt({
+    hash: rentApprovalHash,
+  })
 
   // Get contract owner
   const { data: owner, isLoading: ownerLoading } = useReadContract({
@@ -325,6 +348,36 @@ export default function ManagementPage() {
     }
   }, [mounted, propertyCount, publicClient])
 
+  // Track rent approval transaction hash when it's created
+  useEffect(() => {
+    if (hash && rentStep === 'approving') {
+      setRentApprovalHash(hash)
+    }
+  }, [hash, rentStep])
+
+  // Auto-trigger rent harvest after approval is confirmed
+  useEffect(() => {
+    if (isRentApprovalConfirmed && rentStep === 'approving') {
+      setRentStep('approved')
+      // Proceed to rent harvest after approval is confirmed
+      setTimeout(() => {
+        handleHarvestRent()
+      }, 100) // Minimal delay to ensure state updates are processed
+    }
+  }, [isRentApprovalConfirmed, rentStep])
+
+  // Reset rent step when transaction is completed or there's an error
+  useEffect(() => {
+    if (isPending === false && rentStep === 'harvesting') {
+      setRentStep('idle')
+      setRentApprovalHash(undefined)
+    }
+    if (error) {
+      setRentStep('idle')
+      setRentApprovalHash(undefined)
+    }
+  }, [isPending, error, rentStep])
+
   // Check if property is funded (reached deposit cap)
   const isPropertyFunded = (totalDeposited: bigint | undefined, depositCap: bigint | undefined): boolean => {
     if (!totalDeposited || !depositCap) return false
@@ -387,6 +440,7 @@ export default function ManagementPage() {
 
 
       const proposals: Proposal[] = []
+      let hasExecutableProposal = false
       
       // Fetch all proposals (in a real implementation, you might want to filter by property)
       for (let i = 1; i <= Number(proposalCount); i++) {
@@ -402,6 +456,24 @@ export default function ManagementPage() {
             // The proposal is returned as a struct array: [id, proposer, proposalType, description, deadline, votesFor, votesAgainst, executed, status, data]
             const [id, proposer, proposalType, description, deadline, votesFor, votesAgainst, executed, status, data] = proposal
             
+            // Check if this proposal is executable
+            let canExecute = false
+            try {
+              canExecute = await publicClient.readContract({
+                address: property.daoAddress as `0x${string}`,
+                abi: PROPERTY_DAO_ABI,
+                functionName: 'canExecute',
+                args: [i],
+              }) as boolean
+              
+              if (canExecute) {
+                hasExecutableProposal = true
+              }
+            } catch (error) {
+              // canExecute function might not be available or proposal might not be executable
+              canExecute = false
+            }
+            
             const proposalData = {
               id: Number(id), // Use the actual proposal ID from the contract
               proposer: proposer || '',
@@ -413,7 +485,8 @@ export default function ManagementPage() {
               votesAgainst: votesAgainst || BigInt(0),
               status: Number(status) === 0 ? 'Active' : 
                      Number(status) === 1 ? 'Executed' :
-                     Number(status) === 2 ? 'Rejected' : 'Expired'
+                     Number(status) === 2 ? 'Rejected' : 'Expired',
+              canExecute: canExecute
             }
             proposals.push(proposalData)
           }
@@ -423,8 +496,10 @@ export default function ManagementPage() {
       }
       
       setPropertyProposals(proposals)
+      setProposalExecutable(hasExecutableProposal)
     } catch (error) {
       setPropertyProposals([])
+      setProposalExecutable(false)
     } finally {
       setLoadingProposals(false)
     }
@@ -745,6 +820,7 @@ export default function ManagementPage() {
   }
 
 
+
   // Function to execute proposal
   const handleExecuteProposal = async (proposalId: number, daoAddress: string) => {
     if (!isOwner) return
@@ -808,73 +884,197 @@ export default function ManagementPage() {
     }
   }
 
-  // Function to harvest rent
-  const handleHarvestRent = async (vaultAddress: string) => {
-    if (!isOwner) return
+  // Function to open rent harvest modal
+  const handleOpenRentModal = (property: PropertyData) => {
+    setSelectedPropertyForRent(property)
+    setRentHarvestAmount('')
+    setRentApprovalStatus('none')
+    setRentStep('idle')
+    setRentApprovalHash(undefined)
+    setShowRentModal(true)
+  }
 
-    const amount = prompt('Enter rent amount to harvest (in OFTUSDC):')
-    if (!amount || isNaN(Number(amount))) {
+  // Combined function: Approve OFTUSDC then harvest rent
+  const approveAndHarvestRent = async () => {
+    if (!isOwner || !selectedPropertyForRent || !rentHarvestAmount) return
+
+    if (isNaN(Number(rentHarvestAmount)) || Number(rentHarvestAmount) <= 0) {
+      alert('Please enter a valid amount')
+      return
+    }
+
+    // Check if we already have sufficient allowance
+    // For now, we'll always approve first, but this could be enhanced to check current allowance
+    setRentStep('approving')
+    setRentApprovalStatus('approving')
+    setIsApprovingRent(true)
+    
+    const amountInWei = BigInt(Number(rentHarvestAmount) * 1e18)
+    
+    try {
+      await writeContractAsync({
+        address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
+        abi: [
+          {
+            "inputs": [
+              {"internalType": "address", "name": "spender", "type": "address"},
+              {"internalType": "uint256", "name": "amount", "type": "uint256"}
+            ],
+            "name": "approve",
+            "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+            "stateMutability": "nonpayable",
+            "type": "function"
+          }
+        ],
+        functionName: 'approve',
+        args: [selectedPropertyForRent.vault as `0x${string}`, amountInWei]
+      })
+      
+      setRentApprovalStatus('approved')
+    } catch (error) {
+      setRentApprovalStatus('none')
+      setRentStep('idle')
+      alert('Failed to approve OFTUSDC. Please try again.')
+    } finally {
+      setIsApprovingRent(false)
+    }
+  }
+
+  // Function to approve OFTUSDC for rent harvest
+  const handleApproveRent = async () => {
+    if (!isOwner || !selectedPropertyForRent || !rentHarvestAmount) return
+
+    if (isNaN(Number(rentHarvestAmount)) || Number(rentHarvestAmount) <= 0) {
       alert('Please enter a valid amount')
       return
     }
 
     try {
-      setLoading(true)
+      setIsApprovingRent(true)
+      setRentApprovalStatus('approving')
+      setRentStep('approving')
       
-      const amountInWei = BigInt(Number(amount) * 1e18)
+      const amountInWei = BigInt(Number(rentHarvestAmount) * 1e18)
       
+      await writeContractAsync({
+        address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
+        abi: [
+          {
+            "inputs": [
+              {"internalType": "address", "name": "spender", "type": "address"},
+              {"internalType": "uint256", "name": "amount", "type": "uint256"}
+            ],
+            "name": "approve",
+            "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+            "stateMutability": "nonpayable",
+            "type": "function"
+          }
+        ],
+        functionName: 'approve',
+        args: [selectedPropertyForRent.vault as `0x${string}`, amountInWei]
+      })
+      
+      setRentApprovalStatus('approved')
+    } catch (error) {
+      setRentApprovalStatus('none')
+      setRentStep('idle')
+      alert('Failed to approve OFTUSDC. Please try again.')
+    } finally {
+      setIsApprovingRent(false)
+    }
+  }
+
+  // Function to harvest rent
+  const handleHarvestRent = async () => {
+    if (!isOwner || !selectedPropertyForRent || !rentHarvestAmount) return
+
+    if (isNaN(Number(rentHarvestAmount)) || Number(rentHarvestAmount) <= 0) {
+      alert('Please enter a valid amount')
+      return
+    }
+
+    if (rentApprovalStatus !== 'approved') {
+      alert('Please approve OFTUSDC first before harvesting rent')
+      return
+    }
+
+    try {
+      setIsHarvestingRent(true)
+      setRentStep('harvesting')
+      
+      const amountInWei = BigInt(Number(rentHarvestAmount) * 1e18)
+      
+      // Harvest rent (this will transferFrom the caller to the vault)
       const hash = await writeContractAsync({
-        address: vaultAddress as `0x${string}`,
+        address: selectedPropertyForRent.vault as `0x${string}`,
         abi: PROPERTY_VAULT_GOVERNANCE_ABI,
         functionName: 'harvestRent',
         args: [amountInWei]
       })
       
-      alert(`Successfully harvested ${amount} OFTUSDC rent`)
+      alert(`Successfully harvested ${rentHarvestAmount} OFTUSDC rent`)
       
-      // Refresh properties after a short delay
+      // Close modal and refresh properties
+      setShowRentModal(false)
+      setSelectedPropertyForRent(null)
+      setRentHarvestAmount('')
+      setRentApprovalStatus('none')
+      setRentStep('idle')
+      setRentApprovalHash(undefined)
+      
       setTimeout(() => {
         fetchProperties()
       }, 2000)
     } catch (error) {
+      setRentStep('idle')
       alert('Failed to harvest rent. Please try again.')
     } finally {
-      setLoading(false)
+      setIsHarvestingRent(false)
     }
   }
 
-  // Function to update NAV
-  const handleUpdateNAV = async (vaultAddress: string) => {
-    if (!isOwner) return
+  // Function to open NAV update modal
+  const handleOpenNavModal = (property: PropertyData) => {
+    setSelectedPropertyForNav(property)
+    setNavUpdateValue('')
+    setShowNavModal(true)
+  }
 
-    const amount = prompt('Enter NAV update amount (in OFTUSDC):')
-    if (!amount || isNaN(Number(amount))) {
+  // Function to update NAV
+  const handleUpdateNAV = async () => {
+    if (!isOwner || !selectedPropertyForNav || !navUpdateValue) return
+
+    if (isNaN(Number(navUpdateValue))) {
       alert('Please enter a valid amount')
       return
     }
 
     try {
-      setLoading(true)
+      setIsUpdatingNav(true)
       
-      const amountInWei = BigInt(Number(amount) * 1e18)
+      const amountInWei = BigInt(Number(navUpdateValue) * 1e18)
       
       const hash = await writeContractAsync({
-        address: vaultAddress as `0x${string}`,
+        address: selectedPropertyForNav.vault as `0x${string}`,
         abi: PROPERTY_VAULT_GOVERNANCE_ABI,
         functionName: 'updateNAV',
         args: [amountInWei]
       })
       
-      alert(`Successfully updated NAV by ${amount} OFTUSDC`)
+      alert(`Successfully updated NAV by ${navUpdateValue} OFTUSDC`)
       
-      // Refresh properties after a short delay
+      // Close modal and refresh properties
+      setShowNavModal(false)
+      setSelectedPropertyForNav(null)
+      setNavUpdateValue('')
+      
       setTimeout(() => {
         fetchProperties()
       }, 2000)
     } catch (error) {
       alert('Failed to update NAV. Please try again.')
     } finally {
-      setLoading(false)
+      setIsUpdatingNav(false)
     }
   }
 
@@ -1507,6 +1707,11 @@ export default function ManagementPage() {
                   <h3 className="text-xl font-semibold flex items-center">
                     <Vote className="mr-2 h-5 w-5" />
                     Proposals ({propertyProposals.length})
+                    {proposalExecutable && (
+                      <span className="ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                        Executable Available
+                      </span>
+                    )}
                   </h3>
                   {selectedProperty.daoIsFullyFunded && (
                     <div className="flex items-center text-blue-600 text-sm">
@@ -1548,18 +1753,25 @@ export default function ManagementPage() {
                             </div>
                             <p className="text-sm text-muted-foreground mt-1">{proposal.description}</p>
                           </div>
-                          <span className={`px-2 py-1 rounded-full text-xs ${
-                            proposal.status === 'Active' 
-                              ? 'bg-green-100 text-green-800'
-                              : proposal.executed
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-gray-100 text-gray-800'
-                          }`}>
-                            {proposal.status}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-1 rounded-full text-xs ${
+                              proposal.status === 'Active' 
+                                ? 'bg-green-100 text-green-800'
+                                : proposal.executed
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-gray-100 text-gray-800'
+                            }`}>
+                              {proposal.status}
+                            </span>
+                            {proposal.canExecute && (
+                              <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-800">
+                                Executable
+                              </span>
+                            )}
+                          </div>
                         </div>
                         
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
                           <div>
                             <span className="text-muted-foreground">Proposer:</span>
                             <p className="font-mono text-xs">
@@ -1590,6 +1802,60 @@ export default function ManagementPage() {
                             <p className="font-semibold text-red-600">
                               {proposal.votesAgainst ? formatUnits(proposal.votesAgainst, 18) : '0'}
                             </p>
+                          </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="flex items-center justify-between pt-3 border-t">
+                          <div className="flex items-center space-x-2">
+                            {proposal.canExecute && (
+                              <button
+                                onClick={() => handleExecuteProposal(proposal.id, selectedProperty?.daoAddress || '')}
+                                disabled={loading}
+                                className="px-3 py-1 bg-green-100 text-green-800 rounded text-sm hover:bg-green-200 disabled:opacity-50 flex items-center"
+                              >
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Execute Proposal
+                              </button>
+                            )}
+                            {proposal.executed && selectedProperty?.daoStage === 1 && (
+                              <button
+                                onClick={() => handleCompletePropertyPurchase(selectedProperty?.daoAddress || '')}
+                                disabled={loading}
+                                className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-sm hover:bg-blue-200 disabled:opacity-50 flex items-center"
+                              >
+                                <Building2 className="h-3 w-3 mr-1" />
+                                Complete Purchase
+                              </button>
+                            )}
+                          </div>
+                          
+                          {/* Status Indicators */}
+                          <div className="flex items-center space-x-2">
+                            {proposal.canExecute && (
+                              <div className="flex items-center text-sm text-green-600">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                <span>Ready to execute</span>
+                              </div>
+                            )}
+                            {proposal.status === 'Active' && !proposal.canExecute && (
+                              <div className="flex items-center text-sm text-muted-foreground">
+                                <Clock className="h-3 w-3 mr-1" />
+                                <span>Active - Use Hardhat console to skip time</span>
+                              </div>
+                            )}
+                            {proposal.executed && selectedProperty?.daoStage === 1 && (
+                              <div className="flex items-center text-sm text-blue-600">
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                <span>Ready to complete purchase</span>
+                              </div>
+                            )}
+                            {selectedProperty?.daoStage === 2 && (
+                              <div className="flex items-center text-sm text-green-600">
+                                <Building2 className="h-3 w-3 mr-1" />
+                                <span>Property purchased</span>
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -2048,7 +2314,7 @@ export default function ManagementPage() {
                           </p>
                         </div>
                         <button
-                          onClick={() => handleHarvestRent(property.vault)}
+                          onClick={() => handleOpenRentModal(property)}
                           disabled={loading}
                           className="px-3 py-1 bg-green-100 text-green-800 rounded text-sm hover:bg-green-200 disabled:opacity-50"
                         >
@@ -2086,7 +2352,7 @@ export default function ManagementPage() {
                           </p>
                         </div>
                         <button
-                          onClick={() => handleUpdateNAV(property.vault)}
+                          onClick={() => handleOpenNavModal(property)}
                           disabled={loading || !property.propertyTokenAddress}
                           className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-sm hover:bg-blue-200 disabled:opacity-50"
                         >
@@ -2102,48 +2368,390 @@ export default function ManagementPage() {
                   </div>
                 </div>
 
-                {/* Proposal Management */}
+                {/* Execute Purchase Flow */}
                 <div className="bg-accent rounded-lg p-4 md:col-span-2">
                   <h3 className="font-semibold mb-3 flex items-center">
                     <Vote className="h-5 w-5 mr-2" />
-                    Proposal Management
+                    Execute Purchase Flow
                   </h3>
                   <p className="text-sm text-muted-foreground mb-4">
-                    Execute proposals and complete property purchases.
+                    Complete the property purchase workflow: Execute proposals → Complete purchases → Manage properties.
                   </p>
-                  <div className="space-y-3">
-                    {properties.filter(p => p.daoAddress && p.daoStage === 1).map((property) => (
-                      <div key={property.id} className="p-3 bg-background rounded border">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="font-medium">{property.name}</p>
-                          <span className="px-2 py-1 bg-yellow-100 text-yellow-800 rounded text-xs">
-                            Ready for Purchase
-                          </span>
+                  
+                  {/* Step-by-step flow */}
+                  <div className="space-y-4">
+                    {/* Step 1: Execute Proposals */}
+                    <div className="bg-background rounded border p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center">
+                          <div className="w-6 h-6 bg-blue-100 text-blue-800 rounded-full flex items-center justify-center text-xs font-semibold mr-3">
+                            1
+                          </div>
+                          <h4 className="font-medium">Execute Purchase Proposals</h4>
                         </div>
-                        <div className="flex space-x-2">
-                          <button
-                            onClick={() => handleExecuteProposal(1, property.daoAddress!)}
-                            disabled={loading}
-                            className="px-3 py-1 bg-green-100 text-green-800 rounded text-sm hover:bg-green-200 disabled:opacity-50"
-                          >
-                            Execute Proposal
-                          </button>
-                          <button
-                            onClick={() => handleCompletePropertyPurchase(property.daoAddress!)}
-                            disabled={loading}
-                            className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-sm hover:bg-blue-200 disabled:opacity-50"
-                          >
-                            Complete Purchase
-                          </button>
-                        </div>
+                        <span className="text-xs text-muted-foreground">Use Hardhat console to skip time</span>
                       </div>
-                    ))}
-                    {properties.filter(p => p.daoAddress && p.daoStage === 1).length === 0 && (
-                      <p className="text-sm text-muted-foreground text-center py-4">
-                        No properties ready for purchase
-                      </p>
+                      <div className="space-y-2">
+                        {properties.filter(p => p.daoAddress && p.daoStage === 1).map((property) => (
+                          <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
+                            <div className="flex items-center">
+                              <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
+                              <span className="text-sm font-medium">{property.name}</span>
+                            </div>
+                            <div className="flex space-x-2">
+                              <button
+                                onClick={() => handleExecuteProposal(1, property.daoAddress!)}
+                                disabled={loading}
+                                className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs hover:bg-green-200 disabled:opacity-50 flex items-center"
+                              >
+                                <CheckCircle className="h-3 w-3 mr-1" />
+                                Execute
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {properties.filter(p => p.daoAddress && p.daoStage === 1).length === 0 && (
+                          <p className="text-sm text-muted-foreground text-center py-2">
+                            No properties ready for proposal execution
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Step 2: Complete Purchases */}
+                    <div className="bg-background rounded border p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center">
+                          <div className="w-6 h-6 bg-green-100 text-green-800 rounded-full flex items-center justify-center text-xs font-semibold mr-3">
+                            2
+                          </div>
+                          <h4 className="font-medium">Complete Property Purchases</h4>
+                        </div>
+                        <span className="text-xs text-muted-foreground">After proposal execution</span>
+                      </div>
+                      <div className="space-y-2">
+                        {properties.filter(p => p.daoAddress && p.daoStage === 1).map((property) => (
+                          <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
+                            <div className="flex items-center">
+                              <Building2 className="h-4 w-4 mr-2 text-muted-foreground" />
+                              <span className="text-sm font-medium">{property.name}</span>
+                            </div>
+                            <button
+                              onClick={() => handleCompletePropertyPurchase(property.daoAddress!)}
+                              disabled={loading}
+                              className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 disabled:opacity-50 flex items-center"
+                            >
+                              <Building2 className="h-3 w-3 mr-1" />
+                              Complete Purchase
+                            </button>
+                          </div>
+                        ))}
+                        {properties.filter(p => p.daoAddress && p.daoStage === 1).length === 0 && (
+                          <p className="text-sm text-muted-foreground text-center py-2">
+                            No properties ready for purchase completion
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Step 3: Under Management */}
+                    <div className="bg-background rounded border p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center">
+                          <div className="w-6 h-6 bg-purple-100 text-purple-800 rounded-full flex items-center justify-center text-xs font-semibold mr-3">
+                            3
+                          </div>
+                          <h4 className="font-medium">Properties Under Management</h4>
+                        </div>
+                        <span className="text-xs text-muted-foreground">Ready for rent & NAV</span>
+                      </div>
+                      <div className="space-y-2">
+                        {properties.filter(p => p.daoStage === 2).map((property) => (
+                          <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
+                            <div className="flex items-center">
+                              <Building2 className="h-4 w-4 mr-2 text-green-600" />
+                              <span className="text-sm font-medium">{property.name}</span>
+                              {property.propertyAddress && (
+                                <span className="text-xs text-muted-foreground ml-2">
+                                  ({property.propertyAddress})
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
+                                Under Management
+                              </span>
+                              <button
+                                onClick={() => handleOpenRentModal(property)}
+                                disabled={loading}
+                                className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs hover:bg-green-200 disabled:opacity-50"
+                              >
+                                Harvest Rent
+                              </button>
+                              <button
+                                onClick={() => handleOpenNavModal(property)}
+                                disabled={loading}
+                                className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 disabled:opacity-50"
+                              >
+                                Update NAV
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        {properties.filter(p => p.daoStage === 2).length === 0 && (
+                          <p className="text-sm text-muted-foreground text-center py-2">
+                            No properties under management yet
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rent Harvest Modal */}
+      {showRentModal && selectedPropertyForRent && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <DollarSign className="h-5 w-5 mr-2 text-green-600" />
+                  Harvest Rent
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowRentModal(false)
+                    setSelectedPropertyForRent(null)
+                    setRentHarvestAmount('')
+                  }}
+                  className="p-2 hover:bg-accent rounded-md transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-accent rounded-lg p-4">
+                  <h3 className="font-medium mb-2">{selectedPropertyForRent.name}</h3>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <p>Vault: {selectedPropertyForRent.vault.slice(0, 6)}...{selectedPropertyForRent.vault.slice(-4)}</p>
+                    <p>Current Rent Harvested: {formatUnits(selectedPropertyForRent.totalRentHarvested, 18)} OFTUSDC</p>
+                    {selectedPropertyForRent.propertyAddress && (
+                      <p>Property: {selectedPropertyForRent.propertyAddress}</p>
                     )}
                   </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Rent Amount (OFTUSDC) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={rentHarvestAmount}
+                      onChange={(e) => setRentHarvestAmount(e.target.value)}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200 pr-12"
+                      required
+                    />
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">
+                      OFTUSDC
+                    </div>
+                  </div>
+                  {rentHarvestAmount && Number(rentHarvestAmount) > 0 && (
+                    <p className="text-sm text-green-600 mt-1">
+                      ≈ ${(Number(rentHarvestAmount) * 1).toLocaleString()} USD
+                    </p>
+                  )}
+                  {rentHarvestAmount && (isNaN(Number(rentHarvestAmount)) || Number(rentHarvestAmount) <= 0) && (
+                    <p className="text-sm text-red-500 mt-1">Please enter a valid amount</p>
+                  )}
+                </div>
+
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                  <div className="flex items-start">
+                    <AlertTriangle className="h-4 w-4 text-blue-600 mr-2 mt-0.5" />
+                    <div className="text-sm text-blue-800">
+                      <p className="font-medium">Important:</p>
+                      <p>You need OFTUSDC tokens in your wallet. First approve the vault to spend your tokens, then harvest rent to transfer them to the vault as income.</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Status indicator */}
+                {rentStep !== 'idle' && (
+                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      {rentStep === 'approving' && (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                          <span className="text-sm text-blue-800">
+                            {isPending ? 'Step 1: Approving OFTUSDC... Please confirm the transaction in your wallet.' :
+                             isRentApprovalConfirming ? 'Step 1: Waiting for approval confirmation on-chain...' :
+                             'Step 1: Approving OFTUSDC...'}
+                          </span>
+                        </>
+                      )}
+                      {rentStep === 'approved' && (
+                        <>
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <span className="text-sm text-green-800">Step 1 Complete: OFTUSDC approved! Now harvesting rent...</span>
+                        </>
+                      )}
+                      {rentStep === 'harvesting' && (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                          <span className="text-sm text-blue-800">Step 2: Harvesting rent... Please confirm the transaction in your wallet.</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-between space-x-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowRentModal(false)
+                      setSelectedPropertyForRent(null)
+                      setRentHarvestAmount('')
+                      setRentApprovalStatus('none')
+                      setRentStep('idle')
+                      setRentApprovalHash(undefined)
+                    }}
+                    disabled={isPending || isRentApprovalConfirming}
+                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  
+                  <button
+                    onClick={approveAndHarvestRent}
+                    disabled={isPending || isRentApprovalConfirming || !rentHarvestAmount || isNaN(Number(rentHarvestAmount)) || Number(rentHarvestAmount) <= 0}
+                    className="px-6 py-3 bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 transition-all duration-200 font-semibold"
+                  >
+                    {rentStep === 'approving' && isPending ? 'Approving OFTUSDC...' :
+                     rentStep === 'approved' && isPending ? 'Harvesting Rent...' :
+                     isPending ? 'Processing...' :
+                     'Approve & Harvest Rent'}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* NAV Update Modal */}
+      {showNavModal && selectedPropertyForNav && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <TrendingUp className="h-5 w-5 mr-2 text-blue-600" />
+                  Update NAV
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowNavModal(false)
+                    setSelectedPropertyForNav(null)
+                    setNavUpdateValue('')
+                  }}
+                  className="p-2 hover:bg-accent rounded-md transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-accent rounded-lg p-4">
+                  <h3 className="font-medium mb-2">{selectedPropertyForNav.name}</h3>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <p>Vault: {selectedPropertyForNav.vault.slice(0, 6)}...{selectedPropertyForNav.vault.slice(-4)}</p>
+                    {selectedPropertyForNav.propertyTokenAddress && (
+                      <p>Property Token: {selectedPropertyForNav.propertyTokenAddress.slice(0, 6)}...{selectedPropertyForNav.propertyTokenAddress.slice(-4)}</p>
+                    )}
+                    {selectedPropertyForNav.propertyAddress && (
+                      <p>Property: {selectedPropertyForNav.propertyAddress}</p>
+                    )}
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    NAV Change (OFTUSDC) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={navUpdateValue}
+                      onChange={(e) => setNavUpdateValue(e.target.value)}
+                      placeholder="0.00"
+                      step="0.01"
+                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 pr-12"
+                      required
+                    />
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">
+                      OFTUSDC
+                    </div>
+                  </div>
+                  {navUpdateValue && !isNaN(Number(navUpdateValue)) && (
+                    <p className="text-sm text-blue-600 mt-1">
+                      {Number(navUpdateValue) >= 0 ? '+' : ''}${(Number(navUpdateValue) * 1).toLocaleString()} USD
+                    </p>
+                  )}
+                  {navUpdateValue && isNaN(Number(navUpdateValue)) && (
+                    <p className="text-sm text-red-500 mt-1">Please enter a valid number</p>
+                  )}
+                </div>
+
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3">
+                  <div className="flex items-start">
+                    <AlertTriangle className="h-4 w-4 text-amber-600 mr-2 mt-0.5" />
+                    <div className="text-sm text-amber-800">
+                      <p className="font-medium">NAV Update:</p>
+                      <p>Positive values increase property value (appreciation), negative values decrease it (depreciation). This affects the PropertyToken's totalSupply.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowNavModal(false)
+                      setSelectedPropertyForNav(null)
+                      setNavUpdateValue('')
+                    }}
+                    disabled={isUpdatingNav}
+                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleUpdateNAV}
+                    disabled={isUpdatingNav || !navUpdateValue || isNaN(Number(navUpdateValue))}
+                    className="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
+                  >
+                    {isUpdatingNav ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Updating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <TrendingUp className="h-4 w-4" />
+                        <span>Update NAV</span>
+                      </>
+                    )}
+                  </button>
                 </div>
               </div>
             </div>

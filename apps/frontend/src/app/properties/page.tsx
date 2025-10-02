@@ -78,6 +78,7 @@ export default function PropertiesPage() {
   const [showInvestmentModal, setShowInvestmentModal] = useState(false)
   const [investmentAmount, setInvestmentAmount] = useState('')
   const [isInvesting, setIsInvesting] = useState(false)
+  const [investmentStep, setInvestmentStep] = useState<'idle' | 'approving' | 'approved' | 'investing'>('idle')
 
   const { address, isConnected } = useAccount()
   const chainId = useChainId()
@@ -86,6 +87,16 @@ export default function PropertiesPage() {
   const publicClient = usePublicClient()
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash: hash as `0x${string}` | undefined,
+  })
+  
+  // Type assertion to fix ReactNode issue
+  const isConfirmedTyped = Boolean(isConfirmed) as boolean
+  const isConfirmedSuccess = Boolean(isConfirmed)
+  
+  // Track investment approval transaction separately
+  const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>()
+  const { isLoading: isApprovalConfirming, isSuccess: isApprovalConfirmed } = useWaitForTransactionReceipt({
+    hash: approvalHash,
   })
   
   // Type assertion to fix ReactNode issue
@@ -133,6 +144,36 @@ export default function PropertiesPage() {
   useEffect(() => {
     setMounted(true)
   }, [])
+
+  // Track approval transaction hash when it's created
+  useEffect(() => {
+    if (hash && investmentStep === 'approving') {
+      setApprovalHash(hash)
+    }
+  }, [hash, investmentStep])
+
+  // Auto-trigger investment after approval is confirmed
+  useEffect(() => {
+    if (isApprovalConfirmed && investmentStep === 'approving') {
+      setInvestmentStep('approved')
+      // Proceed to investment after approval is confirmed
+      setTimeout(() => {
+        depositToVault()
+      }, 100) // Minimal delay to ensure state updates are processed
+    }
+  }, [isApprovalConfirmed, investmentStep])
+
+  // Reset investment step when transaction is completed or there's an error
+  useEffect(() => {
+    if (isConfirmed && investmentStep === 'investing') {
+      setInvestmentStep('idle')
+      setApprovalHash(undefined)
+    }
+    if (error) {
+      setInvestmentStep('idle')
+      setApprovalHash(undefined)
+    }
+  }, [isConfirmed, error, investmentStep])
 
   // Timeout fallback to prevent infinite loading
   useEffect(() => {
@@ -220,6 +261,7 @@ export default function PropertiesPage() {
     
     const amount = parseUnits(investmentAmount, TOKEN_DECIMALS.OFTUSDC)
     
+    setInvestmentStep('approving')
     console.log('🔐 Approving OFTUSDC for investment:');
     console.log('  - Amount:', investmentAmount, 'OFTUSDC');
     console.log('  - Vault Address:', selectedProperty.vaultAddress);
@@ -239,6 +281,7 @@ export default function PropertiesPage() {
     
     const amount = parseUnits(investmentAmount, TOKEN_DECIMALS.OFTUSDC)
     
+    setInvestmentStep('investing')
     console.log('💰 Depositing to vault:');
     console.log('  - Amount:', investmentAmount, 'OFTUSDC');
     console.log('  - Vault Address:', selectedProperty.vaultAddress);
@@ -264,6 +307,34 @@ export default function PropertiesPage() {
     setShowInvestmentModal(false)
     setSelectedProperty(null)
     setInvestmentAmount('')
+    setInvestmentStep('idle')
+    setApprovalHash(undefined)
+  }
+
+  // Combined function: Approve OFTUSDC then invest
+  const approveAndInvest = async () => {
+    if (!investmentAmount || !selectedProperty) return
+    
+    const amount = parseUnits(investmentAmount, TOKEN_DECIMALS.OFTUSDC)
+    
+    // Check if we already have sufficient allowance
+    const currentAllowance = oftAllowance as bigint || BigInt(0)
+    if (currentAllowance >= amount) {
+      // We already have enough allowance, proceed directly to invest
+      setInvestmentStep('investing')
+      await depositToVault()
+      return
+    }
+    
+    // Step 1: Approve OFTUSDC
+    setInvestmentStep('approving')
+    writeContract({
+      address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
+      abi: OFT_USDC_ABI,
+      functionName: 'approve',
+      args: [selectedProperty.vaultAddress as `0x${string}`, amount],
+      gas: BigInt(100000),
+    })
   }
 
 
@@ -1065,29 +1136,59 @@ export default function PropertiesPage() {
                 </div>
 
                 {/* Transaction Status */}
-                {isPending ? (
+                {(isPending || isConfirming) && (
                   <div className="bg-accent border border-border rounded-lg p-4 mb-4">
                     <div className="flex items-center">
                       <Loader2 className="animate-spin h-4 w-4 text-primary mr-3" />
                       <span className="text-foreground">Transaction pending...</span>
                     </div>
                   </div>
-                ) : null}
+                )}
 
-                {isConfirmedBool && (
+                {isConfirmed === true ? (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                     <div className="flex items-center">
                       <CheckCircle className="h-4 w-4 text-green-600 mr-3" />
                       <span className="text-green-800">Investment successful!</span>
                     </div>
                   </div>
-                )}
+                ) : null}
 
                 {error && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
                     <div className="flex items-center">
                       <AlertCircle className="h-4 w-4 text-red-600 mr-3" />
-                      <span className="text-red-800">Error: {String(error)}</span>
+                      <span className="text-red-800">Error: {error.message || String(error)}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Status indicator */}
+                {investmentStep !== 'idle' && (
+                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                    <div className="flex items-center gap-2">
+                      {investmentStep === 'approving' && (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                          <span className="text-sm text-blue-800">
+                            {isPending ? 'Step 1: Approving OFTUSDC... Please confirm the transaction in your wallet.' :
+                             isApprovalConfirming ? 'Step 1: Waiting for approval confirmation on-chain...' :
+                             'Step 1: Approving OFTUSDC...'}
+                          </span>
+                        </>
+                      )}
+                      {investmentStep === 'approved' && (
+                        <>
+                          <CheckCircle className="h-4 w-4 text-green-600" />
+                          <span className="text-sm text-green-800">Step 1 Complete: OFTUSDC approved! Now investing...</span>
+                        </>
+                      )}
+                      {investmentStep === 'investing' && (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                          <span className="text-sm text-blue-800">Step 2: Investing in property... Please confirm the transaction in your wallet.</span>
+                        </>
+                      )}
                     </div>
                   </div>
                 )}
@@ -1095,18 +1196,14 @@ export default function PropertiesPage() {
                 {/* Action Buttons */}
                 <div className="flex gap-3">
                   <button
-                    onClick={approveOFTUSDC}
-                    disabled={isPending || !investmentAmount}
-                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
+                    onClick={approveAndInvest}
+                    disabled={isPending || isApprovalConfirming || !investmentAmount}
+                    className="flex-1 px-6 py-3 bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 transition-all duration-200 font-semibold"
                   >
-                    {isPending ? 'Approving...' : 'Approve OFTUSDC'}
-                  </button>
-                  <button
-                    onClick={depositToVault}
-                    disabled={isPending || !investmentAmount}
-                    className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors"
-                  >
-                    {isPending ? 'Investing...' : 'Invest Now'}
+                    {investmentStep === 'approving' && isPending ? 'Approving OFTUSDC...' :
+                     investmentStep === 'approved' && isPending ? 'Investing...' :
+                     isPending ? 'Processing...' :
+                     'Approve & Invest Now'}
                   </button>
                 </div>
 

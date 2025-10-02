@@ -152,7 +152,7 @@ async function main() {
 
   // 8.7. Set funding target to trigger automatic proposal creation when reached
   console.log('\n8️⃣.7️⃣ Setting funding target...');
-  const FUNDING_TARGET = ethers.parseUnits('5000', 18); // 5K OFTUSDC target
+  const FUNDING_TARGET = ethers.parseUnits('10000', 18); // 5K OFTUSDC target
   const FUNDING_DEADLINE = Math.floor(Date.now() / 1000) + (30 * 24 * 60 * 60); // 30 days from now
   await propertyDAO.setFundingTarget(FUNDING_TARGET, FUNDING_DEADLINE);
   console.log('✅ Funding target set to:', ethers.formatUnits(FUNDING_TARGET, 18), 'OFTUSDC');

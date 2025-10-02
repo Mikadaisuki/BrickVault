@@ -32,6 +32,11 @@ contract PropertyVault is VaultBase {
     uint256 public totalRentHarvested;
     uint256 public totalNAVChanges;
     uint256 public lastRentHarvest;
+    
+    // Period management for income distribution
+    uint256 public currentPeriodIncome;
+    uint256 public currentPeriodDistributed;
+    mapping(address => uint256) public userPeriodWithdrawn;
     uint256 public lastNAVUpdate;
     uint256 public totalIncomeHarvested;
     uint256 public originalPrincipal;
@@ -70,6 +75,14 @@ contract PropertyVault is VaultBase {
     function harvestRent(uint256 amount) external onlyOwner {
         require(amount > 0, 'PropertyVault: amount must be positive');
         
+        // Reset period when new income is harvested
+        if (currentPeriodDistributed > 0) {
+            // Previous period was fully distributed, reset for new period
+            currentPeriodIncome = 0;
+            currentPeriodDistributed = 0;
+            // Note: userPeriodWithdrawn mapping will be reset implicitly as new period starts
+        }
+        
         // Transfer assets from caller to vault
         IERC20(asset()).transferFrom(msg.sender, address(this), amount);
         
@@ -83,6 +96,9 @@ contract PropertyVault is VaultBase {
         uint256 currentIncomeHarvested = totalIncomeHarvested;
         require(currentIncomeHarvested <= type(uint256).max - amount, 'PropertyVault: income harvested overflow');
         totalIncomeHarvested = currentIncomeHarvested + amount;
+        
+        // Set current period income
+        currentPeriodIncome = amount;
         
         emit Harvest(amount, totalAssets());
         emit RentHarvested(amount, totalAssets(), propertyId);

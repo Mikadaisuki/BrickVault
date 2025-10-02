@@ -57,9 +57,24 @@ export default function InvestmentsPage() {
   const [selectedInvestment, setSelectedInvestment] = useState<UserInvestment | null>(null)
   const [showInvestmentModal, setShowInvestmentModal] = useState(false)
 
+  // Rent withdrawal state
+  const [withdrawalAmount, setWithdrawalAmount] = useState('')
+  const [maxWithdrawable, setMaxWithdrawable] = useState<bigint>(BigInt(0))
+  const [withdrawalStep, setWithdrawalStep] = useState<'idle' | 'withdrawing' | 'confirming' | 'success' | 'error'>('idle')
+  const [withdrawalHash, setWithdrawalHash] = useState<string | null>(null)
+  const [isWithdrawing, setIsWithdrawing] = useState(false)
+
   const registryAddress = CONTRACT_ADDRESSES.PropertyRegistry
   const { writeContract, writeContractAsync } = useWriteContract()
   const publicClient = usePublicClient()
+
+  // Withdrawal transaction tracking
+  const { data: withdrawalTxReceipt, isSuccess: isWithdrawalConfirmed, isError: isWithdrawalError } = useWaitForTransactionReceipt({
+    hash: withdrawalHash as `0x${string}`,
+    query: {
+      enabled: !!withdrawalHash && withdrawalStep === 'confirming',
+    },
+  })
 
   // Get property count
   const { data: propertyCount } = useReadContract({
@@ -196,6 +211,28 @@ export default function InvestmentsPage() {
     setInvestmentsError(null)
   }
 
+  // Fetch max withdrawable amount for rent income
+  const fetchMaxWithdrawable = async (vaultAddress: string) => {
+    if (!publicClient || !address || !vaultAddress) {
+      setMaxWithdrawable(BigInt(0))
+      return
+    }
+
+    try {
+      const maxWithdrawableAmount = await publicClient.readContract({
+        address: vaultAddress as `0x${string}`,
+        abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+        functionName: 'getMaxWithdrawable',
+        args: [address],
+      }) as bigint
+
+      setMaxWithdrawable(maxWithdrawableAmount)
+    } catch (error) {
+      console.error('Error fetching max withdrawable:', error)
+      setMaxWithdrawable(BigInt(0))
+    }
+  }
+
   // Fetch proposals for a specific property
   const fetchPropertyProposals = async (daoAddress: string, propertyId: number): Promise<Proposal[]> => {
     if (!publicClient || !daoAddress || daoAddress === '0x0000000000000000000000000000000000000000') {
@@ -288,10 +325,50 @@ export default function InvestmentsPage() {
     setShowInvestmentModal(true)
   }
 
+  // Handle rent income withdrawal
+  const handleWithdrawRent = async () => {
+    if (!selectedInvestment || !address || !withdrawalAmount || maxWithdrawable === BigInt(0)) {
+      alert('Please enter a valid withdrawal amount')
+      return
+    }
+
+    const amount = parseUnits(withdrawalAmount, 18)
+    if (amount > maxWithdrawable) {
+      alert('Withdrawal amount exceeds maximum withdrawable amount')
+      return
+    }
+
+    try {
+      setIsWithdrawing(true)
+      setWithdrawalStep('withdrawing')
+      
+      const hash = await writeContractAsync({
+        address: selectedInvestment.vaultAddress as `0x${string}`,
+        abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+        functionName: 'withdraw',
+        args: [amount, address, address]
+      })
+
+      setWithdrawalHash(hash)
+      setWithdrawalStep('confirming')
+    } catch (error) {
+      console.error('Withdrawal failed:', error)
+      setWithdrawalStep('error')
+      setIsWithdrawing(false)
+      alert('Withdrawal failed. Please try again.')
+    }
+  }
+
   // Close investment modal
   const closeInvestmentModal = () => {
     setShowInvestmentModal(false)
     setSelectedInvestment(null)
+    // Reset withdrawal state
+    setWithdrawalAmount('')
+    setMaxWithdrawable(BigInt(0))
+    setWithdrawalStep('idle')
+    setWithdrawalHash(null)
+    setIsWithdrawing(false)
   }
 
   // Handle voting on a proposal
@@ -377,6 +454,43 @@ export default function InvestmentsPage() {
       fetchUserInvestments(false) // Don't show loading on initial fetch
     }
   }, [mounted, propertyCount, publicClient, address])
+
+  // Fetch max withdrawable when investment is selected
+  useEffect(() => {
+    if (selectedInvestment && selectedInvestment.vaultAddress) {
+      fetchMaxWithdrawable(selectedInvestment.vaultAddress)
+    }
+  }, [selectedInvestment, address, publicClient])
+
+  // Track withdrawal transaction confirmation
+  useEffect(() => {
+    if (isWithdrawalConfirmed && withdrawalStep === 'confirming') {
+      setWithdrawalStep('success')
+      setIsWithdrawing(false)
+      
+      // Refresh data after successful withdrawal
+      if (selectedInvestment) {
+        fetchMaxWithdrawable(selectedInvestment.vaultAddress)
+        fetchUserInvestments(false)
+      }
+      
+      // Reset form after a delay
+      setTimeout(() => {
+        setWithdrawalAmount('')
+        setWithdrawalStep('idle')
+        setWithdrawalHash(null)
+      }, 3000)
+    }
+  }, [isWithdrawalConfirmed, withdrawalStep, selectedInvestment])
+
+  // Track withdrawal transaction error
+  useEffect(() => {
+    if (isWithdrawalError && withdrawalStep === 'confirming') {
+      setWithdrawalStep('error')
+      setIsWithdrawing(false)
+      setWithdrawalHash(null)
+    }
+  }, [isWithdrawalError, withdrawalStep])
 
   // Access denied component
   if (!mounted) {
@@ -756,6 +870,170 @@ export default function InvestmentsPage() {
                         </div>
                       </div>
                     </div>
+                  </div>
+                </div>
+
+                {/* Rent Income Withdrawal Section */}
+                <div className="bg-accent rounded-lg p-6">
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-xl font-semibold flex items-center">
+                      <DollarSign className="mr-2 h-5 w-5" />
+                      Rent Income Withdrawal
+                    </h3>
+                  </div>
+
+                  <div className="space-y-4">
+                    {/* Max Withdrawable Info */}
+                    <div className="bg-background rounded-lg p-4 border">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-medium text-muted-foreground">Max Withdrawable:</span>
+                        <span className="font-semibold text-lg">
+                          {formatUnits(maxWithdrawable, 18)} USDC
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between mt-2">
+                        <span className="text-sm text-muted-foreground">Status:</span>
+                        <span className={`px-2 py-1 rounded-full text-xs ${
+                          maxWithdrawable > BigInt(0) 
+                            ? 'bg-green-100 text-green-800' 
+                            : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {maxWithdrawable > BigInt(0) ? 'Income Available' : 'No Income Available'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Withdrawal Form */}
+                    {maxWithdrawable > BigInt(0) && (
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium mb-2">
+                            Withdrawal Amount (USDC)
+                          </label>
+                          <div className="flex space-x-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max={formatUnits(maxWithdrawable, 18)}
+                              value={withdrawalAmount}
+                              onChange={(e) => setWithdrawalAmount(e.target.value)}
+                              placeholder="0.00"
+                              className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                              disabled={isWithdrawing}
+                            />
+                            <button
+                              onClick={() => setWithdrawalAmount(formatUnits(maxWithdrawable, 18))}
+                              className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition-colors text-sm"
+                              disabled={isWithdrawing}
+                            >
+                              Max
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Withdrawal Button */}
+                        <button
+                          onClick={handleWithdrawRent}
+                          disabled={
+                            isWithdrawing || 
+                            !withdrawalAmount || 
+                            parseFloat(withdrawalAmount) <= 0 ||
+                            parseFloat(withdrawalAmount) > parseFloat(formatUnits(maxWithdrawable, 18))
+                          }
+                          className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 ${
+                            withdrawalStep === 'success'
+                              ? 'bg-green-100 text-green-800'
+                              : withdrawalStep === 'error'
+                              ? 'bg-red-100 text-red-800'
+                              : isWithdrawing || withdrawalStep === 'confirming'
+                              ? 'bg-blue-100 text-blue-800 cursor-not-allowed'
+                              : 'bg-primary text-primary-foreground hover:bg-primary/90'
+                          }`}
+                        >
+                          {withdrawalStep === 'success' ? (
+                            <>
+                              <CheckCircle className="h-4 w-4" />
+                              <span>Withdrawal Successful!</span>
+                            </>
+                          ) : withdrawalStep === 'error' ? (
+                            <>
+                              <XCircle className="h-4 w-4" />
+                              <span>Withdrawal Failed</span>
+                            </>
+                          ) : isWithdrawing || withdrawalStep === 'confirming' ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span>
+                                {withdrawalStep === 'confirming' ? 'Confirming...' : 'Withdrawing...'}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <DollarSign className="h-4 w-4" />
+                              <span>Withdraw Rent Income</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Transaction Hash Display */}
+                        {withdrawalHash && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <div className="flex items-center space-x-2">
+                              <Info className="h-4 w-4 text-blue-600" />
+                              <span className="text-sm font-medium text-blue-800">Transaction Hash:</span>
+                            </div>
+                            <p className="text-xs font-mono text-blue-700 mt-1 break-all">
+                              {withdrawalHash}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Status Messages */}
+                        {withdrawalStep === 'success' && (
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                            <div className="flex items-center space-x-2">
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                              <span className="text-sm font-medium text-green-800">
+                                Rent income withdrawn successfully!
+                              </span>
+                            </div>
+                            <p className="text-xs text-green-700 mt-1">
+                              Your rent income has been transferred to your wallet. The form will reset automatically.
+                            </p>
+                          </div>
+                        )}
+
+                        {withdrawalStep === 'error' && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                            <div className="flex items-center space-x-2">
+                              <XCircle className="h-4 w-4 text-red-600" />
+                              <span className="text-sm font-medium text-red-800">
+                                Withdrawal failed
+                              </span>
+                            </div>
+                            <p className="text-xs text-red-700 mt-1">
+                              There was an error processing your withdrawal. Please try again.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* No Income Available Message */}
+                    {maxWithdrawable === BigInt(0) && (
+                      <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                        <div className="flex items-center space-x-2">
+                          <Info className="h-4 w-4 text-gray-600" />
+                          <span className="text-sm font-medium text-gray-800">
+                            No rent income available for withdrawal
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-700 mt-1">
+                          Rent income will become available after the property manager harvests rent from the property.
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
 
