@@ -1,11 +1,12 @@
 // Import all ABIs
 import PropertyRegistryABI from '../abis/PropertyRegistry.json';
 import PropertyRegistryAnalyticsABI from '../abis/PropertyRegistryAnalytics.json';
-import PropertyRegistryGovernanceABI from '../abis/PropertyRegistryGovernance.json';
-import PropertyRegistryRateLimitABI from '../abis/PropertyRegistryRateLimit.json';
 import PropertyVaultABI from '../abis/PropertyVault.json';
+import PropertyVaultGovernanceABI from '../abis/PropertyVaultGovernance.json';
 import PropertyDAOABI from '../abis/PropertyDAO.json';
+import PropertyDAOFactoryABI from '../abis/PropertyDAOFactory.json';
 import PropertyTokenABI from '../abis/PropertyToken.json';
+import VaultFactoryABI from '../abis/VaultFactory.json';
 import OFTUSDCABI from '../abis/OFTUSDC.json';
 import ShareOFTABI from '../abis/ShareOFT.json';
 import ShareOFTAdapterABI from '../abis/ShareOFTAdapter.json';
@@ -18,11 +19,12 @@ import MockUSDCABI from '../abis/MockUSDC.json';
 // Export all ABIs
 export const PROPERTY_REGISTRY_ABI = PropertyRegistryABI;
 export const PROPERTY_REGISTRY_ANALYTICS_ABI = PropertyRegistryAnalyticsABI;
-export const PROPERTY_REGISTRY_GOVERNANCE_ABI = PropertyRegistryGovernanceABI;
-export const PROPERTY_REGISTRY_RATE_LIMIT_ABI = PropertyRegistryRateLimitABI;
 export const PROPERTY_VAULT_ABI = PropertyVaultABI;
+export const PROPERTY_VAULT_GOVERNANCE_ABI = PropertyVaultGovernanceABI;
 export const PROPERTY_DAO_ABI = PropertyDAOABI;
+export const PROPERTY_DAO_FACTORY_ABI = PropertyDAOFactoryABI;
 export const PROPERTY_TOKEN_ABI = PropertyTokenABI;
+export const VAULT_FACTORY_ABI = VaultFactoryABI;
 export const OFT_USDC_ABI = OFTUSDCABI;
 export const SHARE_OFT_ABI = ShareOFTABI;
 export const SHARE_OFT_ADAPTER_ABI = ShareOFTAdapterABI;
@@ -36,11 +38,12 @@ export const MOCK_USDC_ABI = MockUSDCABI;
 export const ABIS = {
   PropertyRegistry: PROPERTY_REGISTRY_ABI,
   PropertyRegistryAnalytics: PROPERTY_REGISTRY_ANALYTICS_ABI,
-  PropertyRegistryGovernance: PROPERTY_REGISTRY_GOVERNANCE_ABI,
-  PropertyRegistryRateLimit: PROPERTY_REGISTRY_RATE_LIMIT_ABI,
   PropertyVault: PROPERTY_VAULT_ABI,
+  PropertyVaultGovernance: PROPERTY_VAULT_GOVERNANCE_ABI,
   PropertyDAO: PROPERTY_DAO_ABI,
+  PropertyDAOFactory: PROPERTY_DAO_FACTORY_ABI,
   PropertyToken: PROPERTY_TOKEN_ABI,
+  VaultFactory: VAULT_FACTORY_ABI,
   OFTUSDC: OFT_USDC_ABI,
   ShareOFT: SHARE_OFT_ABI,
   ShareOFTAdapter: SHARE_OFT_ADAPTER_ABI,

@@ -2,13 +2,13 @@
 pragma solidity ^0.8.24;
 
 import '@openzeppelin/contracts/access/Ownable.sol';
-import './PropertyVault.sol';
+import './VaultFactory.sol';
 import './EnvironmentConfig.sol';
 
 /**
  * @title PropertyRegistry
  * @dev Core property registry functionality
- * @notice Handles property creation, basic CRUD operations, and vault deployment
+ * @notice Handles property creation, basic CRUD operations, and vault deployment via VaultFactory
  */
 contract PropertyRegistry is Ownable {
     // Events
@@ -41,6 +41,7 @@ contract PropertyRegistry is Ownable {
     mapping(address => bool) public authorizedVaults;
     uint32 public nextPropertyId = 1;
     EnvironmentConfig public immutable environmentConfig;
+    VaultFactory public immutable vaultFactory;
 
     // Modifiers
     modifier onlyAuthorizedVault(address vault) {
@@ -53,15 +54,25 @@ contract PropertyRegistry is Ownable {
         _;
     }
 
-    constructor(address _owner, address _environmentConfig) Ownable(_owner) {
+    constructor(address _owner, address _environmentConfig, address _vaultFactory) Ownable(_owner) {
         require(_environmentConfig != address(0), 'PropertyRegistryCore: invalid environment config address');
+        require(_vaultFactory != address(0), 'PropertyRegistryCore: invalid vault factory address');
+        
         environmentConfig = EnvironmentConfig(_environmentConfig);
+        vaultFactory = VaultFactory(_vaultFactory);
         
         // Verify EnvironmentConfig contract
         try environmentConfig.isStrictErrorHandling() returns (bool) {
             // Success - contract is valid
         } catch {
             revert('PropertyRegistryCore: invalid EnvironmentConfig contract');
+        }
+        
+        // VaultFactory is valid if we can get its owner
+        try vaultFactory.owner() returns (address) {
+            // Success - contract is valid
+        } catch {
+            revert('PropertyRegistryCore: invalid VaultFactory contract');
         }
     }
 
@@ -84,8 +95,8 @@ contract PropertyRegistry is Ownable {
 
         propertyId = nextPropertyId++;
         
-        // Deploy new PropertyVault
-        vault = address(new PropertyVault(
+        // Deploy new PropertyVaultGovernance via VaultFactory
+        vault = vaultFactory.createVault(
             underlyingAsset,
             name,
             string(abi.encodePacked(name, 'SHARE')),
@@ -93,7 +104,7 @@ contract PropertyRegistry is Ownable {
             depositCap,
             propertyId,
             address(environmentConfig)
-        ));
+        );
 
         // Initialize property
         properties[propertyId] = Property({

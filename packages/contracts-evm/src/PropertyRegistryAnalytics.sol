@@ -9,7 +9,8 @@ import './PropertyRegistry.sol';
  * @notice Handles essential status tracking functions separately to reduce main contract size
  */
 contract PropertyRegistryAnalytics is PropertyRegistry {
-    constructor(address _owner, address _environmentConfig) PropertyRegistry(_owner, _environmentConfig) {}
+    constructor(address _owner, address _environmentConfig, address _vaultFactory) 
+        PropertyRegistry(_owner, _environmentConfig, _vaultFactory) {}
 
     /**
      * @dev Get all active properties

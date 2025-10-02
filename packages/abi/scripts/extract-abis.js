@@ -5,11 +5,12 @@ const path = require('path');
 const contracts = [
   'PropertyRegistry',
   'PropertyRegistryAnalytics', 
-  'PropertyRegistryGovernance',
-  'PropertyRegistryRateLimit',
   'PropertyVault',
+  'PropertyVaultGovernance',
   'PropertyDAO',
+  'PropertyDAOFactory',
   'PropertyToken',
+  'VaultFactory',
   'OFTUSDC',
   'ShareOFT',
   'ShareOFTAdapter',
@@ -17,7 +18,7 @@ const contracts = [
   'VaultComposerSync',
   'StacksCrossChainManager',
   'EnvironmentConfig',
-  'MockLayerZeroEndpointV2'
+  'MockUSDC'
 ];
 
 // Path to the contracts artifacts
@@ -32,7 +33,10 @@ if (!fs.existsSync(abisDir)) {
 console.log('🔍 Extracting ABIs from compiled contracts...');
 
 contracts.forEach(contractName => {
-  const contractPath = path.join(artifactsPath, `${contractName}.sol`);
+  // Handle MockUSDC which is in mocks subdirectory
+  const contractPath = contractName === 'MockUSDC' 
+    ? path.join(artifactsPath, 'mocks', `${contractName}.sol`)
+    : path.join(artifactsPath, `${contractName}.sol`);
   const abiPath = path.join(contractPath, `${contractName}.json`);
   
   if (fs.existsSync(abiPath)) {

@@ -24,6 +24,7 @@ const config: HardhatUserConfig = {
   networks: {
     hardhat: {
       chainId: 31337,
+      allowUnlimitedContractSize: true, // Allow contracts > 24KB for testing
     },
     sepolia: {
       url: process.env.EVM_RPC_SEPOLIA || 'https://sepolia.infura.io/v3/YOUR_KEY',

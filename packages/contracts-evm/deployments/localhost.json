@@ -2,14 +2,16 @@
   "network": "localhost",
   "chainId": 31337,
   "contracts": {
-    "EnvironmentConfig": "0x7a2088a1bFc9d81c55368AE168C2C02570cB814F",
-    "MockLayerZeroEndpointA": "0x09635F643e140090A9A8Dcd712eD6285858ceBef",
-    "MockLayerZeroEndpointB": "0xc5a5C42992dECbae36851359345FE25997F5C42d",
-    "MockUSDC": "0x67d269191c92Caf3cD7723F116c85e6E9bf55933",
-    "ShareOFTAdapter": "0xE6E340D132b5f46d1e472DebcD681B2aBc16e57E",
-    "OFTUSDC": "0xc3e53F4d16Ae77Db1c982e75a937B9f60FE63690",
-    "PropertyRegistry": "0x851356ae760d987E095750cCeb3bC6014560891C",
-    "PropertyVault": "0xB955b6c65Ff69bfe07A557aa385055282b8a5eA3"
+    "EnvironmentConfig": "0x1f10F3Ba7ACB61b2F50B9d6DdCf91a6f787C0E82",
+    "MockLayerZeroEndpointA": "0x457cCf29090fe5A24c19c1bc95F492168C0EaFdb",
+    "MockLayerZeroEndpointB": "0x525C7063E7C20997BaaE9bDa922159152D0e8417",
+    "MockUSDC": "0x38a024C0b412B9d1db8BC398140D00F5Af3093D4",
+    "ShareOFTAdapter": "0x5fc748f1FEb28d7b76fa1c6B07D8ba2d5535177c",
+    "OFTUSDC": "0xB82008565FdC7e44609fA118A4a681E92581e680",
+    "VaultFactory": "0xF32D39ff9f6Aa7a7A64d7a4F00a54826Ef791a55",
+    "PropertyRegistry": "0x99dBE4AEa58E518C50a1c04aE9b48C9F6354612f",
+    "PropertyVault": "0x870a882f72Bff80B7dd407C2545b40478D273361",
+    "PropertyDAO": "0xB0f05d25e41FbC2b52013099ED9616f1206Ae21B"
   },
   "layerzero": {
     "eidA": 1,
@@ -20,5 +22,15 @@
     "user1": "0x70997970C51812dc3A010C7d01b50e0d17dc79C8",
     "user2": "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
   },
-  "deploymentTime": "2025-09-30T03:20:28.560Z"
+  "configuration": {
+    "vaultDepositCap": "10000000000000000000000",
+    "fundingTarget": "5000000000000000000000",
+    "fundingDeadline": 1761941924
+  },
+  "decimals": {
+    "mockUSDC": 6,
+    "oftUSDC": 18,
+    "vaultShares": 18
+  },
+  "deploymentTime": "2025-10-01T20:18:44.762Z"
 }

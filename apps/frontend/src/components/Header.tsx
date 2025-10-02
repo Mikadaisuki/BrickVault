@@ -21,14 +21,11 @@ export function Header() {
             <a href="/properties" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Properties
             </a>
+            <a href="/investments" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              My Investments
+            </a>
             <a href="/contracts" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Contracts
-            </a>
-            <a href="#" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Portfolio
-            </a>
-            <a href="#" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
-              Cross-Chain
             </a>
             <OwnerManagementLink />
           </nav>

@@ -241,7 +241,7 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         ProposalType proposalType,
         string memory description,
         bytes memory data
-    ) internal onlyOwner notLiquidating returns (uint256) {
+    ) internal notLiquidating returns (uint256) {
         require(bytes(description).length > 0, 'PropertyDAO: description required');
         
         proposalCount++;
@@ -588,11 +588,12 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @dev Update total invested amount (only callable by platform/owner)
+     * @dev Update total invested amount (only callable by vault or platform)
      * @param newInvested New total invested amount
      */
     function updateTotalInvested(uint256 newInvested) external {
-        require(msg.sender == address(propertyVault) || msg.sender == owner(), 'PropertyDAO: only vault or owner');
+        address currentOwner = owner();
+        require(msg.sender == address(propertyVault) || msg.sender == currentOwner, 'PropertyDAO: only vault or owner');
         propertyInfo.totalInvested = newInvested;
         
         // Check if property is fully funded

@@ -1,7 +1,9 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAccount, useReadContract, useChainId, useSwitchChain } from 'wagmi'
+import type { ReactNode } from 'react'
+import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from 'wagmi'
+import { parseUnits, formatUnits } from 'viem'
 import { Header } from '@/components/Header'
 import { 
   Building2, 
@@ -18,12 +20,18 @@ import {
   Filter,
   Grid3X3,
   List,
-  ChevronDown
+  ChevronDown,
+  Loader2,
+  CheckCircle,
+  AlertCircle
 } from 'lucide-react'
 import { 
   PROPERTY_REGISTRY_ABI, 
-  PROPERTY_VAULT_ABI 
+  PROPERTY_VAULT_GOVERNANCE_ABI,
+  PROPERTY_DAO_ABI,
+  OFT_USDC_ABI
 } from '@brickvault/abi'
+import { CONTRACT_ADDRESSES, TOKEN_DECIMALS } from '../../config/contracts'
 
 interface PropertyCard {
   id: string
@@ -42,6 +50,17 @@ interface PropertyCard {
   isPurchased: boolean
   fundingProgress: number
   category: string
+  // DAO information
+  daoAddress?: string
+  daoStage: number
+  daoFundingProgress: number
+  daoIsFullyFunded: boolean
+  daoInvested: string
+  daoFundingTarget: string
+  // Property management
+  propertyAddress?: string
+  propertyTokenAddress?: string
+  totalRentHarvested: string
 }
 
 export default function PropertiesPage() {
@@ -54,10 +73,24 @@ export default function PropertiesPage() {
   const [sortBy, setSortBy] = useState('newest')
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
   const [selectedCategory, setSelectedCategory] = useState('all')
+  
+  // Investment modal state
+  const [showInvestmentModal, setShowInvestmentModal] = useState(false)
+  const [investmentAmount, setInvestmentAmount] = useState('')
+  const [isInvesting, setIsInvesting] = useState(false)
 
   const { address, isConnected } = useAccount()
   const chainId = useChainId()
   const { switchChain } = useSwitchChain()
+  const { writeContract, data: hash, isPending, error } = useWriteContract()
+  const publicClient = usePublicClient()
+  const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
+    hash: hash as `0x${string}` | undefined,
+  })
+  
+  // Type assertion to fix ReactNode issue
+  const isConfirmingBool = Boolean(isConfirming) as boolean
+  const isConfirmedBool = Boolean(isConfirmed) as boolean
 
   const registryAddress = process.env.NEXT_PUBLIC_PROPERTY_REGISTRY_ADDRESS as `0x${string}`
 
@@ -71,43 +104,29 @@ export default function PropertiesPage() {
     },
   })
 
-  // Get first property data
-  const { data: property1, error: propertyError, isLoading: propertyLoading } = useReadContract({
-    address: registryAddress,
-    abi: PROPERTY_REGISTRY_ABI,
-    functionName: 'getProperty',
-    args: [1],
+  // No need for single property fetch - we'll fetch all properties dynamically
+
+  // Note: Vault data is now fetched dynamically for each property in the useEffect
+
+  // Get user's OFTUSDC balance
+  const { data: oftBalance } = useReadContract({
+    address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
+    abi: OFT_USDC_ABI,
+    functionName: 'balanceOf',
+    args: address ? [address] : undefined,
     query: {
-      enabled: !!registryAddress && isConnected && mounted && chainId === 31337,
+      enabled: !!address && isConnected && mounted && chainId === 31337,
     },
   })
 
-  // Get vault data
-  const { data: totalAssets, error: assetsError } = useReadContract({
-    address: process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS as `0x${string}`,
-    abi: PROPERTY_VAULT_ABI,
-    functionName: 'totalAssets',
+  // Get OFTUSDC allowance for the selected property's vault
+  const { data: oftAllowance } = useReadContract({
+    address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
+    abi: OFT_USDC_ABI,
+    functionName: 'allowance',
+    args: address && selectedProperty ? [address, selectedProperty.vaultAddress as `0x${string}`] : undefined,
     query: {
-      enabled: !!process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS && isConnected && mounted && chainId === 31337,
-    },
-  })
-
-  const { data: totalSupply, error: supplyError } = useReadContract({
-    address: process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS as `0x${string}`,
-    abi: PROPERTY_VAULT_ABI,
-    functionName: 'totalSupply',
-    query: {
-      enabled: !!process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS && isConnected && mounted && chainId === 31337,
-    },
-  })
-
-  // Get the property name from the vault (ERC20 name)
-  const { data: propertyName } = useReadContract({
-    address: process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS as `0x${string}`,
-    abi: PROPERTY_VAULT_ABI,
-    functionName: 'name',
-    query: {
-      enabled: !!process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS && isConnected && mounted && chainId === 31337,
+      enabled: !!address && !!selectedProperty && isConnected && mounted && chainId === 31337,
     },
   })
 
@@ -127,7 +146,18 @@ export default function PropertiesPage() {
   }, [mounted, loading])
 
   // Helper functions
-  const getPropertyStatusText = (status: number): string => {
+  const getPropertyStatusText = (daoStage: number, status: number): string => {
+    // Use DAO stage if available, otherwise fall back to registry status
+    if (daoStage !== undefined) {
+      switch (daoStage) {
+        case 0: return 'Open to Fund'
+        case 1: return 'Funded'
+        case 2: return 'Under Management'
+        default: return 'Unknown'
+      }
+    }
+    
+    // Fallback to registry status
     switch (status) {
       case 0: return 'Draft'
       case 1: return 'Active'
@@ -150,9 +180,9 @@ export default function PropertiesPage() {
     return `${regionCode} District, ${cityCode}`
   }
 
-  const generateDescription = (vaultAddress: string, depositCap: bigint, totalDeposited: bigint, status: number): string => {
+  const generateDescription = (vaultAddress: string, depositCap: bigint, totalDeposited: bigint, status: number, daoStage?: number): string => {
     const fundingPercentage = Number(depositCap) > 0 ? (Number(totalDeposited) / Number(depositCap)) * 100 : 0
-    const statusText = getPropertyStatusText(status)
+    const statusText = getPropertyStatusText(daoStage || 0, status)
     
     let description = `Premium tokenized real estate investment opportunity. `
     description += `Located in a prime ${generateLocation(vaultAddress).toLowerCase()} location. `
@@ -184,6 +214,59 @@ export default function PropertiesPage() {
     return categories[index]
   }
 
+  // Investment functions
+  const approveOFTUSDC = async () => {
+    if (!investmentAmount || !selectedProperty) return
+    
+    const amount = parseUnits(investmentAmount, TOKEN_DECIMALS.OFTUSDC)
+    
+    console.log('🔐 Approving OFTUSDC for investment:');
+    console.log('  - Amount:', investmentAmount, 'OFTUSDC');
+    console.log('  - Vault Address:', selectedProperty.vaultAddress);
+    console.log('  - Property Name:', selectedProperty.name);
+    
+    writeContract({
+      address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
+      abi: OFT_USDC_ABI,
+      functionName: 'approve',
+      args: [selectedProperty.vaultAddress as `0x${string}`, amount],
+      gas: BigInt(100000),
+    })
+  }
+
+  const depositToVault = async () => {
+    if (!investmentAmount || !address || !selectedProperty) return
+    
+    const amount = parseUnits(investmentAmount, TOKEN_DECIMALS.OFTUSDC)
+    
+    console.log('💰 Depositing to vault:');
+    console.log('  - Amount:', investmentAmount, 'OFTUSDC');
+    console.log('  - Vault Address:', selectedProperty.vaultAddress);
+    console.log('  - Property Name:', selectedProperty.name);
+    console.log('  - Investor Address:', address);
+    
+    writeContract({
+      address: selectedProperty.vaultAddress as `0x${string}`,
+      abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+      functionName: 'deposit',
+      args: [amount, address],
+      gas: BigInt(500000),
+    })
+  }
+
+  const handleInvest = (property: PropertyCard) => {
+    setSelectedProperty(property)
+    setShowInvestmentModal(true)
+    setInvestmentAmount('')
+  }
+
+  const closeInvestmentModal = () => {
+    setShowInvestmentModal(false)
+    setSelectedProperty(null)
+    setInvestmentAmount('')
+  }
+
+
 
   // Create property cards from contract data
   useEffect(() => {
@@ -191,68 +274,252 @@ export default function PropertiesPage() {
       return
     }
     
+    const fetchPropertyData = async () => {
+      if (!publicClient) {
+        console.error('❌ No publicClient available for fetching properties')
+        setLoading(false)
+        return
+      }
+
+      if (!propertyCount || propertyCount === 0) {
+        console.log('📋 No properties found in registry')
+        setProperties([])
+        setLoading(false)
+        return
+      }
+
+      console.log(`🔍 Fetching ${Number(propertyCount)} properties from network...`)
+      setLoading(true)
+
+      const fetchedProperties: PropertyCard[] = []
+      const totalCount = Number(propertyCount as bigint)
+      
+      // Fetch all properties dynamically
+      for (let i = 1; i <= totalCount; i++) {
+        try {
+          // Fetch property data from contract
+          const propertyData = await publicClient.readContract({
+            address: registryAddress,
+            abi: PROPERTY_REGISTRY_ABI,
+            functionName: 'getProperty',
+            args: [i],
+          })
+
+          if (propertyData) {
+            // Handle both array and object formats from contract
+            let vault: string, depositCap: bigint, totalDeposited: bigint, status: number, isPurchased: boolean, createdAt: number;
+            
+            if (Array.isArray(propertyData) && propertyData.length >= 6) {
+              // Array format: [vault, depositCap, totalDeposited, status, isPurchased, createdAt]
+              [vault, depositCap, totalDeposited, status, isPurchased, createdAt] = propertyData as [string, bigint, bigint, number, boolean, number];
+            } else if (propertyData && typeof propertyData === 'object') {
+              // Object format: { vault, depositCap, totalDeposited, status, paused, createdAt }
+              const property = propertyData as { vault: string; depositCap: bigint; totalDeposited: bigint; status: number; paused: boolean; createdAt: bigint }
+              vault = property.vault;
+              depositCap = property.depositCap;
+              totalDeposited = property.totalDeposited;
+              status = property.status;
+              isPurchased = property.paused; // Use paused as isPurchased indicator
+              createdAt = Number(property.createdAt);
+            } else {
+              console.warn(`Invalid property data format for property #${i}`)
+              continue
+            }
+            
+            const vaultAddress = vault as string;
+            
+            // Get property name from vault (ERC20 name function) - just like in our test!
+            let propertyName: string;
+            try {
+              const vaultName = await publicClient?.readContract({
+                address: vaultAddress as `0x${string}`,
+                abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+                functionName: 'name',
+              }) as string;
+              propertyName = vaultName || generatePropertyName(vaultAddress);
+              console.log(`✅ Property #${i} name from vault:`, propertyName);
+            } catch (error) {
+              console.warn(`❌ Could not fetch property name for vault ${vaultAddress}:`, error);
+              propertyName = generatePropertyName(vaultAddress);
+              console.log(`🔄 Using generated name:`, propertyName);
+            }
+            
+            // Fetch DAO information
+            let daoAddress: string | undefined;
+            let daoStage = 0;
+            let daoFundingProgress = 0;
+            let daoIsFullyFunded = false;
+            let daoInvested = '0';
+            let daoFundingTarget = '0';
+            let propertyAddress: string | undefined;
+            let propertyTokenAddress: string | undefined;
+            let totalRentHarvested = '0';
+        
+            try {
+              // Check if vault has DAO set
+              const vaultDAO = await publicClient?.readContract({
+                address: vaultAddress as `0x${string}`,
+                abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+                functionName: 'dao',
+              }) as string;
+          
+          if (vaultDAO && vaultDAO !== '0x0000000000000000000000000000000000000000') {
+            daoAddress = vaultDAO;
+            
+            // Get DAO funding status
+            const propertyInfo = await publicClient?.readContract({
+              address: vaultDAO as `0x${string}`,
+              abi: PROPERTY_DAO_ABI,
+              functionName: 'propertyInfo',
+            }) as any;
+            
+            if (propertyInfo && Array.isArray(propertyInfo) && propertyInfo.length >= 6) {
+              const [stage, totalValue, totalInvested, fundingTarget, fundingDeadline, isFullyFunded] = propertyInfo;
+              
+              daoStage = Number(stage);
+              daoInvested = formatUnits(totalInvested, 18);
+              daoFundingTarget = formatUnits(fundingTarget, 18);
+              daoFundingProgress = Number(fundingTarget) > 0 ? (Number(totalInvested) / Number(fundingTarget)) * 100 : 0;
+              daoIsFullyFunded = isFullyFunded;
+              
+              // Get property address if purchased
+              if (daoStage >= 2) {
+                try {
+                  const propAddress = await publicClient?.readContract({
+                    address: vaultDAO as `0x${string}`,
+                    abi: PROPERTY_DAO_ABI,
+                    functionName: 'propertyAddress',
+                  }) as string;
+                  propertyAddress = propAddress;
+                } catch (error) {
+                  console.warn('Could not fetch property address:', error);
+                }
+              }
+            }
+          }
+        } catch (error) {
+          console.warn('Could not fetch DAO info:', error);
+        }
+        
+        // Get property token address if exists
+        try {
+          const tokenAddress = await publicClient?.readContract({
+            address: vaultAddress as `0x${string}`,
+            abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+            functionName: 'getPropertyToken',
+          }) as string;
+          
+          if (tokenAddress && tokenAddress !== '0x0000000000000000000000000000000000000000') {
+            propertyTokenAddress = tokenAddress;
+          }
+        } catch (error) {
+          console.warn('Could not fetch property token address:', error);
+        }
+        
+        // Get total rent harvested
+        try {
+          const rentHarvested = await publicClient?.readContract({
+            address: vaultAddress as `0x${string}`,
+            abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+            functionName: 'totalRentHarvested',
+          }) as bigint;
+          
+          totalRentHarvested = formatUnits(rentHarvested, 18);
+        } catch (error) {
+          console.warn('Could not fetch total rent harvested:', error);
+        }
+        
+        // Get vault total assets and supply for accurate pricing
+        let totalAssets = totalDeposited; // Default to totalDeposited
+        let totalSupply = BigInt(1000000) * BigInt(1e18); // Default 1M shares
+        
+        try {
+          const vaultTotalAssets = await publicClient?.readContract({
+            address: vaultAddress as `0x${string}`,
+            abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+            functionName: 'totalAssets',
+          }) as bigint;
+          
+          if (vaultTotalAssets) {
+            totalAssets = vaultTotalAssets;
+          }
+        } catch (error) {
+          console.warn('Could not fetch totalAssets:', error);
+        }
+        
+        try {
+          const vaultTotalSupply = await publicClient?.readContract({
+            address: vaultAddress as `0x${string}`,
+            abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+            functionName: 'totalSupply',
+          }) as bigint;
+          
+          if (vaultTotalSupply) {
+            totalSupply = vaultTotalSupply;
+          }
+        } catch (error) {
+          console.warn('Could not fetch totalSupply:', error);
+        }
+        
+        const fundingProgress = Number(depositCap) > 0 
+          ? (Number(totalAssets) / Number(depositCap)) * 100 
+          : 0
+        
+        const pricePerShare = totalSupply && totalAssets && Number(totalSupply) > 0 
+          ? Number(totalAssets) / Number(totalSupply) / 1e18 
+          : 1.0
+        
+            const propertyCard: PropertyCard = {
+              id: i.toString(),
+              name: propertyName,
+              location: propertyName,
+              price: `${(Number(depositCap) / 1e18 / 1000).toFixed(0)}K`,
+              totalShares: totalSupply ? (Number(totalSupply) / 1e18).toFixed(0) : '1000000',
+              pricePerShare: pricePerShare.toFixed(6),
+              status: getPropertyStatusText(daoStage, Number(status)),
+              imageUrl: `/api/placeholder/400/300?vault=${vaultAddress.slice(-4)}`,
+              description: generateDescription(vaultAddress, depositCap, totalDeposited, Number(status), daoStage),
+              vaultAddress: vaultAddress,
+              depositCap: (Number(depositCap) / 1e18).toFixed(0),
+              totalDeposited: totalAssets ? (Number(totalAssets) / 1e18).toFixed(2) : (Number(totalDeposited) / 1e18).toFixed(2),
+              createdAt: Number(createdAt),
+              isPurchased: totalAssets ? Number(totalAssets) > 0 : Number(totalDeposited) > 0,
+              fundingProgress,
+              category: getPropertyCategory(vaultAddress),
+              // DAO information
+              daoAddress,
+              daoStage,
+              daoFundingProgress,
+              daoIsFullyFunded,
+              daoInvested,
+              daoFundingTarget,
+              // Property management
+              propertyAddress,
+              propertyTokenAddress,
+              totalRentHarvested
+            }
+            
+            fetchedProperties.push(propertyCard)
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching property #${i}:`, error)
+          // Continue with other properties even if one fails
+        }
+      }
+
+      console.log(`✅ Successfully fetched ${fetchedProperties.length} properties`)
+      setProperties(fetchedProperties)
+      setLoading(false)
+    };
     
-    // If we have property data, create property cards (use same logic as working PropertyOverview)
-    if (mounted && propertyCount && propertyCount > 0 && property1) {
-      
-      // Handle both array and object formats from contract
-      let vault, depositCap, totalDeposited, status, isPurchased, createdAt;
-      
-      if (Array.isArray(property1) && property1.length >= 6) {
-        // Array format: [vault, depositCap, totalDeposited, status, isPurchased, createdAt]
-        [vault, depositCap, totalDeposited, status, isPurchased, createdAt] = property1;
-      } else if (property1 && typeof property1 === 'object') {
-        // Object format: { vault, depositCap, totalDeposited, status, paused, createdAt }
-        vault = property1.vault;
-        depositCap = property1.depositCap;
-        totalDeposited = property1.totalDeposited;
-        status = property1.status;
-        isPurchased = property1.paused; // Use paused as isPurchased indicator
-        createdAt = property1.createdAt;
-      } else {
-        setLoading(false);
-        return;
-      }
-      
-      const vaultAddress = vault as string;
-      
-      const fundingProgress = Number(depositCap) > 0 
-        ? (Number(totalAssets) / Number(depositCap)) * 100 
-        : 0
-      
-      const pricePerShare = totalSupply && totalAssets && Number(totalSupply) > 0 
-        ? Number(totalAssets) / Number(totalSupply) / 1e18 
-        : 1.0
-      
-      const propertyCard: PropertyCard = {
-        id: '1',
-        name: propertyName as string || generatePropertyName(vaultAddress),
-        location: propertyName as string || generatePropertyName(vaultAddress),
-        price: `${(Number(depositCap) / 1e18 / 1000).toFixed(0)}K`,
-        totalShares: totalSupply ? (Number(totalSupply) / 1e18).toFixed(0) : '1000000',
-        pricePerShare: pricePerShare.toFixed(6),
-        status: getPropertyStatusText(Number(status)),
-        imageUrl: `/api/placeholder/400/300?vault=${vaultAddress.slice(-4)}`,
-        description: generateDescription(vaultAddress, depositCap, totalDeposited, Number(status)),
-        vaultAddress: vaultAddress,
-        depositCap: (Number(depositCap) / 1e18).toFixed(0),
-        totalDeposited: totalAssets ? (Number(totalAssets) / 1e18).toFixed(2) : (Number(totalDeposited) / 1e18).toFixed(2),
-        createdAt: Number(createdAt),
-        isPurchased: totalAssets ? Number(totalAssets) > 0 : Number(totalDeposited) > 0,
-        fundingProgress,
-        category: getPropertyCategory(vaultAddress)
-      }
-      
-      setProperties([propertyCard])
-      setLoading(false)
-    } else if (mounted && propertyCount === 0) {
-      setProperties([])
-      setLoading(false)
-    }
-  }, [mounted, propertyCount, property1, totalAssets, totalSupply, propertyName, isConnected, chainId])
+    fetchPropertyData();
+  }, [mounted, propertyCount, isConnected, chainId, publicClient])
 
   const getStatusColor = (status: string) => {
     switch (status) {
+      case 'Open to Fund': return 'bg-yellow-100 text-yellow-800'
+      case 'Funded': return 'bg-blue-100 text-blue-800'
+      case 'Under Management': return 'bg-green-100 text-green-800'
       case 'Active': return 'bg-green-100 text-green-800'
       case 'Draft': return 'bg-gray-100 text-gray-800'
       case 'Paused': return 'bg-yellow-100 text-yellow-800'
@@ -554,7 +821,7 @@ export default function PropertiesPage() {
                       <p className="font-semibold">{property.totalShares}</p>
                     </div>
                     <div>
-                      <p className="text-xs text-muted-foreground">Funded</p>
+                      <p className="text-xs text-muted-foreground">Vault Funded</p>
                       <p className="font-semibold">{property.fundingProgress.toFixed(1)}%</p>
                     </div>
                     {viewMode === 'list' && (
@@ -567,14 +834,22 @@ export default function PropertiesPage() {
                     )}
                   </div>
 
-                  {/* Progress Bar */}
-                  <div className="mb-4">
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-primary h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${Math.min(property.fundingProgress, 100)}%` }}
-                      ></div>
+                  {/* Progress Bars */}
+                  <div className="mb-4 space-y-2">
+                    {/* Vault Progress */}
+                    <div>
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs text-muted-foreground">Vault Funding</span>
+                        <span className="text-xs text-muted-foreground">{property.fundingProgress.toFixed(1)}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 rounded-full h-2">
+                        <div 
+                          className="bg-primary h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${Math.min(property.fundingProgress, 100)}%` }}
+                        ></div>
+                      </div>
                     </div>
+                    
                   </div>
 
                   {/* Footer */}
@@ -644,7 +919,7 @@ export default function PropertiesPage() {
                   <div className="bg-accent rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <TrendingUp className="h-4 w-4 text-primary" />
-                      <span className="text-sm text-muted-foreground">Progress</span>
+                      <span className="text-sm text-muted-foreground">Vault Progress</span>
                     </div>
                     <p className="text-2xl font-bold">{selectedProperty.fundingProgress.toFixed(1)}%</p>
                     <p className="text-xs text-muted-foreground">Funded</p>
@@ -652,18 +927,59 @@ export default function PropertiesPage() {
 
                 </div>
 
+                {/* DAO Information */}
+                {selectedProperty.daoAddress && (
+                  <div className="bg-accent rounded-lg p-4 mb-6">
+                    <h3 className="font-semibold mb-3">DAO Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+                      <div>
+                        <span className="text-muted-foreground">DAO Address:</span>
+                        <p className="font-mono text-xs">{selectedProperty.daoAddress.slice(0, 6)}...{selectedProperty.daoAddress.slice(-4)}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Stage:</span>
+                        <p className="font-semibold">{selectedProperty.status}</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">DAO Invested:</span>
+                        <p className="font-semibold">{selectedProperty.daoInvested} OFTUSDC</p>
+                      </div>
+                      <div>
+                        <span className="text-muted-foreground">Funding Target:</span>
+                        <p className="font-semibold">{selectedProperty.daoFundingTarget} OFTUSDC</p>
+                      </div>
+                      {selectedProperty.propertyAddress && (
+                        <div className="md:col-span-2">
+                          <span className="text-muted-foreground">Property Address:</span>
+                          <p className="font-semibold">{selectedProperty.propertyAddress}</p>
+                        </div>
+                      )}
+                      {selectedProperty.totalRentHarvested !== '0' && (
+                        <div className="md:col-span-2">
+                          <span className="text-muted-foreground">Total Rent Harvested:</span>
+                          <p className="font-semibold">{selectedProperty.totalRentHarvested} OFTUSDC</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Action Buttons */}
                 <div className="flex gap-3">
                   <button 
+                    onClick={() => handleInvest(selectedProperty)}
                     className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${
-                      selectedProperty.status === 'Active' 
+                      selectedProperty.status === 'Open to Fund' 
                         ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
                         : 'bg-gray-300 text-gray-500 cursor-not-allowed'
                     }`}
-                    disabled={selectedProperty.status !== 'Active'}
+                    disabled={selectedProperty.status !== 'Open to Fund'}
                   >
                     <ShoppingCart className="h-4 w-4" />
-                    {selectedProperty.status === 'Active' ? 'Invest Now' : `Property ${selectedProperty.status}`}
+                    {selectedProperty.status === 'Open to Fund' ? 'Invest Now' : 
+                     selectedProperty.status === 'Funded' ? 'Voting in Progress' :
+                     selectedProperty.status === 'Under Management' ? 'Property Active' :
+                     `Property ${selectedProperty.status}`}
                   </button>
                   
                   <button
@@ -683,6 +999,123 @@ export default function PropertiesPage() {
                     />
                   </button>
                 </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Investment Modal */}
+        {showInvestmentModal && selectedProperty && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-background rounded-lg max-w-md w-full">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold">Invest in {selectedProperty.name}</h2>
+                  <button
+                    onClick={closeInvestmentModal}
+                    className="p-2 hover:bg-accent rounded-md transition-colors"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+
+                {/* Property Info */}
+                <div className="bg-accent rounded-lg p-4 mb-6">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm text-muted-foreground">Total Value</span>
+                    <span className="font-semibold">${selectedProperty.depositCap} OFTUSDC</span>
+                  </div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm text-muted-foreground">Price per Share</span>
+                    <span className="font-semibold">${selectedProperty.pricePerShare}</span>
+                  </div>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm text-muted-foreground">Funding Progress</span>
+                    <span className="font-semibold">{selectedProperty.fundingProgress.toFixed(1)}%</span>
+                  </div>
+                </div>
+
+                {/* User Balance */}
+                <div className="bg-accent rounded-lg p-4 mb-6">
+                  <h3 className="font-semibold mb-2">Your Balance</h3>
+                  <p className="text-2xl font-bold text-primary">
+                    {oftBalance ? formatUnits(oftBalance as bigint, TOKEN_DECIMALS.OFTUSDC) : '0'} OFTUSDC
+                  </p>
+                </div>
+
+                {/* Investment Amount Input */}
+                <div className="mb-6">
+                  <label className="block text-sm font-medium text-foreground mb-2">
+                    Investment Amount (OFTUSDC)
+                  </label>
+                  <input
+                    type="number"
+                    value={investmentAmount}
+                    onChange={(e) => setInvestmentAmount(e.target.value)}
+                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-background text-foreground"
+                    placeholder="Enter amount to invest"
+                    step="0.000001"
+                    min="0"
+                  />
+                  {investmentAmount && (
+                    <p className="text-sm text-muted-foreground mt-1">
+                      You will receive approximately {(parseFloat(investmentAmount) / parseFloat(selectedProperty.pricePerShare)).toFixed(6)} shares
+                    </p>
+                  )}
+                </div>
+
+                {/* Transaction Status */}
+                {isPending ? (
+                  <div className="bg-accent border border-border rounded-lg p-4 mb-4">
+                    <div className="flex items-center">
+                      <Loader2 className="animate-spin h-4 w-4 text-primary mr-3" />
+                      <span className="text-foreground">Transaction pending...</span>
+                    </div>
+                  </div>
+                ) : null}
+
+                {isConfirmedBool && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-center">
+                      <CheckCircle className="h-4 w-4 text-green-600 mr-3" />
+                      <span className="text-green-800">Investment successful!</span>
+                    </div>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-center">
+                      <AlertCircle className="h-4 w-4 text-red-600 mr-3" />
+                      <span className="text-red-800">Error: {String(error)}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Action Buttons */}
+                <div className="flex gap-3">
+                  <button
+                    onClick={approveOFTUSDC}
+                    disabled={isPending || !investmentAmount}
+                    className="flex-1 px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 disabled:opacity-50 transition-colors"
+                  >
+                    {isPending ? 'Approving...' : 'Approve OFTUSDC'}
+                  </button>
+                  <button
+                    onClick={depositToVault}
+                    disabled={isPending || !investmentAmount}
+                    className="flex-1 px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors"
+                  >
+                    {isPending ? 'Investing...' : 'Invest Now'}
+                  </button>
+                </div>
+
+                {/* Allowance Info */}
+                {oftAllowance && (
+                  <p className="text-sm text-muted-foreground mt-4">
+                    Current Allowance: {formatUnits(oftAllowance as bigint, TOKEN_DECIMALS.OFTUSDC)} OFTUSDC
+                  </p>
+                )}
               </div>
             </div>
           </div>

@@ -3,10 +3,11 @@ import { ethers } from 'hardhat';
 import { 
   ShareOFTAdapter, 
   OFTUSDC,
-  PropertyVault, 
+  PropertyVaultGovernance, 
   PropertyRegistry,
+  VaultFactory,
   EnvironmentConfig
-} from '../typechain-types/src';
+} from '../typechain-types';
 import { MockUSDC } from '../typechain-types/src/mocks';
 import { EndpointV2Mock } from '../typechain-types/src/mocks/MockLayerZeroEndpointV2.sol';
 import { Options } from '@layerzerolabs/lz-v2-utilities';
@@ -15,8 +16,9 @@ describe('Cross-Chain USDC Flow', function () {
   let mockUSDC: MockUSDC;
   let oftAdapter: ShareOFTAdapter;
   let oftUSDC: OFTUSDC; // The OFTUSDC token that vault accepts
-  let propertyVault: PropertyVault;
+  let propertyVault: PropertyVaultGovernance;
   let propertyRegistry: PropertyRegistry;
+  let vaultFactory: VaultFactory;
   let environmentConfig: EnvironmentConfig;
   let mockEndpointA: EndpointV2Mock;
   let mockEndpointB: EndpointV2Mock;
@@ -90,15 +92,24 @@ describe('Cross-Chain USDC Flow', function () {
     await oftAdapter.connect(owner).setPeer(eidB, ethers.zeroPadValue(await oftUSDC.getAddress(), 32));
     await oftUSDC.connect(owner).setPeer(eidA, ethers.zeroPadValue(await oftAdapter.getAddress(), 32));
 
-    // 8. Deploy PropertyRegistry (on chain B)
+    // 8. Deploy VaultFactory (on chain B)
+    const VaultFactory = await ethers.getContractFactory('VaultFactory');
+    vaultFactory = await VaultFactory.deploy(owner.address);
+    await vaultFactory.waitForDeployment();
+
+    // 9. Deploy PropertyRegistry (on chain B)
     const PropertyRegistry = await ethers.getContractFactory('PropertyRegistry');
     propertyRegistry = await PropertyRegistry.deploy(
       owner.address,
-      await environmentConfig.getAddress()
+      await environmentConfig.getAddress(),
+      await vaultFactory.getAddress()
     );
     await propertyRegistry.waitForDeployment();
 
-    // 9. Create a property and get the vault address
+    // 9.5. Authorize PropertyRegistry to create vaults
+    await vaultFactory.connect(owner).addAuthorizedCaller(await propertyRegistry.getAddress());
+
+    // 10. Create a property and get the vault address
     const createPropertyTx = await propertyRegistry.createProperty(
       'Test Property',
       VAULT_DEPOSIT_CAP,
@@ -113,12 +124,11 @@ describe('Cross-Chain USDC Flow', function () {
       const decoded = propertyRegistry.interface.parseLog(propertyCreatedEvent);
       const vaultAddress = decoded?.args.vault;
       
-      // Get the PropertyVault contract instance
-      const PropertyVault = await ethers.getContractFactory('PropertyVault');
-      propertyVault = PropertyVault.attach(vaultAddress) as PropertyVault;
+      // Get the PropertyVaultGovernance contract instance
+      propertyVault = await ethers.getContractAt('PropertyVaultGovernance', vaultAddress);
     }
 
-    // 10. Transfer USDC to users for testing (on chain A)
+    // 11. Transfer USDC to users for testing (on chain A)
     const userAmount = ethers.parseUnits('10000', USDC_DECIMALS); // 10K USDC per user
     await mockUSDC.transfer(user1.address, userAmount);
     await mockUSDC.transfer(user2.address, userAmount);

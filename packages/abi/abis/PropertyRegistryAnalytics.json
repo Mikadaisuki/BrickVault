@@ -10,6 +10,11 @@
         "internalType": "address",
         "name": "_environmentConfig",
         "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "_vaultFactory",
+        "type": "address"
       }
     ],
     "stateMutability": "nonpayable",
@@ -573,6 +578,19 @@
     "name": "updatePropertyStatus",
     "outputs": [],
     "stateMutability": "nonpayable",
+    "type": "function"
+  },
+  {
+    "inputs": [],
+    "name": "vaultFactory",
+    "outputs": [
+      {
+        "internalType": "contract VaultFactory",
+        "name": "",
+        "type": "address"
+      }
+    ],
+    "stateMutability": "view",
     "type": "function"
   }
 ]

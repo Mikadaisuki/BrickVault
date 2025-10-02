@@ -114,17 +114,15 @@ contract PropertyVault is VaultBase {
     }
 
     /**
-     * @dev Initiate property purchase
-     * @param purchasePrice The total price to purchase the property
-     * @param _propertyManager Address that will receive funds for purchase
+     * @dev Initiate property purchase (called by owner or DAO via governance)
      */
     function initiatePropertyPurchase(
         uint256 purchasePrice, 
         address _propertyManager
-    ) external onlyOwner {
-        require(!propertyPurchased, 'PropertyVault: property already purchased');
-        require(purchasePrice > 0, 'PropertyVault: invalid purchase price');
-        require(_propertyManager != address(0), 'PropertyVault: invalid manager');
+    ) external virtual {
+        require(!propertyPurchased, 'Already purchased');
+        require(purchasePrice > 0, 'Invalid price');
+        require(_propertyManager != address(0), 'Invalid manager');
         
         propertyPurchasePrice = purchasePrice;
         propertyManager = _propertyManager;
@@ -132,25 +130,22 @@ contract PropertyVault is VaultBase {
     }
     
     /**
-     * @dev Withdraw funds for property purchase
-     * @param amount Amount to withdraw for purchase
+     * @dev Withdraw funds for property purchase (called by owner or DAO via governance)
      */
-    function withdrawForPurchase(uint256 amount) external onlyOwner {
-        require(!propertyPurchased, 'PropertyVault: property already purchased');
-        require(amount <= totalAssets(), 'PropertyVault: insufficient funds');
-        require(propertyManager != address(0), 'PropertyVault: property manager not set');
+    function withdrawForPurchase(uint256 amount) external virtual {
+        require(!propertyPurchased, 'Already purchased');
+        require(amount <= totalAssets(), 'Insufficient funds');
+        require(propertyManager != address(0), 'Manager not set');
         
-        // Transfer funds to property manager for fiat conversion
         IERC20(asset()).transfer(propertyManager, amount);
     }
     
     /**
-     * @dev Mark property as purchased
-     * @param _propertyAddress Physical property address/identifier
+     * @dev Mark property as purchased (called by owner or DAO via governance)
      */
-    function completePropertyPurchase(string memory _propertyAddress) external onlyOwner {
-        require(!propertyPurchased, 'PropertyVault: property already purchased');
-        require(propertyManager != address(0), 'PropertyVault: property manager not set');
+    function completePropertyPurchase(string memory _propertyAddress) external virtual {
+        require(!propertyPurchased, 'Already purchased');
+        require(propertyManager != address(0), 'Manager not set');
         
         propertyPurchased = true;
         propertyAddress = _propertyAddress;
