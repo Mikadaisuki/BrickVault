@@ -4,6 +4,9 @@
 ;; Simplified workflow: sBTC deposit to OFTUSDC minted to custodian address
 ;; No property-specific logic, no stage transitions, no withdrawals back to sBTC
 
+;; sBTC token contract reference
+(define-constant sbtc-token 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token)
+
 ;; Error constants
 (define-constant ERR-NOT-AUTHORIZED (err u100))
 (define-constant ERR-NOT-OWNER (err u101))
@@ -12,6 +15,7 @@
 (define-constant ERR-CONTRACT-PAUSED (err u107))
 (define-constant ERR-STACKS-ADDRESS-ALREADY-REGISTERED (err u108))
 (define-constant ERR-STACKS-ADDRESS-NOT-REGISTERED (err u109))
+(define-constant ERR-TRANSFER-FAILED (err u110))
 
 ;; Data variables
 (define-data-var contract-owner principal tx-sender)
@@ -61,28 +65,34 @@
       true))
     (err ERR-STACKS-ADDRESS-ALREADY-REGISTERED)))
 
-;; Simplified sBTC deposit function - no property-specific logic
+;; Simplified sBTC deposit function - transfers sBTC to contract
 (define-public (deposit-sbtc (amount uint))
   (if (and 
         (not (var-get is-paused))
         (>= amount (var-get min-deposit-amount))
         (is-some (map-get? stacks-to-evm-custodian {stacks-address: tx-sender})))
-    (ok (begin
-      ;; Update user deposit record
-      (map-set user-sbtc-deposits {user: tx-sender} 
-        (+ (default-to u0 (map-get? user-sbtc-deposits {user: tx-sender})) amount))
-      
-      ;; Update global total
-      (var-set total-sbtc-locked (+ (var-get total-sbtc-locked) amount))
-      
-      ;; Record deposit timestamp
-      (map-set user-deposit-timestamps {user: tx-sender} u0)
-      
-      ;; Emit deposit event for cross-chain relayer (Type 1: deposit)
-      ;; This will trigger OFTUSDC minting to the user's EVM custodian address
-      (print "deposit:event-emitted")
-      
-      true))
+    (match (contract-call? sbtc-token transfer 
+             amount 
+             tx-sender 
+             (as-contract tx-sender) 
+             none)
+      transfer-result (ok (begin
+        ;; Update user deposit record
+        (map-set user-sbtc-deposits {user: tx-sender} 
+          (+ (default-to u0 (map-get? user-sbtc-deposits {user: tx-sender})) amount))
+        
+        ;; Update global total
+        (var-set total-sbtc-locked (+ (var-get total-sbtc-locked) amount))
+        
+        ;; Record deposit timestamp
+        (map-set user-deposit-timestamps {user: tx-sender} u0)
+        
+        ;; Emit deposit event for cross-chain relayer (Type 1: deposit)
+        ;; This will trigger OFTUSDC minting to the user's EVM custodian address
+        (print "deposit:event-emitted")
+        
+        true))
+      err-code (err ERR-TRANSFER-FAILED))
     (err (if (var-get is-paused) ERR-CONTRACT-PAUSED
            (if (< amount (var-get min-deposit-amount)) ERR-INVALID-AMOUNT
              ERR-STACKS-ADDRESS-NOT-REGISTERED)))))
