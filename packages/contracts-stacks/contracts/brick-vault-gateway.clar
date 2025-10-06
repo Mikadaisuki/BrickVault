@@ -4,9 +4,6 @@
 ;; Simplified workflow: sBTC deposit to OFTUSDC minted to custodian address
 ;; No property-specific logic, no stage transitions, no withdrawals back to sBTC
 
-;; sBTC token contract reference
-(define-constant sbtc-token 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token)
-
 ;; Error constants
 (define-constant ERR-NOT-AUTHORIZED (err u100))
 (define-constant ERR-NOT-OWNER (err u101))
@@ -71,7 +68,7 @@
         (not (var-get is-paused))
         (>= amount (var-get min-deposit-amount))
         (is-some (map-get? stacks-to-evm-custodian {stacks-address: tx-sender})))
-    (match (contract-call? sbtc-token transfer 
+    (match (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
              amount 
              tx-sender 
              (as-contract tx-sender) 
