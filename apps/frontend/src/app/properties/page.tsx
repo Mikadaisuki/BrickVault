@@ -23,7 +23,8 @@ import {
   ChevronDown,
   Loader2,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react'
 import { 
   PROPERTY_REGISTRY_ABI, 
@@ -79,6 +80,9 @@ export default function PropertiesPage() {
   const [investmentAmount, setInvestmentAmount] = useState('')
   const [isInvesting, setIsInvesting] = useState(false)
   const [investmentStep, setInvestmentStep] = useState<'idle' | 'approving' | 'approved' | 'investing'>('idle')
+  
+  // Refresh state
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const { address, isConnected } = useAccount()
   const chainId = useChainId()
@@ -335,6 +339,22 @@ export default function PropertiesPage() {
       args: [selectedProperty.vaultAddress as `0x${string}`, amount],
       gas: BigInt(100000),
     })
+  }
+
+  // Manual refresh function
+  const refreshProperties = async () => {
+    try {
+      setIsRefreshing(true)
+      setLoading(true)
+      
+      // Always refresh properties by triggering the useEffect
+      setProperties([])
+      setLoading(true)
+    } catch (error) {
+      console.error('Error refreshing properties:', error)
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
 
@@ -706,15 +726,34 @@ export default function PropertiesPage() {
           <p className="text-muted-foreground text-lg">
             Discover tokenized real estate investment opportunities
           </p>
-          <div className="flex items-center gap-4 mt-4 text-sm text-muted-foreground">
-            <span className="flex items-center gap-1">
-              <Building2 className="h-4 w-4" />
-              {propertyCount ? `${propertyCount} Properties` : 'Loading...'}
-            </span>
-            <span className="flex items-center gap-1">
-              <TrendingUp className="h-4 w-4" />
-              Live Data
-            </span>
+          <div className="flex items-center justify-between mt-4">
+            <div className="flex items-center gap-4 text-sm text-muted-foreground">
+              <span className="flex items-center gap-1">
+                <Building2 className="h-4 w-4" />
+                {propertyCount ? `${propertyCount} Properties` : 'Loading...'}
+              </span>
+              <span className="flex items-center gap-1">
+                <TrendingUp className="h-4 w-4" />
+                Live Data
+              </span>
+            </div>
+            <button
+              onClick={refreshProperties}
+              disabled={isRefreshing || loading}
+              className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
+            >
+              {isRefreshing ? (
+                <>
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                  <span>Refreshing...</span>
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="h-3 w-3" />
+                  <span>Refresh</span>
+                </>
+              )}
+            </button>
           </div>
         </div>
 

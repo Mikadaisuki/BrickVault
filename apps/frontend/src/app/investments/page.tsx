@@ -64,6 +64,15 @@ export default function InvestmentsPage() {
   const [withdrawalHash, setWithdrawalHash] = useState<string | null>(null)
   const [isWithdrawing, setIsWithdrawing] = useState(false)
 
+  // Proposal creation state
+  const [showCreateProposalModal, setShowCreateProposalModal] = useState(false)
+  const [selectedPropertyForProposal, setSelectedPropertyForProposal] = useState<UserInvestment | null>(null)
+  const [proposalType, setProposalType] = useState<string>('0') // Default to Property Liquidation
+  const [proposalDescription, setProposalDescription] = useState('')
+  const [proposalData, setProposalData] = useState('')
+  const [isCreatingProposal, setIsCreatingProposal] = useState(false)
+  const [proposalCreationStep, setProposalCreationStep] = useState<'idle' | 'creating' | 'success' | 'error'>('idle')
+
   const registryAddress = CONTRACT_ADDRESSES.PropertyRegistry
   const { writeContract, writeContractAsync } = useWriteContract()
   const publicClient = usePublicClient()
@@ -369,6 +378,104 @@ export default function InvestmentsPage() {
     setWithdrawalStep('idle')
     setWithdrawalHash(null)
     setIsWithdrawing(false)
+  }
+
+  // Handle create proposal modal
+  const handleOpenCreateProposalModal = (investment: UserInvestment) => {
+    setSelectedPropertyForProposal(investment)
+    setShowCreateProposalModal(true)
+    // Reset form
+    setProposalType('0')
+    setProposalDescription('')
+    setProposalData('')
+    setProposalCreationStep('idle')
+  }
+
+  // Close create proposal modal
+  const closeCreateProposalModal = () => {
+    setShowCreateProposalModal(false)
+    setSelectedPropertyForProposal(null)
+    setProposalType('0')
+    setProposalDescription('')
+    setProposalData('')
+    setProposalCreationStep('idle')
+    setIsCreatingProposal(false)
+  }
+
+  // Handle proposal creation
+  const handleCreateProposal = async () => {
+    if (!selectedPropertyForProposal || !proposalDescription.trim()) {
+      alert('Please fill in all required fields')
+      return
+    }
+
+    if (!selectedPropertyForProposal.daoAddress) {
+      alert('DAO address not found for this property')
+      return
+    }
+
+    try {
+      setIsCreatingProposal(true)
+      setProposalCreationStep('creating')
+      
+      // Encode proposal data based on type
+      let encodedData = '0x'
+      if (proposalData.trim()) {
+        switch (proposalType) {
+          case '0': // PropertyLiquidation
+            const liquidationPrice = parseUnits(proposalData.trim(), 18)
+            encodedData = `0x${liquidationPrice.toString(16).padStart(64, '0')}`
+            break
+          case '2': // ThresholdUpdate
+            const thresholdValue = parseUnits((parseFloat(proposalData.trim()) * 100).toString(), 18) // Convert percentage to basis points
+            encodedData = `0x${thresholdValue.toString(16).padStart(64, '0')}`
+            break
+          case '4': // NAVUpdate
+            const navChange = parseUnits(proposalData.trim(), 18)
+            encodedData = `0x${navChange.toString(16).padStart(64, '0')}`
+            break
+          case '7': // PropertyStageChange
+            const stageValue = parseUnits(proposalData.trim(), 0)
+            encodedData = `0x${stageValue.toString(16).padStart(64, '0')}`
+            break
+          default:
+            // For other proposal types (3, 5, 6), use empty data
+            encodedData = '0x'
+            break
+        }
+      }
+
+      const hash = await writeContractAsync({
+        address: selectedPropertyForProposal.daoAddress as `0x${string}`,
+        abi: PROPERTY_DAO_ABI,
+        functionName: 'createProposal',
+        args: [
+          Number(proposalType),
+          proposalDescription,
+          encodedData
+        ]
+      })
+      
+      setProposalCreationStep('success')
+      
+      // Show success message
+      alert(`Proposal created successfully!\n\nProposal has been submitted and is now active for voting.`)
+      
+      // Refresh investments to show the new proposal
+      await fetchUserInvestments(false)
+      
+      // Close modal after delay
+      setTimeout(() => {
+        closeCreateProposalModal()
+      }, 3000)
+      
+    } catch (error) {
+      console.error('Proposal creation failed:', error)
+      setProposalCreationStep('error')
+      alert('Failed to create proposal. Please try again.')
+    } finally {
+      setIsCreatingProposal(false)
+    }
   }
 
   // Handle voting on a proposal
@@ -722,16 +829,22 @@ export default function InvestmentsPage() {
                       </p>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <span className={`px-2 py-1 rounded-full text-xs ${
-                        investment.daoStage === 2
-                          ? 'bg-green-100 text-green-800' 
+                      <span                       className={`px-2 py-1 rounded-full text-xs ${
+                        investment.daoStage === 4
+                          ? 'bg-red-100 text-red-800'
+                          : investment.daoStage === 3
+                          ? 'bg-orange-100 text-orange-800'
+                          : investment.daoStage === 2
+                          ? 'bg-green-100 text-green-800'
                           : investment.daoStage === 1
                           ? 'bg-blue-100 text-blue-800'
                           : investment.daoStage === 0
                           ? 'bg-yellow-100 text-yellow-800'
                           : 'bg-gray-100 text-gray-800'
                       }`}>
-                        {investment.daoStage === 2 ? 'Under Management' : 
+                        {investment.daoStage === 4 ? 'Liquidated' :
+                         investment.daoStage === 3 ? 'Liquidating' :
+                         investment.daoStage === 2 ? 'Under Management' : 
                          investment.daoStage === 1 ? 'Funded' : 
                          investment.daoStage === 0 ? 'Open to Fund' : 'Unknown'}
                       </span>
@@ -855,7 +968,11 @@ export default function InvestmentsPage() {
                         <div className="flex justify-between items-center mb-2">
                           <span className="text-sm font-medium">Current Stage</span>
                           <span className={`px-2 py-1 rounded-full text-xs ${
-                            selectedInvestment.daoStage === 2
+                            selectedInvestment.daoStage === 4
+                              ? 'bg-red-100 text-red-800'
+                              : selectedInvestment.daoStage === 3
+                              ? 'bg-orange-100 text-orange-800'
+                              : selectedInvestment.daoStage === 2
                               ? 'bg-green-100 text-green-800' 
                               : selectedInvestment.daoStage === 1
                               ? 'bg-blue-100 text-blue-800'
@@ -863,7 +980,9 @@ export default function InvestmentsPage() {
                               ? 'bg-yellow-100 text-yellow-800'
                               : 'bg-gray-100 text-gray-800'
                           }`}>
-                            {selectedInvestment.daoStage === 2 ? 'Under Management' : 
+                            {selectedInvestment.daoStage === 4 ? 'Liquidated' :
+                             selectedInvestment.daoStage === 3 ? 'Liquidating' :
+                             selectedInvestment.daoStage === 2 ? 'Under Management' : 
                              selectedInvestment.daoStage === 1 ? 'Funded' : 
                              selectedInvestment.daoStage === 0 ? 'Open to Fund' : 'Unknown'}
                           </span>
@@ -1044,20 +1163,31 @@ export default function InvestmentsPage() {
                       <Vote className="mr-2 h-5 w-5" />
                       Proposals ({selectedInvestment.proposals.length})
                     </h3>
-                    <button
-                      onClick={async () => {
-                        const updatedProposals = await fetchPropertyProposals(selectedInvestment.daoAddress, selectedInvestment.propertyId)
-                        const updatedInvestment = {
-                          ...selectedInvestment,
-                          proposals: updatedProposals
-                        }
-                        setSelectedInvestment(updatedInvestment)
-                      }}
-                      className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
-                    >
-                      <RefreshCw className="h-3 w-3" />
-                      <span>Refresh Proposals</span>
-                    </button>
+                    <div className="flex items-center space-x-2">
+                      {(selectedInvestment.daoStage === 2 || selectedInvestment.daoStage === 3) && selectedInvestment.daoAddress && (
+                        <button
+                          onClick={() => handleOpenCreateProposalModal(selectedInvestment)}
+                          className="flex items-center space-x-1 px-3 py-1 text-sm bg-purple-100 text-purple-800 rounded hover:bg-purple-200 transition-colors"
+                        >
+                          <Vote className="h-3 w-3" />
+                          <span>Create Proposal</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={async () => {
+                          const updatedProposals = await fetchPropertyProposals(selectedInvestment.daoAddress, selectedInvestment.propertyId)
+                          const updatedInvestment = {
+                            ...selectedInvestment,
+                            proposals: updatedProposals
+                          }
+                          setSelectedInvestment(updatedInvestment)
+                        }}
+                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                        <span>Refresh Proposals</span>
+                      </button>
+                    </div>
                   </div>
 
                   {selectedInvestment.proposals.length === 0 ? (
@@ -1067,6 +1197,17 @@ export default function InvestmentsPage() {
                       <p className="text-sm text-muted-foreground mt-2">
                         Proposals will appear here when they are created for this property.
                       </p>
+                      {(selectedInvestment.daoStage === 2 || selectedInvestment.daoStage === 3) && selectedInvestment.daoAddress && (
+                        <div className="mt-4">
+                          <button
+                            onClick={() => handleOpenCreateProposalModal(selectedInvestment)}
+                            className="inline-flex items-center space-x-2 px-4 py-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 transition-colors"
+                          >
+                            <Vote className="h-4 w-4" />
+                            <span>Create First Proposal</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -1076,12 +1217,25 @@ export default function InvestmentsPage() {
                             <div>
                               <div className="flex items-center gap-2">
                                 <h4 className="font-semibold">Proposal #{proposal.id}</h4>
-                                <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                                  {proposal.proposalType === 1 ? 'Property Purchase' : 
+                                <span className={`px-2 py-1 rounded-full text-xs ${
+                                  proposal.proposalType === 0 ? 'bg-red-100 text-red-800' :
+                                  proposal.proposalType === 1 ? 'bg-green-100 text-green-800' : 
+                                  proposal.proposalType === 2 ? 'bg-purple-100 text-purple-800' :
+                                  proposal.proposalType === 3 ? 'bg-blue-100 text-blue-800' :
+                                  proposal.proposalType === 4 ? 'bg-yellow-100 text-yellow-800' :
+                                  proposal.proposalType === 5 ? 'bg-orange-100 text-orange-800' :
+                                  proposal.proposalType === 6 ? 'bg-emerald-100 text-emerald-800' :
+                                  proposal.proposalType === 7 ? 'bg-indigo-100 text-indigo-800' :
+                                  'bg-gray-100 text-gray-800'
+                                }`}>
+                                  {proposal.proposalType === 0 ? 'Property Liquidation' :
+                                   proposal.proposalType === 1 ? 'Property Purchase' : 
                                    proposal.proposalType === 2 ? 'Threshold Update' :
                                    proposal.proposalType === 3 ? 'Management Change' :
                                    proposal.proposalType === 4 ? 'NAV Update' :
-                                   proposal.proposalType === 5 ? 'Stage Change' : 'Other'}
+                                   proposal.proposalType === 5 ? 'Emergency Pause' :
+                                   proposal.proposalType === 6 ? 'Emergency Unpause' :
+                                   proposal.proposalType === 7 ? 'Property Stage Change' : 'Other'}
                                 </span>
                               </div>
                               <p className="text-sm text-muted-foreground mt-1">{proposal.description}</p>
@@ -1219,6 +1373,249 @@ export default function InvestmentsPage() {
                       ))}
                     </div>
                   )}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Create Proposal Modal */}
+        {showCreateProposalModal && selectedPropertyForProposal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+            <div className="bg-background rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-2xl font-bold">Create Proposal</h2>
+                  <button
+                    onClick={closeCreateProposalModal}
+                    className="p-2 hover:bg-accent rounded-md transition-colors"
+                  >
+                    <X className="h-6 w-6" />
+                  </button>
+                </div>
+
+                {/* Property Info */}
+                <div className="bg-accent rounded-lg p-4 mb-6">
+                  <h3 className="font-semibold mb-2">{selectedPropertyForProposal.propertyName}</h3>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <p>Property #{selectedPropertyForProposal.propertyId}</p>
+                    <p>Your Shares: {formatUnits(selectedPropertyForProposal.shares, 18)}</p>
+                    <p>Voting Power: {formatUnits(selectedPropertyForProposal.votingPower, 18)} shares</p>
+                  </div>
+                </div>
+
+                {/* Proposal Form */}
+                <div className="space-y-4">
+                  {/* Proposal Type */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Proposal Type <span className="text-red-500">*</span>
+                    </label>
+                    <select
+                      value={proposalType}
+                      onChange={(e) => setProposalType(e.target.value)}
+                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
+                      disabled={isCreatingProposal}
+                    >
+                      <option value="0">Property Liquidation</option>
+                      <option value="2">Threshold Update</option>
+                      <option value="3">Management Change</option>
+                      <option value="4">NAV Update</option>
+                      <option value="5">Emergency Pause</option>
+                      <option value="6">Emergency Unpause</option>
+                      <option value="7">Property Stage Change</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {proposalType === '0' && 'Propose to liquidate the property due to market conditions'}
+                      {proposalType === '2' && 'Propose to update voting thresholds for governance decisions'}
+                      {proposalType === '3' && 'Propose to change property management or manager'}
+                      {proposalType === '4' && 'Propose to update the Net Asset Value (NAV) of the property'}
+                      {proposalType === '5' && 'Propose to pause all operations in case of emergency'}
+                      {proposalType === '6' && 'Propose to resume operations after emergency pause'}
+                      {proposalType === '7' && 'Propose to change the property stage (e.g., Funded to Under Management)'}
+                    </p>
+                  </div>
+
+                  {/* Proposal Description */}
+                  <div>
+                    <label className="block text-sm font-medium mb-2">
+                      Proposal Description <span className="text-red-500">*</span>
+                    </label>
+                    <textarea
+                      value={proposalDescription}
+                      onChange={(e) => setProposalDescription(e.target.value)}
+                      placeholder="Describe your proposal in detail..."
+                      rows={4}
+                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
+                      disabled={isCreatingProposal}
+                      required
+                    />
+                  </div>
+
+                  {/* Proposal Data (for specific proposal types) */}
+                  {proposalType === '0' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        Liquidation Price (USDC) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="Liquidation Price (USDC)"
+                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                        value={proposalData}
+                        onChange={(e) => setProposalData(e.target.value)}
+                        disabled={isCreatingProposal}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Enter the proposed liquidation price for the property.
+                      </p>
+                    </div>
+                  )}
+
+                  {proposalType === '2' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        New Threshold (%) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.1"
+                        min="0"
+                        max="100"
+                        placeholder="Enter new threshold percentage"
+                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                        value={proposalData}
+                        onChange={(e) => setProposalData(e.target.value)}
+                        disabled={isCreatingProposal}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        New voting threshold as a percentage (e.g., 60 for 60%)
+                      </p>
+                    </div>
+                  )}
+
+                  {proposalType === '4' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        NAV Change (USDC) <span className="text-red-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        step="0.01"
+                        placeholder="Enter NAV change (positive or negative)"
+                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                        value={proposalData}
+                        onChange={(e) => setProposalData(e.target.value)}
+                        disabled={isCreatingProposal}
+                      />
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Positive values increase property value (appreciation), negative values decrease it (depreciation)
+                      </p>
+                    </div>
+                  )}
+
+                  {proposalType === '7' && (
+                    <div>
+                      <label className="block text-sm font-medium mb-2">
+                        New Stage <span className="text-red-500">*</span>
+                      </label>
+                      <select
+                        value={proposalData}
+                        onChange={(e) => setProposalData(e.target.value)}
+                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                        disabled={isCreatingProposal}
+                      >
+                        <option value="">Select new stage</option>
+                        <option value="0">Open to Fund</option>
+                        <option value="1">Funded</option>
+                        <option value="2">Under Management</option>
+                        <option value="3">Liquidating</option>
+                        <option value="4">Liquidated</option>
+                      </select>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Select the new stage for the property
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Status Messages */}
+                  {proposalCreationStep === 'success' && (
+                    <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                      <div className="flex items-center space-x-2">
+                        <CheckCircle className="h-4 w-4 text-green-600" />
+                        <span className="text-sm font-medium text-green-800">
+                          Proposal created successfully!
+                        </span>
+                      </div>
+                      <p className="text-xs text-green-700 mt-1">
+                        Your proposal has been submitted and is now active for voting.
+                      </p>
+                    </div>
+                  )}
+
+                  {proposalCreationStep === 'error' && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                      <div className="flex items-center space-x-2">
+                        <XCircle className="h-4 w-4 text-red-600" />
+                        <span className="text-sm font-medium text-red-800">
+                          Failed to create proposal
+                        </span>
+                      </div>
+                      <p className="text-xs text-red-700 mt-1">
+                        There was an error creating your proposal. Please try again.
+                      </p>
+                    </div>
+                  )}
+
+                  {/* Action Buttons */}
+                  <div className="flex justify-end space-x-3 pt-4">
+                    <button
+                      onClick={closeCreateProposalModal}
+                      disabled={isCreatingProposal}
+                      className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handleCreateProposal}
+                      disabled={
+                        isCreatingProposal || 
+                        !proposalDescription.trim() ||
+                        ((proposalType === '0' || proposalType === '2' || proposalType === '4' || proposalType === '7') && !proposalData.trim())
+                      }
+                      className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
+                    >
+                      {isCreatingProposal ? (
+                        <>
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Creating...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Vote className="h-4 w-4" />
+                          <span>Create Proposal</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Information Box */}
+                <div className="mt-6 bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <Info className="h-4 w-4 text-blue-600 mr-2 mt-0.5" />
+                    <div className="text-sm text-blue-800">
+                      <p className="font-medium">Proposal Creation Guidelines:</p>
+                      <ul className="mt-2 space-y-1 text-xs">
+                        <li>• Proposals require a 7-day voting period</li>
+                        <li>• All investors can vote based on their share ownership</li>
+                        <li>• Proposals must receive majority support to be executed</li>
+                        <li>• Only properties under management can have liquidation proposals</li>
+                        <li>• Ensure all details are accurate before submitting</li>
+                      </ul>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>

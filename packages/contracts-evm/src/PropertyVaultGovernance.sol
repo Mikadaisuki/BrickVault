@@ -226,17 +226,4 @@ contract PropertyVaultGovernance is PropertyVault {
         emit SharesBurned(user, amount);
     }
 
-    function isStacksUser(address user) external view returns (bool, uint256 sbtcDeposit, uint256 shares) {
-        if (address(stacksManager) != address(0)) {
-            (sbtcDeposit, , shares, , , , , ) = stacksManager.getStacksUserInfo(user, propertyId);
-            return (sbtcDeposit > 0, sbtcDeposit, shares);
-        }
-        return (false, 0, 0);
-    }
-
-    function getTotalStacksDeposits() external view returns (uint256 totalSbtc, uint256 totalUsdValue, uint256 totalShares) {
-        if (address(stacksManager) != address(0)) {
-            (totalSbtc, totalUsdValue, totalShares) = stacksManager.getTotalStacksDeposits(propertyId);
-        }
-    }
 }

@@ -5,7 +5,6 @@ import '@openzeppelin/contracts/access/Ownable.sol';
 import '@openzeppelin/contracts/utils/Pausable.sol';
 import '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
 import './PropertyVaultGovernance.sol';
-import './StacksCrossChainManager.sol';
 
 /**
  * @title PropertyDAO
@@ -28,7 +27,6 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
     event PropertyLiquidated(uint256 propertyId, uint256 salePrice, uint256 proceeds);
     event ThresholdUpdated(uint256 propertyId, ThresholdType thresholdType, uint256 newThreshold);
     event StageChanged(PropertyStage newStage);
-    // Cross-chain event removed for new business structure
 
     // Enums
     enum ProposalType {
@@ -98,7 +96,6 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
 
     // State variables
     PropertyVaultGovernance public immutable propertyVault;
-    StacksCrossChainManager public stacksManager;
     uint32 public immutable propertyId;
     uint256 public proposalCount;
     uint256 public constant VOTING_PERIOD = 7 days;
@@ -159,14 +156,6 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         });
     }
 
-    /**
-     * @dev Set StacksCrossChainManager address
-     * @param _stacksManager Address of the StacksCrossChainManager contract
-     */
-    function setStacksCrossChainManager(address _stacksManager) external onlyOwner {
-        require(_stacksManager != address(0), 'PropertyDAO: invalid Stacks manager address');
-        stacksManager = StacksCrossChainManager(_stacksManager);
-    }
 
     /**
      * @dev Create a new proposal (shareholders only)
@@ -332,37 +321,6 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         emit StageChanged(PropertyStage.Funded);
     }
 
-    /**
-     * @dev Handle property purchase initiation after vote passes
-     * This coordinates manual sBTC to USD conversion and property purchase
-     */
-    function initiatePropertyPurchaseWithStacks() external onlyOwner {
-        require(propertyInfo.stage == PropertyStage.Funded, 'PropertyDAO: not in Funded stage');
-        
-        // Get vault funds (EVM USDC)
-        uint256 vaultUsdc = propertyVault.totalAssets();
-        
-        // Get Stacks funds info
-        uint256 stacksSbtc = 0;
-        uint256 stacksUsdValue = 0;
-        if (address(stacksManager) != address(0)) {
-            (stacksSbtc, stacksUsdValue, ) = stacksManager.getTotalStacksDeposits(propertyId);
-        }
-        
-        // Notify Stacks manager about property purchase initiation
-        // This allows platform to manually convert sBTC to USD off-chain
-        if (address(stacksManager) != address(0)) {
-            stacksManager.handlePropertyPurchaseInitiation(propertyId, vaultUsdc, stacksSbtc);
-        }
-        
-        // Initiate property purchase in vault (withdraws EVM USDC funds)
-        propertyVault.initiatePropertyPurchase(vaultUsdc, msg.sender);
-        
-        // Note: Platform will manually:
-        // 1. Convert sBTC to USD off-chain using the locked sBTC
-        // 2. Use both EVM USDC and converted USD to purchase property
-        // 3. Call completePropertyPurchase() when property is acquired
-    }
 
     /**
      * @dev Execute a proposal
@@ -442,6 +400,13 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         } else if (newStage == PropertyStage.Liquidating) {
             isLiquidating = true;
             propertyVault.pauseForLiquidation();
+        } else if (newStage == PropertyStage.Liquidated) {
+            // Unpause vault to allow liquidation proceeds withdrawal
+            try propertyVault.unpause() {
+                // Vault unpaused successfully
+            } catch {
+                // If unpause fails, continue - this is not critical
+            }
         }
         
         return true;
@@ -473,17 +438,18 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
 
     /**
      * @dev Execute property liquidation
-     * @param data Encoded liquidation data (salePrice, buyer)
+     * @param data Encoded liquidation data (salePrice)
      */
     function _executePropertyLiquidation(bytes memory data) internal returns (bool) {
-        (uint256 salePrice, address buyer) = abi.decode(data, (uint256, address));
+        uint256 salePrice = abi.decode(data, (uint256));
         
         require(!isLiquidating, 'PropertyDAO: already liquidating');
         require(salePrice > 0, 'PropertyDAO: invalid sale price');
-        require(buyer != address(0), 'PropertyDAO: invalid buyer');
         
         isLiquidating = true;
         
+        // Change stage to Liquidating
+        propertyInfo.stage = PropertyStage.Liquidating;
         // Pause the vault
         propertyVault.pauseForLiquidation();
         
@@ -604,10 +570,6 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
             if (propertyInfo.stage == PropertyStage.OpenToFund) {
                 propertyInfo.stage = PropertyStage.Funded;
                 
-                // Notify Stacks contract about stage change
-                if (address(stacksManager) != address(0)) {
-                    stacksManager.notifyStacksStageChange(propertyId, uint8(PropertyStage.Funded));
-                }
                 
                 // Automatically create property purchase proposal when funding target is reached
                 _createAutoPropertyPurchaseProposal();
@@ -814,18 +776,22 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         require(msg.sender == address(propertyVault) || msg.sender == owner(), 'PropertyDAO: only vault or owner');
         require(newStage <= 4, 'PropertyDAO: invalid stage');
         
-        PropertyStage oldStage = propertyInfo.stage;
         propertyInfo.stage = PropertyStage(newStage);
         
-        // Notify cross-chain about stage change
-        if (address(stacksManager) != address(0)) {
-            stacksManager.notifyStacksStageChange(propertyId, newStage);
+        // Handle stage-specific logic
+        if (PropertyStage(newStage) == PropertyStage.Liquidated) {
+            // Unpause vault to allow liquidation proceeds withdrawal
+            try propertyVault.unpause() {
+                // Vault unpaused successfully
+            } catch {
+                // If unpause fails, continue - this is not critical
+            }
         }
+        
         
         emit StageChanged(PropertyStage(newStage));
     }
 
-    // Cross-chain notification function removed for new business structure
 
     /**
      * @dev Check if property is ready for purchase
@@ -845,10 +811,6 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         propertyInfo.stage = PropertyStage.OpenToFund;
         propertyInfo.isFullyFunded = false; // Reset funding status
         
-        // Notify cross-chain about stage change
-        if (address(stacksManager) != address(0)) {
-            stacksManager.notifyStacksStageChange(propertyId, uint8(PropertyStage.OpenToFund));
-        }
         
         emit StageChanged(PropertyStage.OpenToFund);
     }

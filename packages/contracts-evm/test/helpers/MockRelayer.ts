@@ -5,9 +5,16 @@ import { StacksCrossChainManager } from '../../typechain-types/src';
  * Mock Relayer for Cross-Chain Testing
  * 
  * This helper simulates a real relayer that would:
- * 1. Monitor Stacks blockchain for events
+ * 1. Monitor Stacks blockchain for sBTC deposit events
  * 2. Construct cross-chain messages with proofs
- * 3. Call EVM contracts to process messages
+ * 3. Call EVM StacksCrossChainManager to mint OFTUSDC
+ * 
+ * Simplified Flow:
+ * - Users deposit sBTC on Stacks
+ * - Relayer detects deposit and sends message to EVM
+ * - EVM mints OFTUSDC to user's custodian address
+ * - Users can freely invest OFTUSDC in any property
+ * - No withdrawal back to sBTC (platform balance only)
  * 
  * Language: TypeScript/JavaScript
  * - Can interact with both Stacks (Clarity) and EVM (Solidity)
@@ -17,9 +24,8 @@ import { StacksCrossChainManager } from '../../typechain-types/src';
 
 export interface StacksEvent {
   id: string;
-  eventType: 'deposit' | 'withdrawal' | 'stage-transition';
+  eventType: 'deposit' | 'stage-transition';
   user: string;
-  propertyId: number;
   amount: string;
   stacksTxHash: string;
   timestamp: number;
@@ -29,7 +35,6 @@ export interface StacksEvent {
 export interface CrossChainMessage {
   messageId: string;
   eventType: number;
-  propertyId: number;
   evmCustodian: string;
   stacksAddress: string;
   amount: string;
@@ -54,19 +59,18 @@ export class MockRelayer {
    */
   async simulateStacksDepositEvent(
     stacksAddress: string,
-    propertyId: number,
     sbtcAmount: string,
     stacksTxHash: string
   ): Promise<string> {
+    // Use a more unique event ID that includes the tx hash to avoid collisions
     const eventId = ethers.keccak256(
-      ethers.toUtf8Bytes(`deposit-${stacksAddress}-${propertyId}-${Date.now()}`)
+      ethers.toUtf8Bytes(`deposit-${stacksAddress}-${stacksTxHash}-${Date.now()}`)
     );
 
     const event: StacksEvent = {
       id: eventId,
       eventType: 'deposit',
       user: stacksAddress,
-      propertyId,
       amount: sbtcAmount,
       stacksTxHash,
       timestamp: Date.now(),
@@ -75,37 +79,12 @@ export class MockRelayer {
 
     this.stacksEvents.set(eventId, event);
     console.log(`📡 MockRelayer: Simulated Stacks deposit event ${eventId}`);
+    console.log(`   Stacks Address: ${stacksAddress}`);
+    console.log(`   sBTC Amount: ${sbtcAmount}`);
+    console.log(`   Stacks Tx Hash: ${stacksTxHash}`);
     return eventId;
   }
 
-  /**
-   * Simulate a Stacks withdrawal event
-   */
-  async simulateStacksWithdrawalEvent(
-    stacksAddress: string,
-    propertyId: number,
-    shares: string,
-    stacksTxHash: string
-  ): Promise<string> {
-    const eventId = ethers.keccak256(
-      ethers.toUtf8Bytes(`withdrawal-${stacksAddress}-${propertyId}-${Date.now()}`)
-    );
-
-    const event: StacksEvent = {
-      id: eventId,
-      eventType: 'withdrawal',
-      user: stacksAddress,
-      propertyId,
-      amount: shares,
-      stacksTxHash,
-      timestamp: Date.now(),
-      processed: false
-    };
-
-    this.stacksEvents.set(eventId, event);
-    console.log(`📡 MockRelayer: Simulated Stacks withdrawal event ${eventId}`);
-    return eventId;
-  }
 
   /**
    * Simulate a Stacks stage transition event (from EVM to Stacks)
@@ -124,7 +103,6 @@ export class MockRelayer {
       id: eventId,
       eventType: 'stage-transition' as any, // Extend the interface
       user: 'platform', // Stage changes are initiated by platform
-      propertyId,
       amount: newStage.toString(),
       stacksTxHash,
       timestamp: Date.now(),
@@ -155,7 +133,6 @@ export class MockRelayer {
       id: eventId,
       eventType: 'stage-transition' as any, // Use same type but different handling
       user: 'stacks', // Acknowledgment comes from Stacks
-      propertyId,
       amount: acknowledgedStage.toString(),
       stacksTxHash,
       timestamp: Date.now(),
@@ -208,9 +185,9 @@ export class MockRelayer {
       throw new Error(`MockRelayer: Event ${eventId} already processed`);
     }
 
-    // Generate message ID
+    // Generate message ID (include event ID and tx hash for uniqueness)
     const messageId = ethers.keccak256(
-      ethers.toUtf8Bytes(`message-${eventId}-${Date.now()}`)
+      ethers.toUtf8Bytes(`message-${eventId}-${event.stacksTxHash}-${Date.now()}`)
     );
 
     // Check if message already processed
@@ -223,9 +200,6 @@ export class MockRelayer {
     switch (event.eventType) {
       case 'deposit':
         messageType = 1;
-        break;
-      case 'withdrawal':
-        messageType = 2;
         break;
       case 'stage-transition':
         // Message type 3 is for acknowledgments from Stacks to EVM
@@ -252,13 +226,16 @@ export class MockRelayer {
     console.log(`   Stacks Address: ${stacksAddress}`);
     console.log(`   EVM Custodian: ${evmCustodian}`);
     console.log(`   Amount: ${event.amount}`);
+    
+    if (event.eventType === 'deposit') {
+      console.log(`   → Will mint OFTUSDC to custodian address`);
+    }
 
     try {
       // Call the EVM contract to process the message
       const tx = await this.stacksManager.connect(this.relayerSigner).processCrossChainMessage(
         messageId,
         messageType,
-        event.propertyId,
         evmCustodian,
         stacksAddress,
         event.amount,
@@ -286,6 +263,13 @@ export class MockRelayer {
    */
   isMessageProcessed(messageId: string): boolean {
     return this.processedMessages.has(messageId);
+  }
+
+  /**
+   * Check if a Stacks transaction hash has been used (for double spending protection testing)
+   */
+  async isStacksTxHashUsed(stacksTxHash: string): Promise<boolean> {
+    return await this.stacksManager.isStacksTxHashUsed(stacksTxHash);
   }
 
   /**
@@ -355,6 +339,67 @@ export class MockRelayer {
       unprocessedEvents,
       processedMessages
     };
+  }
+
+  /**
+   * Simulate complete sBTC deposit flow
+   * This is a convenience method that simulates the entire process:
+   * 1. User deposits sBTC on Stacks
+   * 2. Relayer detects and processes the deposit
+   * 3. EVM mints OFTUSDC to custodian address
+   */
+  async simulateCompleteDepositFlow(
+    stacksAddress: string,
+    sbtcAmount: string,
+    evmCustodian: string,
+    stacksTxHash: string = ethers.keccak256(ethers.toUtf8Bytes(`stacks-tx-${Date.now()}`))
+  ): Promise<{ eventId: string; messageId: string }> {
+    console.log(`🚀 MockRelayer: Starting complete deposit flow simulation`);
+    console.log(`   Stacks Address: ${stacksAddress}`);
+    console.log(`   sBTC Amount: ${sbtcAmount}`);
+    console.log(`   EVM Custodian: ${evmCustodian}`);
+    console.log(`   Stacks Tx Hash: ${stacksTxHash}`);
+    
+    // Step 1: Simulate Stacks deposit event
+    const eventId = await this.simulateStacksDepositEvent(
+      stacksAddress,
+      sbtcAmount,
+      stacksTxHash
+    );
+    
+    // Step 2: Process the cross-chain message
+    const messageId = await this.processCrossChainMessage(
+      eventId,
+      evmCustodian,
+      stacksAddress
+    );
+    
+    console.log(`✅ MockRelayer: Complete deposit flow simulation finished`);
+    console.log(`   Event ID: ${eventId}`);
+    console.log(`   Message ID: ${messageId}`);
+    console.log(`   → OFTUSDC should now be minted to ${evmCustodian}`);
+    
+    return { eventId, messageId };
+  }
+
+  /**
+   * Simulate deposit with specific transaction hash (useful for double spending tests)
+   */
+  async simulateDepositWithTxHash(
+    stacksAddress: string,
+    sbtcAmount: string,
+    evmCustodian: string,
+    stacksTxHash: string
+  ): Promise<{ eventId: string; messageId: string }> {
+    console.log(`🔒 MockRelayer: Simulating deposit with specific tx hash for testing`);
+    console.log(`   Stacks Tx Hash: ${stacksTxHash}`);
+    
+    return await this.simulateCompleteDepositFlow(
+      stacksAddress,
+      sbtcAmount,
+      evmCustodian,
+      stacksTxHash
+    );
   }
 
   /**

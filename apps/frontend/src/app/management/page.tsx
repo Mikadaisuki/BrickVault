@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from 'wagmi'
-import { Building2, Users, Settings, Plus, Pause, Play, DollarSign, AlertTriangle, Eye, MapPin, Calendar, CheckCircle, FileText, TrendingUp, X, Clock, Vote, Loader2, ExternalLink, Copy, CheckCircle2, Coins } from 'lucide-react'
+import { Building2, Users, Settings, Plus, Pause, Play, DollarSign, AlertTriangle, Eye, MapPin, Calendar, CheckCircle, FileText, TrendingUp, X, Clock, Vote, Loader2, ExternalLink, Copy, CheckCircle2, Coins, RefreshCw } from 'lucide-react'
 import { PROPERTY_REGISTRY_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, PROPERTY_DAO_ABI, PROPERTY_DAO_FACTORY_ABI } from '@brickvault/abi'
 import { CONTRACT_ADDRESSES } from '../../config/contracts'
 import { Header } from '@/components/Header'
@@ -71,7 +71,6 @@ export default function ManagementPage() {
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [propertyName, setPropertyName] = useState('')
   const [depositCap, setDepositCap] = useState('')
-  const [fundingTarget, setFundingTarget] = useState('')
   const [fundingDeadline, setFundingDeadline] = useState('')
   
   // Step-by-step creation state
@@ -112,6 +111,11 @@ export default function ManagementPage() {
   const [showNavModal, setShowNavModal] = useState(false)
   const [selectedPropertyForNav, setSelectedPropertyForNav] = useState<PropertyData | null>(null)
   const [navUpdateValue, setNavUpdateValue] = useState('')
+  
+  // Finish liquidation modal state
+  const [showFinishLiquidationModal, setShowFinishLiquidationModal] = useState(false)
+  const [selectedPropertyForLiquidation, setSelectedPropertyForLiquidation] = useState<PropertyData | null>(null)
+  const [isFinishingLiquidation, setIsFinishingLiquidation] = useState(false)
   const [isUpdatingNav, setIsUpdatingNav] = useState(false)
 
   const registryAddress = CONTRACT_ADDRESSES.PropertyRegistry
@@ -324,20 +328,8 @@ export default function ManagementPage() {
   // Manual refresh function
   const refreshProperties = async () => {
     try {
-      // Force refresh by refetching property count first
-      if (publicClient) {
-        const newPropertyCount = await publicClient.readContract({
-          address: registryAddress,
-          abi: PROPERTY_REGISTRY_ABI,
-          functionName: 'getPropertyCount',
-        })
-        
-        // If property count changed, the useEffect will trigger fetchProperties
-        // Otherwise, manually call fetchProperties
-        if (newPropertyCount === propertyCount) {
-          await fetchProperties(true)
-        }
-      }
+      // Always refresh properties regardless of count changes
+      await fetchProperties(true)
     } catch (error) {
       console.error('Error refreshing properties:', error)
       setPropertiesError('Failed to refresh properties')
@@ -623,7 +615,7 @@ export default function ManagementPage() {
           
           // Show success message
           setTimeout(() => {
-            setCreationStep(2) // Move to step 2
+            setCreationStep(2) // Move to step 2 (Deploy & Link DAO)
             setIsCreating(false)
             setTxStatus(null)
             setCurrentTxHash(null)
@@ -652,7 +644,107 @@ export default function ManagementPage() {
     }
   }
 
-  // Step 2: Deploy PropertyDAO
+  // Step 2: Deploy and Link PropertyDAO (Combined)
+  const handleDeployAndLinkDAO = async () => {
+    if (!createdVaultAddress || !address) return
+
+    try {
+      setIsCreating(true)
+      setTxStatus('pending')
+      setCreationProgress(10)
+      
+      // Use PropertyDAOFactory to deploy a new PropertyDAO
+      const daoFactoryAddress = CONTRACT_ADDRESSES.PropertyDAOFactory
+      
+      if (!daoFactoryAddress || daoFactoryAddress === '0x0000000000000000000000000000000000000000') {
+        throw new Error('PropertyDAOFactory address not configured. Please deploy the factory contract first.')
+      }
+      
+      // Deploy DAO
+      setCreationProgress(20)
+      const deployTx = await writeContractAsync({
+        address: daoFactoryAddress as `0x${string}`,
+        abi: PROPERTY_DAO_FACTORY_ABI,
+        functionName: 'createPropertyDAO',
+        args: [
+          createdVaultAddress as `0x${string}`,
+          address as `0x${string}`
+        ]
+      })
+      
+      setCurrentTxHash(deployTx)
+      setCreationProgress(40)
+      
+      if (!deployTx) {
+        throw new Error('Transaction hash is undefined - transaction may have failed')
+      }
+      
+      // Wait for DAO deployment to be mined
+      setCreationProgress(50)
+      const deployReceipt = await publicClient?.waitForTransactionReceipt({ hash: deployTx })
+      
+      if (!deployReceipt) {
+        throw new Error('No deployment receipt received')
+      }
+
+      // Look for PropertyDAOCreated event
+      const daoCreatedEvent = deployReceipt.logs.find(log => 
+        log.address.toLowerCase() === daoFactoryAddress.toLowerCase() &&
+        log.topics.length === 4 // PropertyDAOCreated has 3 indexed parameters
+      )
+      
+      if (!daoCreatedEvent) {
+        throw new Error('PropertyDAOCreated event not found')
+      }
+
+      // Extract DAO address from topic[1] (indexed)
+      const daoAddress = '0x' + (daoCreatedEvent.topics[1] || '').slice(26)
+      setCreatedDAOAddress(daoAddress)
+      
+      // Now link DAO to vault
+      setCreationProgress(70)
+      const linkTx = await writeContractAsync({
+        address: createdVaultAddress as `0x${string}`,
+        abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+        functionName: 'setDAO',
+        args: [daoAddress as `0x${string}`]
+      })
+      
+      setCurrentTxHash(linkTx)
+      setCreationProgress(80)
+      
+      if (!linkTx) {
+        throw new Error('Link transaction hash is undefined - transaction may have failed')
+      }
+      
+      // Wait for link transaction to be mined
+      setCreationProgress(90)
+      const linkReceipt = await publicClient?.waitForTransactionReceipt({ hash: linkTx })
+      
+      if (linkReceipt) {
+        setCreationProgress(100)
+        setTxStatus('confirmed')
+        
+        // Show success message and move to step 3
+        setTimeout(() => {
+          setCreationStep(3) // Move to step 3 (Set Funding)
+          setIsCreating(false)
+          setTxStatus(null)
+          setCurrentTxHash(null)
+          setCreationProgress(0)
+        }, 1500)
+      } else {
+        throw new Error('No link receipt received')
+      }
+    } catch (error) {
+      setTxStatus('error')
+      setCreationProgress(0)
+      alert('Failed to deploy and link DAO. Please try again.')
+      setIsCreating(false)
+    }
+  }
+
+  // Legacy Step 2: Deploy PropertyDAO (kept for reference)
   const handleDeployDAO = async () => {
     if (!createdVaultAddress || !address) return
 
@@ -708,7 +800,7 @@ export default function ManagementPage() {
           
           // Show success message
           setTimeout(() => {
-            setCreationStep(3) // Move to step 3
+            setCreationStep(3) // Move to step 3 (Set Funding)
             setIsCreating(false)
             setTxStatus(null)
             setCurrentTxHash(null)
@@ -764,7 +856,7 @@ export default function ManagementPage() {
         
         // Show success message
         setTimeout(() => {
-          setCreationStep(4) // Move to step 4
+          setCreationStep(3) // Move to step 3 (Set Funding)
           setIsCreating(false)
           setTxStatus(null)
           setCurrentTxHash(null)
@@ -784,7 +876,7 @@ export default function ManagementPage() {
 
   // Step 4: Set funding target
   const handleSetFundingTarget = async () => {
-    if (!createdDAOAddress || !fundingTarget || !fundingDeadline) return
+    if (!createdDAOAddress || !depositCap || !fundingDeadline) return
 
     try {
       setIsCreating(true)
@@ -796,7 +888,7 @@ export default function ManagementPage() {
         abi: PROPERTY_DAO_ABI,
         functionName: 'setFundingTarget',
         args: [
-          BigInt(Number(fundingTarget) * 1e18), // Convert to wei
+          BigInt(Number(depositCap) * 1e18), // Convert to wei - use depositCap directly
           Math.floor(new Date(fundingDeadline).getTime() / 1000) // Convert to unix timestamp
         ]
       })
@@ -822,7 +914,6 @@ export default function ManagementPage() {
           // Reset form and close modal
           setPropertyName('')
           setDepositCap('')
-          setFundingTarget('')
           setFundingDeadline('')
           setCreationStep(1)
           setCreatedPropertyId(null)
@@ -860,7 +951,6 @@ export default function ManagementPage() {
     setManualVaultAddress('')
     setPropertyName('')
     setDepositCap('')
-    setFundingTarget('')
     setFundingDeadline('')
     setCurrentTxHash(null)
     setTxStatus(null)
@@ -1096,6 +1186,45 @@ export default function ManagementPage() {
     setShowNavModal(true)
   }
 
+  // Function to open finish liquidation modal
+  const handleOpenFinishLiquidationModal = (property: PropertyData) => {
+    setSelectedPropertyForLiquidation(property)
+    setShowFinishLiquidationModal(true)
+  }
+
+  // Function to finish liquidation
+  const handleFinishLiquidation = async () => {
+    if (!isOwner || !selectedPropertyForLiquidation || !selectedPropertyForLiquidation.daoAddress) return
+
+    try {
+      setIsFinishingLiquidation(true)
+      
+      console.log('🏁 Finishing liquidation for property:', selectedPropertyForLiquidation.name)
+      console.log('  - DAO Address:', selectedPropertyForLiquidation.daoAddress)
+      
+      // Call updatePropertyStage(4) to transition from Liquidating (3) to Liquidated (4)
+      await writeContractAsync({
+        address: selectedPropertyForLiquidation.daoAddress as `0x${string}`,
+        abi: PROPERTY_DAO_ABI,
+        functionName: 'updatePropertyStage',
+        args: [4], // Liquidated stage
+        gas: BigInt(200000),
+      })
+      
+      console.log('✅ Liquidation completed successfully')
+      
+      // Close modal and refresh properties
+      setShowFinishLiquidationModal(false)
+      setSelectedPropertyForLiquidation(null)
+      await fetchProperties()
+      
+    } catch (error) {
+      console.error('❌ Error finishing liquidation:', error)
+    } finally {
+      setIsFinishingLiquidation(false)
+    }
+  }
+
   // Function to update NAV
   const handleUpdateNAV = async () => {
     if (!isOwner || !selectedPropertyForNav || !navUpdateValue) return
@@ -1223,69 +1352,66 @@ export default function ManagementPage() {
           <p className="text-muted-foreground">Manage your BrickVault platform and properties</p>
         </div>
 
-      {/* Network & Connection Status */}
+      {/* Network, Connection & Owner Status */}
       <div className="bg-card rounded-lg border p-6 mb-6">
         <h2 className="text-xl font-semibold mb-4 flex items-center">
           <Settings className="mr-2 h-5 w-5" />
-          Network & Connection Status
+          Network, Connection & Owner Status
         </h2>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Network</p>
-            <div className="flex items-center">
-              <div className={`w-2 h-2 rounded-full mr-2 ${
-                chainId === 31337 ? 'bg-green-500' : 'bg-red-500'
-              }`}></div>
-              <p className="font-semibold text-sm">
-                {chainId === 31337 ? 'Localhost (31337)' : `Chain ID: ${chainId}`}
-              </p>
+        <div className="space-y-4">
+          {/* Connection Status Row */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Network</p>
+              <div className="flex items-center">
+                <div className={`w-2 h-2 rounded-full mr-2 ${
+                  chainId === 31337 ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+                <p className="font-semibold text-sm">
+                  {chainId === 31337 ? 'Localhost (31337)' : `Chain ID: ${chainId}`}
+                </p>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Wallet Status</p>
+              <div className="flex items-center">
+                <div className={`w-2 h-2 rounded-full mr-2 ${
+                  isConnected ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+                <p className="font-semibold text-sm">
+                  {isConnected ? 'Connected' : 'Disconnected'}
+                </p>
+              </div>
+            </div>
+            <div>
+              <p className="text-sm text-muted-foreground">Blockchain Connection</p>
+              <div className="flex items-center">
+                <div className={`w-2 h-2 rounded-full mr-2 ${
+                  publicClient ? 'bg-green-500' : 'bg-red-500'
+                }`}></div>
+                <p className="font-semibold text-sm">
+                  {publicClient ? 'Connected' : 'Disconnected'}
+                </p>
+              </div>
             </div>
           </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Wallet Status</p>
-            <div className="flex items-center">
-              <div className={`w-2 h-2 rounded-full mr-2 ${
-                isConnected ? 'bg-green-500' : 'bg-red-500'
-              }`}></div>
-              <p className="font-semibold text-sm">
-                {isConnected ? 'Connected' : 'Disconnected'}
-              </p>
+          
+          {/* Address Information Row */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <p className="text-sm text-muted-foreground">Contract Owner</p>
+              <p className="font-mono text-sm break-all">{owner as string}</p>
             </div>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Blockchain Connection</p>
-            <div className="flex items-center">
-              <div className={`w-2 h-2 rounded-full mr-2 ${
-                publicClient ? 'bg-green-500' : 'bg-red-500'
-              }`}></div>
-              <p className="font-semibold text-sm">
-                {publicClient ? 'Connected' : 'Disconnected'}
-              </p>
+            <div>
+              <p className="text-sm text-muted-foreground">Connected Wallet</p>
+              <p className="font-mono text-sm break-all">{address}</p>
             </div>
-          </div>
-        </div>
-        </div>
-
-      {/* Owner Info */}
-      <div className="bg-card rounded-lg border p-6 mb-6">
-        <h2 className="text-xl font-semibold mb-4 flex items-center">
-          <Settings className="mr-2 h-5 w-5" />
-          Owner Information
-        </h2>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <p className="text-sm text-muted-foreground">Contract Owner</p>
-            <p className="font-mono text-sm">{owner as string}</p>
-          </div>
-          <div>
-            <p className="text-sm text-muted-foreground">Connected Wallet</p>
-            <p className="font-mono text-sm">{address}</p>
           </div>
         </div>
       </div>
 
       {/* Platform Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
         <div className="bg-card rounded-lg border p-6">
           <div className="flex items-center">
             <Building2 className="h-8 w-8 text-blue-500 mr-3" />
@@ -1300,8 +1426,28 @@ export default function ManagementPage() {
           <div className="flex items-center">
             <DollarSign className="h-8 w-8 text-green-500 mr-3" />
             <div>
-              <p className="text-sm text-muted-foreground">DAO Funded Properties</p>
-              <p className="text-2xl font-bold">{properties.filter(p => p.daoIsFullyFunded).length}</p>
+              <p className="text-sm text-muted-foreground">Under Management</p>
+              <p className="text-2xl font-bold">{properties.filter(p => p.daoStage === 2).length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-lg border p-6">
+          <div className="flex items-center">
+            <AlertTriangle className="h-8 w-8 text-orange-500 mr-3" />
+            <div>
+              <p className="text-sm text-muted-foreground">Liquidating</p>
+              <p className="text-2xl font-bold">{properties.filter(p => p.daoStage === 3).length}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-card rounded-lg border p-6">
+          <div className="flex items-center">
+            <CheckCircle className="h-8 w-8 text-red-500 mr-3" />
+            <div>
+              <p className="text-sm text-muted-foreground">Liquidated</p>
+              <p className="text-2xl font-bold">{properties.filter(p => p.daoStage === 4).length}</p>
             </div>
           </div>
         </div>
@@ -1310,8 +1456,8 @@ export default function ManagementPage() {
           <div className="flex items-center">
             <Users className="h-8 w-8 text-purple-500 mr-3" />
             <div>
-              <p className="text-sm text-muted-foreground">Total Deposits</p>
-              <p className="text-2xl font-bold">0 OFTUSDC</p>
+              <p className="text-sm text-muted-foreground">DAO Funded</p>
+              <p className="text-2xl font-bold">{properties.filter(p => p.daoIsFullyFunded).length}</p>
             </div>
           </div>
         </div>
@@ -1400,7 +1546,7 @@ export default function ManagementPage() {
                 </>
               ) : (
                 <>
-                  <Building2 className="h-3 w-3" />
+                  <RefreshCw className="h-3 w-3" />
                   <span>Refresh</span>
                 </>
               )}
@@ -1481,7 +1627,11 @@ export default function ManagementPage() {
                   </div>
                   <div className="flex items-center space-x-2">
                     <span className={`px-2 py-1 rounded-full text-xs ${
-                      property.daoStage === 2
+                      property.daoStage === 4
+                        ? 'bg-red-100 text-red-800' 
+                        : property.daoStage === 3
+                        ? 'bg-orange-100 text-orange-800'
+                        : property.daoStage === 2
                         ? 'bg-green-100 text-green-800' 
                         : property.daoStage === 1
                         ? 'bg-blue-100 text-blue-800'
@@ -1489,7 +1639,9 @@ export default function ManagementPage() {
                         ? 'bg-yellow-100 text-yellow-800'
                         : 'bg-gray-100 text-gray-800'
                     }`}>
-                      {property.daoStage === 2 ? 'Under Management' : 
+                      {property.daoStage === 4 ? 'Liquidated' : 
+                       property.daoStage === 3 ? 'Liquidating' : 
+                       property.daoStage === 2 ? 'Under Management' : 
                        property.daoStage === 1 ? 'Funded' : 
                        property.daoStage === 0 ? 'Open to Fund' : 'Unknown'}
                     </span>
@@ -1652,7 +1804,11 @@ export default function ManagementPage() {
                     <div className="flex justify-between">
                       <span className="text-sm text-muted-foreground">Status:</span>
                       <span className={`px-2 py-1 rounded-full text-xs ${
-                        selectedProperty.daoStage === 2
+                        selectedProperty.daoStage === 4
+                          ? 'bg-red-100 text-red-800' 
+                          : selectedProperty.daoStage === 3
+                          ? 'bg-orange-100 text-orange-800'
+                          : selectedProperty.daoStage === 2
                           ? 'bg-green-100 text-green-800' 
                           : selectedProperty.daoStage === 1
                           ? 'bg-blue-100 text-blue-800'
@@ -1660,7 +1816,9 @@ export default function ManagementPage() {
                           ? 'bg-yellow-100 text-yellow-800'
                           : 'bg-gray-100 text-gray-800'
                       }`}>
-                        {selectedProperty.daoStage === 2 ? 'Under Management' : 
+                        {selectedProperty.daoStage === 4 ? 'Liquidated' : 
+                         selectedProperty.daoStage === 3 ? 'Liquidating' : 
+                         selectedProperty.daoStage === 2 ? 'Under Management' : 
                          selectedProperty.daoStage === 1 ? 'Funded' : 
                          selectedProperty.daoStage === 0 ? 'Open to Fund' : 'Unknown'}
                       </span>
@@ -1782,6 +1940,60 @@ export default function ManagementPage() {
                   </div>
                 )}
 
+                {/* Liquidation Status for Liquidating Properties */}
+                {selectedProperty.daoStage === 3 && (
+                  <div className="bg-accent rounded-lg p-4">
+                    <h3 className="font-semibold mb-3 flex items-center">
+                      <AlertTriangle className="h-5 w-5 mr-2 text-orange-600" />
+                      Liquidation Status
+                    </h3>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Status:</span>
+                        <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs">
+                          Liquidation in Progress
+                        </span>
+                      </div>
+                      <div className="bg-orange-50 border border-orange-200 rounded-lg p-3">
+                        <div className="flex items-start">
+                          <AlertTriangle className="h-4 w-4 text-orange-600 mr-2 mt-0.5" />
+                          <div className="text-sm text-orange-800">
+                            <p className="font-medium">Property Under Liquidation</p>
+                            <p>This property is currently being liquidated. The vault is paused and investors can withdraw their remaining funds.</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* Final Status for Liquidated Properties */}
+                {selectedProperty.daoStage === 4 && (
+                  <div className="bg-accent rounded-lg p-4">
+                    <h3 className="font-semibold mb-3 flex items-center">
+                      <CheckCircle className="h-5 w-5 mr-2 text-red-600" />
+                      Liquidation Complete
+                    </h3>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm text-muted-foreground">Status:</span>
+                        <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs">
+                          Liquidation Complete
+                        </span>
+                      </div>
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                        <div className="flex items-start">
+                          <CheckCircle className="h-4 w-4 text-red-600 mr-2 mt-0.5" />
+                          <div className="text-sm text-red-800">
+                            <p className="font-medium">Property Successfully Liquidated</p>
+                            <p>This property has been liquidated and the lifecycle is complete. All funds have been distributed to investors.</p>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {/* Property Token Information for Under Management Properties */}
                 {selectedProperty.daoStage === 2 && selectedProperty.propertyTokenAddress && (
                   <div className="bg-accent rounded-lg p-4">
@@ -1872,8 +2084,25 @@ export default function ManagementPage() {
                           <div>
                             <div className="flex items-center gap-2">
                               <h4 className="font-semibold">Proposal #{proposal.id}</h4>
-                              <span className="px-2 py-1 rounded-full text-xs bg-blue-100 text-blue-800">
-                                Auto-Created
+                              <span className={`px-2 py-1 rounded-full text-xs ${
+                                proposal.proposalType === 0 ? 'bg-red-100 text-red-800' :
+                                proposal.proposalType === 1 ? 'bg-green-100 text-green-800' : 
+                                proposal.proposalType === 2 ? 'bg-purple-100 text-purple-800' :
+                                proposal.proposalType === 3 ? 'bg-blue-100 text-blue-800' :
+                                proposal.proposalType === 4 ? 'bg-yellow-100 text-yellow-800' :
+                                proposal.proposalType === 5 ? 'bg-orange-100 text-orange-800' :
+                                proposal.proposalType === 6 ? 'bg-emerald-100 text-emerald-800' :
+                                proposal.proposalType === 7 ? 'bg-indigo-100 text-indigo-800' :
+                                'bg-gray-100 text-gray-800'
+                              }`}>
+                                {proposal.proposalType === 0 ? 'Property Liquidation' :
+                                 proposal.proposalType === 1 ? 'Property Purchase' : 
+                                 proposal.proposalType === 2 ? 'Threshold Update' :
+                                 proposal.proposalType === 3 ? 'Management Change' :
+                                 proposal.proposalType === 4 ? 'NAV Update' :
+                                 proposal.proposalType === 5 ? 'Emergency Pause' :
+                                 proposal.proposalType === 6 ? 'Emergency Unpause' :
+                                 proposal.proposalType === 7 ? 'Property Stage Change' : 'Other'}
                               </span>
                             </div>
                             <p className="text-sm text-muted-foreground mt-1">{proposal.description}</p>
@@ -2011,7 +2240,7 @@ export default function ManagementPage() {
               {/* Step Progress Indicator */}
               <div className="mb-8">
                 <div className="flex items-center justify-between">
-                  {[1, 2, 3, 4].map((step) => (
+                  {[1, 2, 3].map((step) => (
                     <div key={step} className="flex items-center">
                       <div className={`w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold transition-all duration-300 ${
                         step === creationStep
@@ -2025,11 +2254,10 @@ export default function ManagementPage() {
                       </div>
                       <div className="ml-3 text-sm font-medium">
                         {step === 1 && 'Create Property'}
-                        {step === 2 && 'Deploy DAO'}
-                        {step === 3 && 'Link DAO'}
-                        {step === 4 && 'Set Funding'}
+                        {step === 2 && 'Deploy & Link DAO'}
+                        {step === 3 && 'Set Funding'}
                       </div>
-                      {step < 4 && (
+                      {step < 3 && (
                         <div className={`w-16 h-1 mx-4 rounded-full transition-all duration-500 ${
                           step < creationStep ? 'bg-green-500' : 'bg-gray-200'
                         }`} />
@@ -2181,7 +2409,7 @@ export default function ManagementPage() {
                 </div>
               )}
 
-              {/* Step 2: Deploy DAO */}
+              {/* Step 2: Deploy & Link DAO */}
               {creationStep === 2 && (
                 <div className="space-y-4">
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
@@ -2193,9 +2421,9 @@ export default function ManagementPage() {
                   </div>
 
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-6">
-                    <h3 className="font-semibold text-orange-800 mb-2">Step 2: Deploy PropertyDAO</h3>
+                    <h3 className="font-semibold text-orange-800 mb-2">Step 2: Deploy & Link PropertyDAO</h3>
                     <p className="text-orange-700 text-sm">
-                      Deploy a PropertyDAO contract that will manage the property's funding and governance.
+                      Deploy a PropertyDAO contract and link it to the PropertyVaultGovernance for seamless integration.
                     </p>
                   </div>
 
@@ -2208,19 +2436,19 @@ export default function ManagementPage() {
                       Back
                     </button>
                     <button
-                      onClick={handleDeployDAO}
+                      onClick={handleDeployAndLinkDAO}
                       disabled={isCreating}
                       className="px-8 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
                     >
                       {isCreating ? (
                         <>
                           <Loader2 className="h-4 w-4 animate-spin" />
-                          <span>Deploying...</span>
+                          <span>Deploying & Linking...</span>
                         </>
                       ) : (
                         <>
                           <Vote className="h-4 w-4" />
-                          <span>Deploy DAO</span>
+                          <span>Deploy & Link DAO</span>
                         </>
                       )}
                     </button>
@@ -2249,19 +2477,12 @@ export default function ManagementPage() {
                             onClick={() => {
                               if (manualVaultAddress) {
                                 setCreatedVaultAddress(manualVaultAddress)
-                                setCreationStep(3)
                               }
                             }}
                             disabled={!manualVaultAddress}
                             className="px-4 py-2 bg-yellow-600 text-white rounded text-sm hover:bg-yellow-700 disabled:opacity-50"
                           >
                             Use This Address
-                          </button>
-                          <button
-                            onClick={() => setCreationStep(3)}
-                            className="px-4 py-2 bg-gray-600 text-white rounded text-sm hover:bg-gray-700"
-                          >
-                            Skip for Now
                           </button>
                         </div>
                       </div>
@@ -2270,86 +2491,32 @@ export default function ManagementPage() {
                 </div>
               )}
 
-              {/* Step 3: Link DAO */}
+
+              {/* Step 3: Set Funding Target */}
               {creationStep === 3 && (
                 <div className="space-y-4">
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-                    <h3 className="font-semibold text-green-800 mb-2">Step 2 Complete: DAO Deployed</h3>
+                    <h3 className="font-semibold text-green-800 mb-2">Step 2 Complete: DAO Deployed & Linked</h3>
                     <div className="text-sm text-green-700">
                       <p><strong>DAO Address:</strong> {createdDAOAddress?.slice(0, 6)}...{createdDAOAddress?.slice(-4)}</p>
+                      <p>The PropertyDAO is now deployed and linked to the PropertyVaultGovernance.</p>
                     </div>
-                  </div>
-
-                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-6">
-                    <h3 className="font-semibold text-purple-800 mb-2">Step 3: Link DAO to Vault</h3>
-                    <p className="text-purple-700 text-sm">
-                      Link the PropertyDAO to the PropertyVaultGovernance so they can work together.
-                    </p>
-                  </div>
-
-                  <div className="flex justify-end space-x-3 pt-4">
-                    <button
-                      onClick={() => setCreationStep(2)}
-                      className="px-4 py-2 text-gray-600 hover:text-gray-800 transition-colors"
-                    >
-                      Back
-                    </button>
-                    <button
-                      onClick={handleLinkDAO}
-                      disabled={isCreating}
-                      className="px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                      {isCreating ? 'Linking...' : 'Link DAO'}
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {/* Step 4: Set Funding Target */}
-              {creationStep === 4 && (
-                <div className="space-y-4">
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-6">
-                    <h3 className="font-semibold text-green-800 mb-2">Step 3 Complete: DAO Linked</h3>
-                    <p className="text-green-700 text-sm">
-                      The PropertyDAO is now linked to the PropertyVaultGovernance.
-                    </p>
                   </div>
 
                   <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4 mb-6">
-                    <h3 className="font-semibold text-indigo-800 mb-2">Step 4: Set Funding Target</h3>
-                    <p className="text-indigo-700 text-sm">
-                      Set the funding target and deadline for the property's DAO.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium mb-2">
-                      Funding Target (OFTUSDC) <span className="text-red-500">*</span>
-                    </label>
-                    <div className="relative">
-                      <input
-                        type="number"
-                        value={fundingTarget}
-                        onChange={(e) => setFundingTarget(e.target.value)}
-                        placeholder="500000"
-                        min="1"
-                        step="1"
-                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 pr-12"
-                        required
-                      />
-                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">
-                        OFTUSDC
+                    <h3 className="font-semibold text-indigo-800 mb-2">Step 3: Set Funding Deadline</h3>
+                    <div className="mt-3 p-3 bg-indigo-100 rounded-lg">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm font-medium text-indigo-800">Funding Target:</span>
+                        <span className="font-semibold text-indigo-900">{depositCap} OFTUSDC</span>
+                      </div>
+                      <div className="flex justify-between items-center mt-1">
+                        <span className="text-sm text-indigo-700">Deposit Cap:</span>
+                        <span className="text-sm text-indigo-700">{depositCap} OFTUSDC</span>
                       </div>
                     </div>
-                    {fundingTarget && Number(fundingTarget) > 0 && (
-                      <p className="text-sm text-green-600 mt-1">
-                        ≈ ${(Number(fundingTarget) * 1).toLocaleString()} USD
-                      </p>
-                    )}
-                    {!fundingTarget && (
-                      <p className="text-sm text-red-500 mt-1">Funding target is required</p>
-                    )}
                   </div>
+
 
                   <div>
                     <label className="block text-sm font-medium mb-2">
@@ -2373,7 +2540,7 @@ export default function ManagementPage() {
 
                   <div className="flex justify-end space-x-3 pt-4">
                     <button
-                      onClick={() => setCreationStep(3)}
+                      onClick={() => setCreationStep(2)}
                       disabled={isCreating}
                       className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
                     >
@@ -2381,7 +2548,7 @@ export default function ManagementPage() {
                     </button>
                     <button
                       onClick={handleSetFundingTarget}
-                      disabled={isCreating || !fundingTarget || !fundingDeadline || Number(fundingTarget) <= 0 || new Date(fundingDeadline) <= new Date()}
+                      disabled={isCreating || !depositCap || !fundingDeadline || Number(depositCap) <= 0 || new Date(fundingDeadline) <= new Date()}
                       className="px-8 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
                     >
                       {isCreating ? (
@@ -2428,7 +2595,7 @@ export default function ManagementPage() {
                   </h3>
                   
                   {/* Properties Under Management */}
-                  <div className="bg-background rounded border p-4">
+                  <div className="bg-background rounded border p-4 mb-4">
                     <div className="flex items-center justify-between mb-3">
                       <div className="flex items-center">
                         <h4 className="font-medium">Properties Under Management</h4>
@@ -2470,6 +2637,95 @@ export default function ManagementPage() {
                       {properties.filter(p => p.daoStage === 2).length === 0 && (
                         <p className="text-sm text-muted-foreground text-center py-2">
                           No properties under management yet
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Properties in Liquidation */}
+                  <div className="bg-background rounded border p-4 mb-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center">
+                        <h4 className="font-medium">Properties in Liquidation</h4>
+                      </div>
+                      <span className="text-xs text-muted-foreground">Still active for rent & NAV</span>
+                    </div>
+                    <div className="space-y-2">
+                      {properties.filter(p => p.daoStage === 3).map((property) => (
+                        <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
+                          <div className="flex items-center">
+                           <span className="text-sm font-medium">{property.name}</span>
+                            {property.propertyAddress && (
+                              <span className="text-xs text-muted-foreground ml-2">
+                                ({property.propertyAddress})
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs">
+                              Liquidating
+                            </span>
+                            <button
+                              onClick={() => handleOpenRentModal(property)}
+                              disabled={loading}
+                              className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs hover:bg-green-200 disabled:opacity-50"
+                            >
+                              Harvest Rent
+                            </button>
+                            <button
+                              onClick={() => handleOpenNavModal(property)}
+                              disabled={loading}
+                              className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 disabled:opacity-50"
+                            >
+                              Update NAV
+                            </button>
+                            <button
+                              onClick={() => handleOpenFinishLiquidationModal(property)}
+                              disabled={loading}
+                              className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs hover:bg-red-200 disabled:opacity-50"
+                            >
+                              Finish Liquidation
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                      {properties.filter(p => p.daoStage === 3).length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-2">
+                          No properties in liquidation
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Liquidated Properties */}
+                  <div className="bg-background rounded border p-4">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center">
+                        <h4 className="font-medium">Liquidated Properties</h4>
+                      </div>
+                      <span className="text-xs text-muted-foreground">Lifecycle complete</span>
+                    </div>
+                    <div className="space-y-2">
+                      {properties.filter(p => p.daoStage === 4).map((property) => (
+                        <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
+                          <div className="flex items-center">
+                           <span className="text-sm font-medium">{property.name}</span>
+                            {property.propertyAddress && (
+                              <span className="text-xs text-muted-foreground ml-2">
+                                ({property.propertyAddress})
+                              </span>
+                            )}
+                          </div>
+                          <div className="flex items-center space-x-2">
+                            <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">
+                              Liquidated
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                      {properties.filter(p => p.daoStage === 4).length === 0 && (
+                        <p className="text-sm text-muted-foreground text-center py-2">
+                          No liquidated properties
                         </p>
                       )}
                     </div>
@@ -2717,6 +2973,89 @@ export default function ManagementPage() {
                       <>
                         <TrendingUp className="h-4 w-4" />
                         <span>Update NAV</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Finish Liquidation Modal */}
+      {showFinishLiquidationModal && selectedPropertyForLiquidation && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <AlertTriangle className="h-5 w-5 mr-2 text-red-600" />
+                  Finish Liquidation
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowFinishLiquidationModal(false)
+                    setSelectedPropertyForLiquidation(null)
+                  }}
+                  className="p-2 hover:bg-accent rounded-md transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-accent rounded-lg p-4">
+                  <h3 className="font-medium mb-2">{selectedPropertyForLiquidation.name}</h3>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <p>DAO: {selectedPropertyForLiquidation.daoAddress?.slice(0, 6)}...{selectedPropertyForLiquidation.daoAddress?.slice(-4)}</p>
+                    {selectedPropertyForLiquidation.propertyAddress && (
+                      <p>Property: {selectedPropertyForLiquidation.propertyAddress}</p>
+                    )}
+                    <p>Current Stage: Liquidating (3)</p>
+                  </div>
+                </div>
+
+                <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <AlertTriangle className="h-5 w-5 text-red-600 mr-3 mt-0.5" />
+                    <div className="text-sm text-red-800">
+                      <p className="font-medium mb-2">⚠️ Important: Finishing Liquidation</p>
+                      <ul className="space-y-1 list-disc list-inside">
+                        <li>This will transition the property from "Liquidating" to "Liquidated" stage</li>
+                        <li>The vault will be unpaused to allow liquidation proceeds withdrawal</li>
+                        <li>This action cannot be undone</li>
+                        <li>Make sure all liquidation activities are complete before proceeding</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowFinishLiquidationModal(false)
+                      setSelectedPropertyForLiquidation(null)
+                    }}
+                    disabled={isFinishingLiquidation}
+                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleFinishLiquidation}
+                    disabled={isFinishingLiquidation}
+                    className="px-6 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
+                  >
+                    {isFinishingLiquidation ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Finishing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <AlertTriangle className="h-4 w-4" />
+                        <span>Finish Liquidation</span>
                       </>
                     )}
                   </button>
