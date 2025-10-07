@@ -94,7 +94,28 @@
            (if (< amount (var-get min-deposit-amount)) ERR-INVALID-AMOUNT
              ERR-STACKS-ADDRESS-NOT-REGISTERED)))))
 
-;; Note: No withdrawal functions - users cannot withdraw sBTC back
+;; Owner withdrawal function - only contract owner can withdraw sBTC to their own address
+(define-public (owner-withdraw-sbtc (amount uint))
+  (if (is-eq tx-sender (var-get contract-owner))
+    (if (not (var-get is-paused))
+      (match (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
+               amount 
+               (as-contract tx-sender) 
+               (var-get contract-owner)
+               none)
+        transfer-result (ok (begin
+          ;; Update global total (subtract withdrawn amount)
+          (var-set total-sbtc-locked (- (var-get total-sbtc-locked) amount))
+          
+          ;; Emit withdrawal event
+          (print "withdrawal:owner-withdrawal")
+          
+          true))
+        err-code (err ERR-TRANSFER-FAILED))
+      (err ERR-CONTRACT-PAUSED))
+    (err ERR-NOT-OWNER)))
+
+;; Note: Users cannot withdraw sBTC back
 ;; Once sBTC is deposited, it's locked and OFTUSDC is minted on EVM
 ;; Users can only use OFTUSDC for investments on the platform
 
@@ -124,6 +145,9 @@
   (ok (var-get is-paused)))
 
 ;; Demo/Status function for testing
+(define-read-only (get-contract-sbtc-balance)
+  (ok (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token get-balance (as-contract tx-sender))))
+
 (define-read-only (get-demo-status)
   (ok (tuple 
     (is-paused (var-get is-paused))
