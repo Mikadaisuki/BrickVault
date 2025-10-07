@@ -13,6 +13,7 @@ export interface StacksEvent {
   timestamp: number;
   processed: boolean;
   blockHeight?: number;
+  evmCustodian?: string; // EVM address where OFTUSDC should be minted
 }
 
 export interface CrossChainMessage {
@@ -52,14 +53,29 @@ export interface RelayerStats {
 export interface StacksContractEvent {
   event: string;
   data: {
+    // For ft_transfer_event
+    amount?: string;
+    asset_identifier?: string;
+    recipient?: string;
+    sender?: string;
+    
+    // For print_event
+    contract_identifier?: string;
+    topic?: string;
+    value?: any;
+    raw_value?: string;
+    
+    // Legacy fields
     property_id?: string;
     user?: string;
-    amount?: string;
     stage?: string;
+    
+    // Generic field for any other data
     [key: string]: any;
   };
   tx_id: string;
   block_height: number;
+  contract_address?: string;
 }
 
 export interface EVMContractEvent {

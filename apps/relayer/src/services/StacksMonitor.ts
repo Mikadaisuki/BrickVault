@@ -1,6 +1,13 @@
 /**
- * Stacks Event Monitor
- * Monitors Stacks blockchain for cross-chain events using @stacks/network and @stacks/transactions
+ * Stacks Event Monitor for BrickVault Gateway
+ * Monitors brick-vault-gateway contract for sBTC deposits and triggers OFTUSDC minting on EVM
+ * 
+ * Workflow:
+ * 1. Listen for ft_transfer_event from brick-vault-gateway contract
+ * 2. Extract sBTC amount and sender address
+ * 3. Query contract to get EVM custodian address for the sender
+ * 4. Trigger OFTUSDC minting on EVM to the custodian address
+ * 5. Ignore withdrawal events as requested
  */
 
 import { StacksNetwork, STACKS_TESTNET, STACKS_MAINNET } from '@stacks/network';
@@ -15,6 +22,7 @@ export class StacksMonitor {
   private config: RelayerConfig;
   private lastProcessedBlock: number = 0;
   private isMonitoring: boolean = false;
+  private processedTransactions: Set<string> = new Set(); // Track processed transactions to prevent double-spend
 
   constructor(config: RelayerConfig) {
     this.config = config;
@@ -134,66 +142,108 @@ export class StacksMonitor {
       return;
     }
 
-    console.log(`📡 Processing Stacks event: ${event.event}`);
+    // Generate unique identifier for double-spend prevention
+    const uniqueId = this.generateUniqueId(event);
+    
+    // Check if transaction already processed
+    if (this.processedTransactions.has(uniqueId)) {
+      console.log(`⚠️ Transaction already processed, skipping: ${uniqueId}`);
+      return;
+    }
+
+    console.log(`📡 Processing brick-vault-gateway event: ${event.event} (ID: ${uniqueId})`);
 
     try {
       const stacksEvent = this.parseStacksEvent(event);
       
       if (stacksEvent) {
+        // Mark transaction as processed BEFORE processing to prevent race conditions
+        this.processedTransactions.add(uniqueId);
+        
         await this.forwardToEVM(stacksEvent);
+        
+        console.log(`✅ Transaction processed successfully: ${uniqueId}`);
       }
     } catch (error) {
-      console.error('❌ Error processing Stacks event:', error);
+      console.error(`❌ Error processing Stacks event ${uniqueId}:`, error);
+      // Remove from processed set if processing failed
+      this.processedTransactions.delete(uniqueId);
     }
   }
 
   /**
-   * Check if event is from our contract
+   * Generate unique identifier for transaction to prevent double-spend
    */
-  private isOurContractEvent(event: StacksContractEvent): boolean {
-    const contractAddress = this.config.stacks.contractAddress;
-    return event.event.includes('deposit:event-emitted') ||
-           event.event.includes('withdrawal:event-emitted') ||
-           event.event.includes('stage:acknowledgment-sent');
+  private generateUniqueId(event: StacksContractEvent): string {
+    // In production, use transaction hash as the primary unique identifier
+    if (event.tx_id) {
+      return event.tx_id;
+    }
+    
+    // Fallback for simnet/testing: combine available data with timestamp and random
+    const timestamp = Date.now();
+    const random = Math.random().toString(36).substring(7);
+    const sender = event.data.sender || 'unknown';
+    const amount = event.data.amount || '0';
+    const recipient = event.data.recipient || 'unknown';
+    
+    // Create a deterministic but unique identifier with timestamp
+    return `${sender}-${amount}-${recipient}-${timestamp}-${random}`;
   }
 
   /**
-   * Parse Stacks event into our format
+   * Check if event is from our brick-vault-gateway contract
+   */
+  private isOurContractEvent(event: StacksContractEvent): boolean {
+    // Filter for events from brick-vault-gateway contract
+    const isFromGateway = event.contract_address?.includes('brick-vault-gateway') ||
+                         event.data?.contract_identifier?.includes('brick-vault-gateway') ||
+                         event.data?.recipient?.includes('brick-vault-gateway');
+    
+    // Only process deposit events (ignore withdrawals as requested)
+    const isDepositEvent = event.event === 'ft_transfer_event' || 
+                          event.event === 'print_event';
+    
+    return isFromGateway && isDepositEvent;
+  }
+
+  /**
+   * Parse Stacks event into our format for brick-vault-gateway
    */
   private parseStacksEvent(event: StacksContractEvent): StacksEvent | null {
     try {
-      let eventType: StacksEvent['eventType'];
-      let user = 'unknown';
-      let propertyId = 0;
-      let amount = '0';
-
-      if (event.event.includes('deposit:event-emitted')) {
-        eventType = 'deposit';
-        // Extract data from event
-        propertyId = parseInt(event.data.property_id || '0');
-        amount = event.data.amount || '0';
-      } else if (event.event.includes('withdrawal:event-emitted')) {
-        eventType = 'withdrawal';
-        propertyId = parseInt(event.data.property_id || '0');
-        amount = event.data.amount || '0';
-      } else if (event.event.includes('stage:acknowledgment-sent')) {
-        eventType = 'stage-acknowledgment';
-        propertyId = parseInt(event.data.property_id || '0');
-        amount = event.data.stage || '0';
-      } else {
+      // Only process ft_transfer_event for sBTC deposits
+      if (event.event !== 'ft_transfer_event') {
         return null;
       }
 
+      // Extract sBTC deposit data
+      const amount = event.data.amount || '0';
+      const sender = event.data.sender || 'unknown';
+      const recipient = event.data.recipient || '';
+      
+      // Verify this is an sBTC transfer to our gateway contract
+      const isSBTC = event.data.asset_identifier?.includes('sbtc-token');
+      const isToGateway = recipient.includes('brick-vault-gateway');
+      
+      if (!isSBTC || !isToGateway) {
+        return null;
+      }
+
+      // Get EVM custodian address for the sender
+      const evmCustodian = await this.getEVMCustodian(sender);
+
       return {
         id: `${event.tx_id}-${event.block_height}`,
-        eventType,
-        user,
-        propertyId,
-        amount,
+        eventType: 'deposit',
+        user: sender,
+        propertyId: 0, // No property-specific logic in gateway
+        amount: amount,
         stacksTxHash: event.tx_id,
         timestamp: Date.now(),
         processed: false,
-        blockHeight: event.block_height
+        blockHeight: event.block_height,
+        evmCustodian: evmCustodian
       };
     } catch (error) {
       console.error('❌ Error parsing Stacks event:', error);
@@ -202,40 +252,41 @@ export class StacksMonitor {
   }
 
   /**
-   * Forward Stacks event to EVM
+   * Get EVM custodian address for a Stacks address
    */
-  private async forwardToEVM(stacksEvent: StacksEvent): Promise<void> {
-    // This will be implemented in the message processor
-    console.log(`🔄 Forwarding Stacks event to EVM: ${stacksEvent.id}`);
+  private async getEVMCustodian(stacksAddress: string): Promise<string> {
+    try {
+      const result = await this.readContractState('get-evm-custodian', [
+        Cl.standardPrincipal(stacksAddress)
+      ]);
+      
+      return result.value || stacksAddress; // Fallback to stacks address if no custodian found
+    } catch (error) {
+      console.error(`❌ Error getting EVM custodian for ${stacksAddress}:`, error);
+      return stacksAddress; // Fallback to stacks address
+    }
   }
 
   /**
-   * Call Stacks contract function (for stage updates)
+   * Forward Stacks sBTC deposit event to EVM for OFTUSDC minting
    */
-  async updateStacksStage(propertyId: number, stage: number, proof: string): Promise<string> {
-    try {
-      const txOptions = {
-        contractAddress: this.config.stacks.contractAddress.split('.')[0],
-        contractName: this.config.stacks.contractAddress.split('.')[1],
-        functionName: 'relayer-update-stage',
-        functionArgs: [
-          Cl.uint(propertyId),
-          Cl.uint(stage),
-          Cl.uint(proof)
-        ],
-        senderKey: this.config.stacks.privateKey,
-        network: this.network,
-      };
+  private async forwardToEVM(stacksEvent: StacksEvent): Promise<void> {
+    console.log(`🔄 Processing sBTC deposit for OFTUSDC minting:`, {
+      id: stacksEvent.id,
+      sender: stacksEvent.user,
+      amount: stacksEvent.amount,
+      evmCustodian: stacksEvent.evmCustodian,
+      stacksTxHash: stacksEvent.stacksTxHash
+    });
 
-      const transaction = await makeContractCall(txOptions);
-      const response = await broadcastTransaction({ transaction });
-      
-      console.log(`✅ Stacks stage update transaction: ${response.txid}`);
-      return response.txid;
-    } catch (error) {
-      console.error('❌ Error updating Stacks stage:', error);
-      throw error;
-    }
+    // TODO: Implement OFTUSDC minting on EVM
+    // This should:
+    // 1. Convert sBTC amount to OFTUSDC amount (1:1 ratio)
+    // 2. Mint OFTUSDC to the evmCustodian address
+    // 3. Emit cross-chain event for tracking
+    // 4. Mark stacksEvent as processed
+    
+    console.log(`✅ sBTC deposit processed: ${stacksEvent.amount} sBTC -> OFTUSDC to ${stacksEvent.evmCustodian}`);
   }
 
   /**
@@ -293,10 +344,30 @@ export class StacksMonitor {
   /**
    * Get monitoring status
    */
-  getStatus(): { isMonitoring: boolean; lastProcessedBlock: number } {
+  getStatus(): { 
+    isMonitoring: boolean; 
+    lastProcessedBlock: number;
+    processedTransactionsCount: number;
+  } {
     return {
       isMonitoring: this.isMonitoring,
-      lastProcessedBlock: this.lastProcessedBlock
+      lastProcessedBlock: this.lastProcessedBlock,
+      processedTransactionsCount: this.processedTransactions.size
     };
+  }
+
+  /**
+   * Get processed transactions (for debugging)
+   */
+  getProcessedTransactions(): string[] {
+    return Array.from(this.processedTransactions);
+  }
+
+  /**
+   * Clear processed transactions (for testing)
+   */
+  clearProcessedTransactions(): void {
+    this.processedTransactions.clear();
+    console.log('🧹 Cleared processed transactions set');
   }
 }

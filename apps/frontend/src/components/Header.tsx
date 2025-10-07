@@ -24,6 +24,9 @@ export function Header() {
             <a href="/investments" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               My Investments
             </a>
+            <a href="/stacks" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
+              Stacks
+            </a>
             <a href="/contracts" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Contracts
             </a>

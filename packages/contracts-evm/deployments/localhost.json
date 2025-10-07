@@ -25,12 +25,12 @@
   "configuration": {
     "vaultDepositCap": "10000000000000000000000",
     "fundingTarget": "10000000000000000000000",
-    "fundingDeadline": 1762129244
+    "fundingDeadline": 1762445965
   },
   "decimals": {
     "mockUSDC": 6,
     "oftUSDC": 18,
     "vaultShares": 18
   },
-  "deploymentTime": "2025-10-04T00:20:44.919Z"
+  "deploymentTime": "2025-10-07T16:19:25.932Z"
 }

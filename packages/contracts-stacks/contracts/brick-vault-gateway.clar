@@ -25,7 +25,8 @@
 (define-map user-deposit-timestamps {user: principal} uint)
 
 ;; Stacks address to EVM custodian mapping (self-registration)
-(define-map stacks-to-evm-custodian {stacks-address: principal} principal)
+;; EVM addresses are stored as 20-byte buffers (0x prefixed addresses without the 0x)
+(define-map stacks-to-evm-custodian {stacks-address: principal} (buff 20))
 
 ;; Owner functions
 (define-public (set-min-deposit (amount uint))
@@ -50,7 +51,8 @@
     (err ERR-NOT-OWNER)))
 
 ;; Self-register Stacks address to EVM custodian mapping
-(define-public (register-stacks-address (evm-custodian principal))
+;; evm-custodian should be a 20-byte buffer representing the EVM address (without 0x prefix)
+(define-public (register-stacks-address (evm-custodian (buff 20)))
   (if (is-none (map-get? stacks-to-evm-custodian {stacks-address: tx-sender}))
     (ok (begin
       ;; Register the mapping (user registers their own Stacks address)
@@ -61,6 +63,20 @@
       
       true))
     (err ERR-STACKS-ADDRESS-ALREADY-REGISTERED)))
+
+;; Update EVM custodian address for already registered Stacks address
+;; Allows users to change their EVM custodian address
+(define-public (update-evm-custodian (new-evm-custodian (buff 20)))
+  (if (is-some (map-get? stacks-to-evm-custodian {stacks-address: tx-sender}))
+    (ok (begin
+      ;; Update the mapping to new EVM custodian
+      (map-set stacks-to-evm-custodian {stacks-address: tx-sender} new-evm-custodian)
+      
+      ;; Emit event for cross-chain relayer
+      (print "update:custodian-updated")
+      
+      true))
+    (err ERR-STACKS-ADDRESS-NOT-REGISTERED)))
 
 ;; Simplified sBTC deposit function - transfers sBTC to contract
 (define-public (deposit-sbtc (amount uint))
@@ -94,30 +110,10 @@
            (if (< amount (var-get min-deposit-amount)) ERR-INVALID-AMOUNT
              ERR-STACKS-ADDRESS-NOT-REGISTERED)))))
 
-;; Owner withdrawal function - only contract owner can withdraw sBTC to their own address
-(define-public (owner-withdraw-sbtc (amount uint))
-  (if (is-eq tx-sender (var-get contract-owner))
-    (if (not (var-get is-paused))
-      (match (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
-               amount 
-               (as-contract tx-sender) 
-               (var-get contract-owner)
-               none)
-        transfer-result (ok (begin
-          ;; Update global total (subtract withdrawn amount)
-          (var-set total-sbtc-locked (- (var-get total-sbtc-locked) amount))
-          
-          ;; Emit withdrawal event
-          (print "withdrawal:owner-withdrawal")
-          
-          true))
-        err-code (err ERR-TRANSFER-FAILED))
-      (err ERR-CONTRACT-PAUSED))
-    (err ERR-NOT-OWNER)))
-
 ;; Note: Users cannot withdraw sBTC back
 ;; Once sBTC is deposited, it's locked and OFTUSDC is minted on EVM
 ;; Users can only use OFTUSDC for investments on the platform
+;; The owner does not have withdrawal capabilities - funds are managed via the relayer system
 
 ;; Read functions
 (define-read-only (get-user-sbtc-deposits (user principal))
@@ -130,7 +126,7 @@
   (ok (var-get total-sbtc-locked)))
 
 (define-read-only (get-evm-custodian (stacks-address principal))
-  (ok (default-to tx-sender (map-get? stacks-to-evm-custodian {stacks-address: stacks-address}))))
+  (ok (map-get? stacks-to-evm-custodian {stacks-address: stacks-address})))
 
 (define-read-only (is-stacks-address-registered (stacks-address principal))
   (ok (is-some (map-get? stacks-to-evm-custodian {stacks-address: stacks-address}))))

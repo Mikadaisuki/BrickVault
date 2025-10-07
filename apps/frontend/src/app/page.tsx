@@ -2,7 +2,7 @@
 
 import dynamic from 'next/dynamic'
 import { Header } from '@/components/Header'
-import { Building2, Settings, Activity, TrendingUp, Users, Globe, Zap } from 'lucide-react'
+import { Building2, Settings, Activity, TrendingUp, Users, Globe, Zap, Bitcoin } from 'lucide-react'
 import Link from 'next/link'
 
 // Dynamically import components that use wagmi hooks with SSR disabled
@@ -51,6 +51,16 @@ export default function Home() {
               <div>
                 <h3 className="font-semibold">Management</h3>
                 <p className="text-sm text-muted-foreground">Platform administration</p>
+              </div>
+            </div>
+          </Link>
+
+          <Link href="/stacks" className="bg-card rounded-lg border p-6 hover:border-primary transition-colors">
+            <div className="flex items-center">
+              <Bitcoin className="h-8 w-8 text-orange-500 mr-3" />
+              <div>
+                <h3 className="font-semibold">Stacks Integration</h3>
+                <p className="text-sm text-muted-foreground">Deposit sBTC, get OFTUSDC</p>
               </div>
             </div>
           </Link>
@@ -106,6 +116,9 @@ export default function Home() {
                 </Link>
                 <Link href="/management" className="block w-full bg-outline border px-4 py-2 rounded-md text-center hover:bg-accent transition-colors">
                   Platform Management
+                </Link>
+                <Link href="/stacks" className="block w-full bg-orange-500 text-white px-4 py-2 rounded-md text-center hover:bg-orange-600 transition-colors">
+                  ₿ Deposit sBTC
                 </Link>
                 <Link href="/demo" className="block w-full bg-yellow-500 text-white px-4 py-2 rounded-md text-center hover:bg-yellow-600 transition-colors">
                   🚀 Try Cross-Chain Demo
