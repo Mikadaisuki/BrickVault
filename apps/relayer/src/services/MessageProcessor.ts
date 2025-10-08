@@ -1,16 +1,20 @@
 /**
  * Cross-Chain Message Processor
- * Coordinates message processing between Stacks and EVM chains
+ * 
+ * Purpose: Coordinate between Stacks event detection and EVM transaction sending
+ * 
+ * Flow:
+ * 1. Start StacksMonitor to poll for deposit events
+ * 2. When deposit event is detected, forward to EVMMonitor
+ * 3. EVMMonitor signs and sends transaction to EVM contract
+ * 4. Track success/failure for monitoring
  */
 
-import { ethers } from 'ethers';
 import { StacksMonitor } from './StacksMonitor';
 import { EVMMonitor } from './EVMMonitor';
 import { RelayerConfig } from '../config/index.js';
 import { 
   StacksEvent, 
-  CrossChainMessage, 
-  MessageProcessingResult,
   ProcessedMessage 
 } from '../types';
 
@@ -19,336 +23,126 @@ export class MessageProcessor {
   private evmMonitor: EVMMonitor;
   private config: RelayerConfig;
   private processedMessages: Map<string, ProcessedMessage> = new Map();
-  private pendingMessages: Set<string> = new Set();
+  private successCount: number = 0;
+  private failureCount: number = 0;
 
   constructor(config: RelayerConfig) {
     this.config = config;
     this.stacksMonitor = new StacksMonitor(config);
     this.evmMonitor = new EVMMonitor(config);
+    
+    // Set up callback for Stacks events
+    this.stacksMonitor.setEventCallback(this.handleStacksEvent.bind(this));
+    
+    // Set up callback for EVM message confirmations
+    this.evmMonitor.setMessageConfirmationCallback(this.handleMessageConfirmation.bind(this));
   }
 
   /**
    * Start the message processor
    */
   async start(): Promise<void> {
-    console.log('🚀 Starting cross-chain message processor...');
+    console.log('🚀 Starting cross-chain relayer...');
+    console.log('📍 Stacks Contract:', this.config.stacks.contractAddress);
+    console.log('📍 EVM Contract:', this.config.evm.stacksManagerAddress);
 
-    // Start both monitors
+    // Start Stacks monitor (EVM monitor is passive, only sends transactions)
     await this.stacksMonitor.startMonitoring();
     await this.evmMonitor.startMonitoring();
 
-    // Set up event forwarding
-    this.setupEventForwarding();
-
-    console.log('✅ Message processor started successfully');
+    console.log('✅ Relayer started successfully');
+    console.log('👀 Watching for Stacks deposit events...');
   }
 
   /**
    * Stop the message processor
    */
   async stop(): Promise<void> {
-    console.log('⏹️ Stopping cross-chain message processor...');
+    console.log('⏹️ Stopping cross-chain relayer...');
 
     this.stacksMonitor.stopMonitoring();
     this.evmMonitor.stopMonitoring();
 
-    console.log('✅ Message processor stopped');
+    console.log('✅ Relayer stopped');
   }
 
   /**
-   * Set up event forwarding between chains
+   * Handle Stacks deposit event
+   * This is called by StacksMonitor when a deposit is detected
    */
-  private setupEventForwarding(): void {
-    // This would be implemented with proper event listeners
-    // For now, we'll handle this in the processing methods
-  }
-
-  /**
-   * Process Stacks deposit event
-   */
-  async processStacksDeposit(stacksEvent: StacksEvent): Promise<MessageProcessingResult> {
+  private async handleStacksEvent(stacksEvent: StacksEvent): Promise<void> {
+    const messageId = this.generateMessageId(stacksEvent);
+    
     try {
-      const messageId = this.generateMessageId(stacksEvent);
-      
+      console.log(`\n🔔 New Stacks deposit detected!`);
+      console.log(`   Event ID: ${stacksEvent.id}`);
+      console.log(`   User: ${stacksEvent.user}`);
+      console.log(`   Amount: ${stacksEvent.amount}`);
+      console.log(`   EVM Custodian: ${stacksEvent.evmCustodian}`);
+      console.log(`   Stacks TX: ${stacksEvent.stacksTxHash}`);
+
+      // Check if already processed
       if (this.processedMessages.has(messageId)) {
-        return {
-          success: false,
-          messageId,
-          error: 'Message already processed'
-        };
+        console.log(`⚠️ Message already processed: ${messageId}`);
+        return;
       }
 
-      // Get EVM custodian for this Stacks address
-      const evmCustodian = await this.getEvmCustodian(stacksEvent.user);
-      if (!evmCustodian) {
-        return {
-          success: false,
-          messageId,
-          error: 'EVM custodian not found'
-        };
-      }
+      // Forward to EVM
+      console.log(`\n🔄 Forwarding to EVM...`);
+      const evmTxHash = await this.evmMonitor.processStacksDeposit(stacksEvent);
 
-      // Generate proof (in production, this would be a merkle proof)
-      const proof = this.generateProof(stacksEvent);
+      // Mark as successful
+      this.markMessageProcessed(messageId, true, evmTxHash);
+      this.successCount++;
 
-      // Create cross-chain message
-      const message: CrossChainMessage = {
-        messageId,
-        messageType: 1, // deposit
-        propertyId: stacksEvent.propertyId,
-        evmCustodian,
-        stacksAddress: stacksEvent.user,
-        amount: stacksEvent.amount,
-        stacksTxHash: stacksEvent.stacksTxHash,
-        proof,
-        timestamp: Date.now(),
-        processed: false
-      };
-
-      // Process on EVM
-      const result = await this.evmMonitor.processCrossChainMessage(
-        message.messageId,
-        message.messageType,
-        message.propertyId,
-        message.evmCustodian,
-        message.stacksAddress,
-        message.amount,
-        message.stacksTxHash,
-        message.proof
-      );
-
-      // Mark as processed
-      this.markMessageProcessed(messageId, true);
-
-      return {
-        success: true,
-        messageId,
-        transactionHash: result
-      };
+      console.log(`\n✅ Successfully processed deposit!`);
+      console.log(`   EVM TX: ${evmTxHash}`);
+      console.log(`   Total processed: ${this.successCount} successful, ${this.failureCount} failed\n`);
 
     } catch (error) {
-      const messageId = this.generateMessageId(stacksEvent);
-      this.markMessageProcessed(messageId, false, error instanceof Error ? error.message : String(error));
-      
-      return {
-        success: false,
-        messageId,
-        error: error instanceof Error ? error.message : String(error)
-      };
+      this.markMessageProcessed(messageId, false, undefined, error instanceof Error ? error.message : String(error));
+      this.failureCount++;
+
+      console.error(`\n❌ Failed to process deposit!`);
+      console.error(`   Error: ${error instanceof Error ? error.message : String(error)}`);
+      console.error(`   Total processed: ${this.successCount} successful, ${this.failureCount} failed\n`);
     }
   }
 
   /**
-   * Process Stacks withdrawal event
+   * Handle EVM message confirmation
+   * Called when EVM contract emits CrossChainMessageProcessed event
    */
-  async processStacksWithdrawal(stacksEvent: StacksEvent): Promise<MessageProcessingResult> {
-    try {
-      const messageId = this.generateMessageId(stacksEvent);
-      
-      if (this.processedMessages.has(messageId)) {
-        return {
-          success: false,
-          messageId,
-          error: 'Message already processed'
-        };
-      }
-
-      // Get EVM custodian for this Stacks address
-      const evmCustodian = await this.getEvmCustodian(stacksEvent.user);
-      if (!evmCustodian) {
-        return {
-          success: false,
-          messageId,
-          error: 'EVM custodian not found'
-        };
-      }
-
-      // Generate proof
-      const proof = this.generateProof(stacksEvent);
-
-      // Create cross-chain message
-      const message: CrossChainMessage = {
-        messageId,
-        messageType: 2, // withdrawal
-        propertyId: stacksEvent.propertyId,
-        evmCustodian,
-        stacksAddress: stacksEvent.user,
-        amount: stacksEvent.amount,
-        stacksTxHash: stacksEvent.stacksTxHash,
-        proof,
-        timestamp: Date.now(),
-        processed: false
-      };
-
-      // Process on EVM
-      const result = await this.evmMonitor.processCrossChainMessage(
-        message.messageId,
-        message.messageType,
-        message.propertyId,
-        message.evmCustodian,
-        message.stacksAddress,
-        message.amount,
-        message.stacksTxHash,
-        message.proof
-      );
-
-      // Mark as processed
-      this.markMessageProcessed(messageId, true);
-
-      return {
-        success: true,
-        messageId,
-        transactionHash: result
-      };
-
-    } catch (error) {
-      const messageId = this.generateMessageId(stacksEvent);
-      this.markMessageProcessed(messageId, false, error instanceof Error ? error.message : String(error));
-      
-      return {
-        success: false,
-        messageId,
-        error: error instanceof Error ? error.message : String(error)
-      };
+  private handleMessageConfirmation(messageId: string, messageType: number): void {
+    console.log(`\n📬 EVM Message Confirmation Received`);
+    console.log(`   Message ID: ${messageId}`);
+    console.log(`   Message Type: ${messageType === 1 ? 'Deposit' : messageType === 2 ? 'Withdrawal' : 'Acknowledgment'}`);
+    
+    const processedMessage = this.processedMessages.get(messageId);
+    if (processedMessage) {
+      console.log(`   ✅ Message confirmed as processed on EVM blockchain`);
+    } else {
+      console.log(`   ℹ️  Message ID not tracked locally (might be from previous session)`);
     }
+    console.log('');
   }
 
   /**
-   * Process Stacks stage acknowledgment
-   */
-  async processStacksStageAcknowledgment(stacksEvent: StacksEvent): Promise<MessageProcessingResult> {
-    try {
-      const messageId = this.generateMessageId(stacksEvent);
-      
-      if (this.processedMessages.has(messageId)) {
-        return {
-          success: false,
-          messageId,
-          error: 'Message already processed'
-        };
-      }
-
-      // Generate proof
-      const proof = this.generateProof(stacksEvent);
-
-      // Create cross-chain message
-      const message: CrossChainMessage = {
-        messageId,
-        messageType: 3, // acknowledgment
-        propertyId: stacksEvent.propertyId,
-        evmCustodian: 'platform', // Acknowledgment goes to platform
-        stacksAddress: 'stacks', // From Stacks
-        amount: stacksEvent.amount, // Stage number
-        stacksTxHash: stacksEvent.stacksTxHash,
-        proof,
-        timestamp: Date.now(),
-        processed: false
-      };
-
-      // Process on EVM
-      const result = await this.evmMonitor.processCrossChainMessage(
-        message.messageId,
-        message.messageType,
-        message.propertyId,
-        message.evmCustodian,
-        message.stacksAddress,
-        message.amount,
-        message.stacksTxHash,
-        message.proof
-      );
-
-      // Mark as processed
-      this.markMessageProcessed(messageId, true);
-
-      return {
-        success: true,
-        messageId,
-        transactionHash: result
-      };
-
-    } catch (error) {
-      const messageId = this.generateMessageId(stacksEvent);
-      this.markMessageProcessed(messageId, false, error instanceof Error ? error.message : String(error));
-      
-      return {
-        success: false,
-        messageId,
-        error: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
-
-  /**
-   * Process EVM stage change event
-   */
-  async processEVMStageChange(propertyId: number, newStage: number, txHash: string): Promise<string> {
-    try {
-      console.log(`🔄 Processing EVM stage change: Property ${propertyId}, Stage ${newStage}`);
-
-      // Generate proof (in production, this would be a merkle proof from EVM)
-      const proof = ethers.keccak256(ethers.toUtf8Bytes(`proof-${propertyId}-${newStage}-${txHash}`));
-
-      // Update Stacks contract
-      const stacksTxHash = await this.stacksMonitor.updateStacksStage(
-        propertyId,
-        newStage,
-        proof
-      );
-
-      console.log(`✅ Stacks stage updated: ${stacksTxHash}`);
-      return stacksTxHash;
-
-    } catch (error) {
-      console.error('❌ Error processing EVM stage change:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get EVM custodian for Stacks address
-   */
-  private async getEvmCustodian(stacksAddress: string): Promise<string | null> {
-    try {
-      // In a real implementation, this would query the Stacks contract
-      // or maintain a mapping of registered addresses
-      
-      // For demo purposes, we'll use a simple mapping
-      const custodianMapping: Record<string, string> = {
-        'SP[DEMO-ADDRESS-1]': '0x[DEMO-EVM-ADDRESS-1]',
-        'SP[DEMO-ADDRESS-2]': '0x[DEMO-EVM-ADDRESS-2]',
-        // Add more mappings as needed
-      };
-
-      return custodianMapping[stacksAddress] || null;
-    } catch (error) {
-      console.error('❌ Error getting EVM custodian:', error);
-      return null;
-    }
-  }
-
-  /**
-   * Generate unique message ID
+   * Generate unique message ID for tracking
    */
   private generateMessageId(stacksEvent: StacksEvent): string {
-    return ethers.keccak256(
-      ethers.toUtf8Bytes(`${stacksEvent.id}-${stacksEvent.timestamp}`)
-    );
-  }
-
-  /**
-   * Generate proof for cross-chain message
-   */
-  private generateProof(stacksEvent: StacksEvent): string {
-    // In production, this would be a proper merkle proof
-    return ethers.keccak256(
-      ethers.toUtf8Bytes(`proof-${stacksEvent.id}-${stacksEvent.stacksTxHash}`)
-    );
+    return `${stacksEvent.stacksTxHash}-${stacksEvent.timestamp}`;
   }
 
   /**
    * Mark message as processed
    */
-  private markMessageProcessed(messageId: string, success: boolean, error?: string): void {
+  private markMessageProcessed(
+    messageId: string, 
+    success: boolean, 
+    evmTxHash?: string,
+    error?: string
+  ): void {
     const processedMessage: ProcessedMessage = {
       messageId,
       success,
@@ -358,14 +152,8 @@ export class MessageProcessor {
     };
 
     this.processedMessages.set(messageId, processedMessage);
-    this.pendingMessages.delete(messageId);
-
-    if (success) {
-      console.log(`✅ Message processed successfully: ${messageId}`);
-    } else {
-      console.error(`❌ Message processing failed: ${messageId}, Error: ${error}`);
-    }
   }
+
 
   /**
    * Get processing statistics
@@ -375,18 +163,16 @@ export class MessageProcessor {
     successfulMessages: number;
     failedMessages: number;
     pendingMessages: number;
+    confirmedMessages?: number;
   } {
-    const totalMessages = this.processedMessages.size;
-    const successfulMessages = Array.from(this.processedMessages.values())
-      .filter(msg => msg.success).length;
-    const failedMessages = totalMessages - successfulMessages;
-    const pendingMessages = this.pendingMessages.size;
-
+    const confirmationStats = this.evmMonitor.getConfirmationStats();
+    
     return {
-      totalMessages,
-      successfulMessages,
-      failedMessages,
-      pendingMessages
+      totalMessages: this.successCount + this.failureCount,
+      successfulMessages: this.successCount,
+      failedMessages: this.failureCount,
+      pendingMessages: 0,
+      confirmedMessages: confirmationStats.totalConfirmed
     };
   }
 

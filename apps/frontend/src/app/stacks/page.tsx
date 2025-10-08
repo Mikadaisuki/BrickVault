@@ -84,7 +84,6 @@ export default function StacksPage() {
   
   // Deposit state
   const [depositAmount, setDepositAmount] = useState('')
-  const [depositToken, setDepositToken] = useState<'STX' | 'sBTC'>('sBTC')
   const [depositStep, setDepositStep] = useState<'idle' | 'depositing' | 'success' | 'error'>('idle')
   const [deposits, setDeposits] = useState<StacksDeposit[]>([])
   
@@ -464,7 +463,7 @@ export default function StacksPage() {
 
     const amount = parseFloat(depositAmount)
     if (amount < parseFloat(mockMinDeposit)) {
-      alert(`Minimum deposit amount is ${mockMinDeposit} ${depositToken}`)
+      alert(`Minimum deposit amount is ${mockMinDeposit} sBTC`)
       return  
     }
 
@@ -509,7 +508,7 @@ export default function StacksPage() {
       const depositId = Date.now().toString()
       setDeposits(prev => [{
         id: depositId,
-        amount: `${depositAmount} ${depositToken}`,
+        amount: `${depositAmount} sBTC`,
         timestamp: Date.now(),
         status: 'pending',
         txHash: response.txid,
@@ -522,7 +521,7 @@ export default function StacksPage() {
       await refreshBalances()
       setDepositAmount('')
       
-      alert(`Deposit transaction submitted! Transaction ID: ${response.txid}. We'll track the status automatically.`)
+      alert(`sBTC deposit transaction submitted! Transaction ID: ${response.txid}. We'll track the status automatically.`)
       
       // Start polling transaction status in the background
       pollTransactionStatus(response.txid, depositId).catch(error => {
@@ -598,7 +597,7 @@ export default function StacksPage() {
             Stacks Integration
           </h1>
           <p className="text-muted-foreground text-lg">
-            Deposit STX or sBTC on Stacks and get OFTUSDC on EVM for property investments
+            Deposit sBTC on Stacks and get OFTUSDC on EVM for property investments
           </p>
         </div>
 
@@ -852,7 +851,7 @@ export default function StacksPage() {
                     <Info className="h-4 w-4 text-orange-600 mt-0.5" />
                     <div className="text-sm text-orange-800">
                       <p className="font-medium">Registration Required</p>
-                      <p>You need to register your Stacks address with an EVM custodian address before depositing STX or sBTC. This enables cross-chain OFTUSDC minting.</p>
+                      <p>You need to register your Stacks address with an EVM custodian address before depositing sBTC. This enables cross-chain OFTUSDC minting.</p>
                     </div>
                   </div>
                 </div>
@@ -921,63 +920,31 @@ export default function StacksPage() {
           <div className="bg-card rounded-lg border p-6 mb-8">
             <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
               <Bitcoin className="h-6 w-6 text-primary" />
-              Deposit Assets
+              Deposit sBTC
             </h2>
             
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-              <div className="bg-accent rounded-lg p-4">
-                <h3 className="font-semibold mb-3">Your STX Balance</h3>
-                <p className="text-2xl font-bold text-blue-600">{stacksAccount?.balance || '0'} STX</p>
-              </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               <div className="bg-accent rounded-lg p-4">
                 <h3 className="font-semibold mb-3">Your sBTC Balance</h3>
                 <p className="text-2xl font-bold text-orange-600">{stacksAccount?.sbtcBalance || '0'} sBTC</p>
               </div>
               <div className="bg-accent rounded-lg p-4">
                 <h3 className="font-semibold mb-3">Minimum Deposit</h3>
-                <p className="text-2xl font-bold text-foreground">{mockMinDeposit}</p>
+                <p className="text-2xl font-bold text-foreground">{mockMinDeposit} sBTC</p>
               </div>
             </div>
             
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-foreground mb-2">
-                  Select Token
-                </label>
-                <div className="flex gap-2 mb-4">
-                  <button
-                    onClick={() => setDepositToken('sBTC')}
-                    className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
-                      depositToken === 'sBTC'
-                        ? 'bg-orange-600 text-white'
-                        : 'bg-accent text-foreground hover:bg-accent/80'
-                    }`}
-                  >
-                    sBTC
-                  </button>
-                  <button
-                    onClick={() => setDepositToken('STX')}
-                    className={`flex-1 py-2 px-4 rounded-lg font-semibold transition-colors ${
-                      depositToken === 'STX'
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-accent text-foreground hover:bg-accent/80'
-                    }`}
-                  >
-                    STX
-                  </button>
-                </div>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-foreground mb-2">
-                  Amount ({depositToken})
+                  Amount (sBTC)
                 </label>
                 <input
                   type="number"
                   value={depositAmount}
                   onChange={(e) => setDepositAmount(e.target.value)}
                   className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-background text-foreground"
-                  placeholder={`Enter ${depositToken} amount`}
+                  placeholder="Enter sBTC amount"
                   step="0.000001"
                   min="0"
                 />
@@ -998,9 +965,7 @@ export default function StacksPage() {
                     ? 'bg-red-100 text-red-800'
                     : depositStep === 'depositing'
                     ? 'bg-blue-100 text-blue-800 cursor-not-allowed'
-                    : depositToken === 'sBTC'
-                    ? 'bg-orange-600 text-white hover:bg-orange-700'
-                    : 'bg-blue-600 text-white hover:bg-blue-700'
+                    : 'bg-orange-600 text-white hover:bg-orange-700'
                 }`}
               >
                 {depositStep === 'success' ? (
@@ -1021,7 +986,7 @@ export default function StacksPage() {
                 ) : (
                   <>
                     <Bitcoin className="h-4 w-4" />
-                    <span>Deposit {depositToken}</span>
+                    <span>Deposit sBTC</span>
                   </>
                 )}
               </button>
@@ -1141,9 +1106,9 @@ export default function StacksPage() {
               <div className="bg-orange-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-3">
                 <Bitcoin className="h-6 w-6 text-orange-600" />
               </div>
-              <h3 className="font-semibold mb-2">1. Deposit Assets</h3>
+              <h3 className="font-semibold mb-2">1. Deposit sBTC</h3>
               <p className="text-sm text-muted-foreground">
-                Connect your Stacks wallet and deposit STX or sBTC to the BrickVault gateway contract
+                Connect your Stacks wallet and deposit sBTC to the BrickVault gateway contract
               </p>
             </div>
             <div className="text-center">
