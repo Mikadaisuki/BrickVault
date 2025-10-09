@@ -1396,17 +1396,17 @@ describe('Complete Property Workflow Test', function () {
     console.log('✅ sBTC price set:', ethers.formatUnits(price, 8), 'USD');
     console.log('✅ Price is valid:', isValid);
 
-    // Register Stacks addresses to EVM custodian addresses
+    // Define Stacks addresses and EVM custodians
+    // Note: Registration happens automatically when relayer processes first deposit
     const stacksAddress1 = 'SP1K1A1PMGW2ZJCNF46NWZWHG8TS1D23EGH1KNK60';
     const stacksAddress2 = 'SP2J6ZY48GV1EZ5V2V5RB9MP66SW86PYKKNRV9EJ7';
     const evmCustodian1 = investor1.address;
     const evmCustodian2 = investor2.address;
 
-    console.log('\n📝 Self-registering Stacks addresses...');
-    await stacksCrossChainManager.connect(investor1).registerStacksAddress(stacksAddress1, evmCustodian1);
-    await stacksCrossChainManager.connect(investor2).registerStacksAddress(stacksAddress2, evmCustodian2);
-    console.log('✅ User 1 self-registered:', stacksAddress1, '→ EVM:', evmCustodian1);
-    console.log('✅ User 2 self-registered:', stacksAddress2, '→ EVM:', evmCustodian2);
+    console.log('\n📝 Stacks addresses (will auto-register on first deposit):');
+    console.log('   User 1:', stacksAddress1, '→ EVM custodian:', evmCustodian1);
+    console.log('   User 2:', stacksAddress2, '→ EVM custodian:', evmCustodian2);
+    console.log('   ℹ️  Registration validated on Stacks side, trusted by EVM');
 
     // ============================================================================
     // PHASE 2: SIMULATE sBTC DEPOSITS ON STACKS
@@ -1467,16 +1467,29 @@ describe('Complete Property Workflow Test', function () {
     console.log('✅ Second deposit processed - Event ID:', eventId2, 'Message ID:', messageId2);
 
     // ============================================================================
-    // PHASE 4: VERIFY OFTUSDC MINTING
+    // PHASE 4: VERIFY OFTUSDC MINTING AND AUTO-REGISTRATION
     // ============================================================================
-    console.log('\n📍 PHASE 4: VERIFY OFTUSDC MINTING');
+    console.log('\n📍 PHASE 4: VERIFY OFTUSDC MINTING AND AUTO-REGISTRATION');
     console.log('-'.repeat(80));
+
+    // Verify auto-registration happened
+    console.log('🔍 Verifying auto-registration...');
+    const registeredCustodian1 = await stacksCrossChainManager.getEvmCustodian(stacksAddress1);
+    const registeredCustodian2 = await stacksCrossChainManager.getEvmCustodian(stacksAddress2);
+    
+    console.log('✅ Auto-registration verified:');
+    console.log('   - Stacks Address 1 → EVM Custodian:', registeredCustodian1);
+    console.log('   - Stacks Address 2 → EVM Custodian:', registeredCustodian2);
+    
+    expect(registeredCustodian1).to.equal(evmCustodian1);
+    expect(registeredCustodian2).to.equal(evmCustodian2);
+    console.log('✅ Registrations match expected custodians');
 
     // Check final OFTUSDC balances
     const finalBalance1 = await oftUSDC.balanceOf(evmCustodian1);
     const finalBalance2 = await oftUSDC.balanceOf(evmCustodian2);
     
-    console.log('📊 Final OFTUSDC balances:');
+    console.log('\n📊 Final OFTUSDC balances:');
     console.log('   - Custodian 1:', ethers.formatUnits(finalBalance1, 18));
     console.log('   - Custodian 2:', ethers.formatUnits(finalBalance2, 18));
     
@@ -1586,9 +1599,11 @@ describe('Complete Property Workflow Test', function () {
         expect.fail('Double spending protection should have prevented this');
     } catch (error: any) {
         if (error.message.includes('Stacks transaction already processed') || 
+            error.message.includes('Message') && error.message.includes('already processed') ||
             error.message.includes('Transaction reverted without a reason string')) {
-            console.log('✅ Double spending protection working - duplicate tx hash rejected');
-            console.log('   → Transaction reverted as expected (double spending prevented)');
+            console.log('✅ Double spending protection working - duplicate rejected');
+            console.log('   → Prevented by:', error.message.includes('MockRelayer') ? 'MockRelayer' : 'EVM Contract');
+            console.log('   → Error:', error.message.split('\n')[0]);
         } else {
             console.log('❌ Unexpected error:', error.message);
             throw error;
@@ -1605,11 +1620,12 @@ describe('Complete Property Workflow Test', function () {
     console.log('='.repeat(80));
 
     console.log('\n🔗 Cross-Chain Flow:');
-    console.log('   1. ✅ Users deposit sBTC on Stacks chain');
-    console.log('   2. ✅ Relayer detects deposits and sends cross-chain messages');
-    console.log('   3. ✅ StacksCrossChainManager mints OFTUSDC to custodian addresses');
-    console.log('   4. ✅ Users can freely invest OFTUSDC in any property');
-    console.log('   5. ✅ No withdrawal back to sBTC (platform balance model)');
+    console.log('   1. ✅ Users register on Stacks (validated on Stacks side)');
+    console.log('   2. ✅ Users deposit sBTC on Stacks chain');
+    console.log('   3. ✅ Relayer detects deposits and sends cross-chain messages');
+    console.log('   4. ✅ StacksCrossChainManager auto-registers and mints OFTUSDC');
+    console.log('   5. ✅ Users can freely invest OFTUSDC in any property');
+    console.log('   6. ✅ No withdrawal back to sBTC (platform balance model)');
 
     console.log('\n💰 Financial Summary:');
     console.log('   - sBTC Price:', ethers.formatUnits(sbtcPriceUsd, 8), 'USD');

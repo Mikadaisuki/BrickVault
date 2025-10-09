@@ -91,8 +91,9 @@ export default function StacksPage() {
   // Local Stacks API: http://localhost:3999
   // Extended API: http://localhost:3999/extended
   // Gateway Contract: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway
-  const [mockMinDeposit] = useState('0.001') // Mock minimum deposit
+  const [mockMinDeposit] = useState('1') // 1 sBTC minimum (contract default: 1000000 with 6 decimals = 1 sBTC with 8 decimals)
   const [mockTotalLocked] = useState('15.7') // Mock total value locked
+  const SBTC_PRICE_USD = 95000 // $95,000 per sBTC (matches EVM contract)
   
   useEffect(() => {
     setIsClient(true)
@@ -206,7 +207,8 @@ export default function StacksPage() {
         )
         
         if (sbtcToken?.balance) {
-          return (parseInt(sbtcToken.balance) / 1_000_000).toFixed(6)
+          // sBTC has 8 decimals
+          return (parseInt(sbtcToken.balance) / 100_000_000).toFixed(8)
         }
       }
       return '0'
@@ -470,12 +472,12 @@ export default function StacksPage() {
     setDepositStep('depositing')
 
     try {
-      // Convert amount to micro units (6 decimals)
-      const amountMicro = Math.floor(amount * 1000000)
+      // Convert amount to micro units (8 decimals for sBTC)
+      const amountMicro = Math.floor(amount * 100000000)
       const arg = uintCV(amountMicro);
 
-      console.log('Deposit amount:', amount)
-      console.log('Deposit amount micro:', amountMicro)
+      console.log('Deposit amount:', amount, 'sBTC')
+      console.log('Deposit amount micro:', amountMicro, '(8 decimals)')
       console.log('Deposit arg:', arg)
       
       // Create post-condition for sBTC transfer using the Pc (Post Condition) fluent API
@@ -506,13 +508,14 @@ export default function StacksPage() {
       
       // Add to deposits list with pending status
       const depositId = Date.now().toString()
+      const expectedOFTUSDC = (parseFloat(depositAmount) * SBTC_PRICE_USD).toLocaleString()
       setDeposits(prev => [{
         id: depositId,
         amount: `${depositAmount} sBTC`,
         timestamp: Date.now(),
         status: 'pending',
         txHash: response.txid,
-        oftusdcAmount: depositAmount
+        oftusdcAmount: expectedOFTUSDC
       }, ...prev])
       
       setDepositStep('success')
@@ -950,7 +953,7 @@ export default function StacksPage() {
                 />
                 {depositAmount && (
                   <p className="text-sm text-muted-foreground mt-1">
-                    You will receive approximately {depositAmount} OFTUSDC (1:1 conversion)
+                    You will receive approximately {(parseFloat(depositAmount) * SBTC_PRICE_USD).toLocaleString()} OFTUSDC (at ${SBTC_PRICE_USD.toLocaleString()}/sBTC)
                   </p>
                 )}
               </div>

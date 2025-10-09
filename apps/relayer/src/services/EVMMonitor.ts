@@ -24,10 +24,22 @@ export class EVMMonitor {
   private processedStacksTxHashes: Set<string> = new Set();
   private confirmedMessageIds: Set<string> = new Set();
   private messageConfirmationCallback: ((messageId: string, messageType: number) => void) | null = null;
+  private useWebSocket: boolean = false;
 
   constructor(config: RelayerConfig) {
     this.config = config;
-    this.provider = new ethers.JsonRpcProvider(config.evm.rpcUrl);
+    
+    // Use WebSocket if URL starts with ws:// or wss://
+    this.useWebSocket = config.evm.rpcUrl.startsWith('ws://') || config.evm.rpcUrl.startsWith('wss://');
+    
+    if (this.useWebSocket) {
+      this.provider = new ethers.WebSocketProvider(config.evm.rpcUrl);
+      console.log(`🌐 Using WebSocket provider: ${config.evm.rpcUrl}`);
+    } else {
+      this.provider = new ethers.JsonRpcProvider(config.evm.rpcUrl);
+      console.log(`📡 Using HTTP provider: ${config.evm.rpcUrl}`);
+    }
+    
     this.wallet = new ethers.Wallet(config.evm.privateKey, this.provider);
     this.stacksManagerContract = this.createStacksManagerContract();
     
@@ -78,11 +90,51 @@ export class EVMMonitor {
     this.isMonitoring = true;
     console.log('🔍 Starting EVM event monitoring...');
 
-    // Get current block number
-    await this.updateLastProcessedBlock();
+    if (this.useWebSocket) {
+      // Use real-time event listeners with WebSocket
+      await this.startWebSocketMonitoring();
+    } else {
+      // Use polling for HTTP providers
+      await this.updateLastProcessedBlock();
+      this.monitoringLoop();
+    }
+  }
 
-    // Start monitoring loop
-    this.monitoringLoop();
+  /**
+   * Start WebSocket event monitoring
+   */
+  private async startWebSocketMonitoring(): Promise<void> {
+    console.log('🎧 Setting up WebSocket event listeners...');
+
+    // Listen for CrossChainMessageProcessed events
+    this.stacksManagerContract.on('CrossChainMessageProcessed', (messageId, messageType, event) => {
+      const typeLabel = messageType === 1 ? 'Deposit' : messageType === 2 ? 'Withdrawal' : 'Acknowledgment';
+      console.log(`\n✅ EVM confirmed message processing: ${messageId}`);
+      console.log(`   Message Type: ${messageType} (${typeLabel})`);
+      console.log(`   Block: ${event.log.blockNumber}`);
+      console.log(`   Transaction: ${event.log.transactionHash}`);
+
+      // Mark as confirmed
+      this.confirmedMessageIds.add(messageId);
+
+      // Notify callback if set
+      if (this.messageConfirmationCallback) {
+        this.messageConfirmationCallback(messageId, messageType);
+      }
+    });
+
+    // Listen for StacksDepositReceived events
+    this.stacksManagerContract.on('StacksDepositReceived', (user, sbtcAmount, oftusdcAmount, stacksTxHash, event) => {
+      console.log(`\n💰 EVM deposit confirmed:`);
+      console.log(`   User: ${user}`);
+      console.log(`   sBTC Amount: ${sbtcAmount.toString()}`);
+      console.log(`   OFTUSDC Minted: ${oftusdcAmount.toString()}`);
+      console.log(`   Stacks TX: ${stacksTxHash}`);
+      console.log(`   Block: ${event.log.blockNumber}`);
+    });
+
+    console.log('✅ WebSocket event listeners active');
+    console.log('🎧 Listening for EVM events in real-time...\n');
   }
 
   /**
@@ -90,6 +142,12 @@ export class EVMMonitor {
    */
   stopMonitoring(): void {
     this.isMonitoring = false;
+    
+    // Remove all event listeners if using WebSocket
+    if (this.useWebSocket) {
+      this.stacksManagerContract.removeAllListeners();
+      console.log('⏹️ EVM WebSocket listeners removed');
+    }
   }
 
   /**
@@ -167,8 +225,9 @@ export class EVMMonitor {
           const messageId = parsed.args.messageId;
           const messageType = parsed.args.messageType;
 
+          const typeLabel = messageType === 1 ? 'Deposit' : messageType === 2 ? 'Withdrawal' : 'Acknowledgment';
           console.log(`✅ EVM confirmed message processing: ${messageId}`);
-          console.log(`   Message Type: ${messageType} (1=deposit, 2=withdrawal, 3=ack)`);
+          console.log(`   Message Type: ${messageType} (${typeLabel})`);
           console.log(`   Block: ${log.blockNumber}`);
           console.log(`   Transaction: ${log.transactionHash}`);
 
@@ -229,13 +288,6 @@ export class EVMMonitor {
       }
       this.processedStacksTxHashes.add(stacksEvent.stacksTxHash);
 
-      console.log(`🔄 Processing Stacks deposit on EVM:`, {
-        stacksTxHash: stacksEvent.stacksTxHash,
-        user: stacksEvent.user,
-        amount: stacksEvent.amount,
-        evmCustodian: stacksEvent.evmCustodian
-      });
-
       // Generate message ID (hash of unique event data)
       const messageId = ethers.keccak256(
         ethers.toUtf8Bytes(`${stacksEvent.stacksTxHash}-${stacksEvent.user}-${stacksEvent.amount}`)
@@ -246,8 +298,23 @@ export class EVMMonitor {
         ethers.toUtf8Bytes(`proof-${stacksEvent.stacksTxHash}`)
       );
 
+      // Log the exact message that will be sent to EVM
+      console.log(`\n📤 Preparing EVM Transaction:`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`Contract: StacksCrossChainManager.processCrossChainMessage()`);
+      console.log(`Address:  ${this.config.evm.stacksManagerAddress}`);
+      console.log(`\nParameters:`);
+      console.log(`  messageId:       ${messageId}`);
+      console.log(`  messageType:     1 (deposit)`);
+      console.log(`  evmCustodian:    ${stacksEvent.evmCustodian}`);
+      console.log(`  stacksAddress:   "${stacksEvent.user}"`);
+      console.log(`  amount:          ${stacksEvent.amount} (${ethers.formatUnits(stacksEvent.amount, 8)} sBTC)`);
+      console.log(`  stacksTxHash:    ${stacksTxHashBytes32}`);
+      console.log(`  proof:           ${proof.slice(0, 20)}...`);
+      console.log(`  gasLimit:        ${this.config.evm.gasLimit || 800000}`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
+
       // Call EVM contract with signed transaction
-      // Message type 1 = deposit
       const tx = await this.stacksManagerContract.processCrossChainMessage(
         messageId,
         1, // messageType: 1 = deposit
@@ -257,7 +324,7 @@ export class EVMMonitor {
         stacksTxHashBytes32,
         proof,
         {
-          gasLimit: this.config.evm.gasLimit || 500000
+          gasLimit: this.config.evm.gasLimit || 800000
         }
       );
 

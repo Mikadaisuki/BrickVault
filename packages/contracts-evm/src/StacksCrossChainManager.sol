@@ -176,16 +176,15 @@ contract StacksCrossChainManager is Ownable {
 
     /**
      * @dev Calculate USD value of sBTC amount
-     * @param sbtcAmount Amount of sBTC
+     * @param sbtcAmount Amount of sBTC (8 decimals)
      * @return usdValue USD value (18 decimals for OFTUSDC)
      */
     function calculateUsdValue(uint256 sbtcAmount) public view returns (uint256 usdValue) {
         require(currentPriceInfo.isValid, 'StacksCrossChainManager: price not available');
         require((block.timestamp - currentPriceInfo.lastUpdated) <= MAX_PRICE_AGE, 'StacksCrossChainManager: price too stale');
         
-        // sBTC amount * price (8 decimals) / 10^8 = USD value (8 decimals)
-        // Convert to OFTUSDC decimals (18 decimals): multiply by 10^10
-        usdValue = (sbtcAmount * currentPriceInfo.sbtcPriceUsd) * (10 ** (18 - PRICE_DECIMALS));
+        // sbtcAmount (8 dec) * price (8 dec) * 100 = USD value (18 dec)
+        usdValue = (sbtcAmount * currentPriceInfo.sbtcPriceUsd) * 100;
     }
 
     /**
@@ -223,8 +222,13 @@ contract StacksCrossChainManager is Ownable {
         // Prevent double spending: check if Stacks transaction hash was already used
         require(!usedStacksTxHashes[stacksTxHash], 'StacksCrossChainManager: Stacks transaction already processed');
 
-        // Verify Stacks address is registered
-        require(stacksToEvmAddress[stacksAddress] == evmCustodian, 'StacksCrossChainManager: Stacks address not registered or custodian mismatch');
+        // Note: Registration is validated on Stacks side - we trust the Stacks contract
+        // The Stacks brick-vault-gateway contract only allows deposits from registered users
+        
+        // Update registration mapping if not already set
+        if (stacksToEvmAddress[stacksAddress] == address(0)) {
+            stacksToEvmAddress[stacksAddress] = evmCustodian;
+        }
 
         // TODO: Implement merkle proof validation for stacksTxHash
         // For now, we trust the relayer (in production, implement proper proof validation)

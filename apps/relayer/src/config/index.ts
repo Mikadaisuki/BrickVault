@@ -60,7 +60,7 @@ const DEFAULT_CONFIGS: Record<Environment, RelayerConfig> = {
       rpcUrl: 'http://localhost:8545',
       stacksManagerAddress: '0x[TEST-MANAGER-ADDRESS]',
       privateKey: '0x[TEST-EVM-KEY]',
-      gasLimit: 500000,
+      gasLimit: 800000,
       maxRetries: 3
     },
     monitoring: {
@@ -92,7 +92,7 @@ const DEFAULT_CONFIGS: Record<Environment, RelayerConfig> = {
       rpcUrl: 'https://sepolia.infura.io/v3/[DEV-INFURA-KEY]',
       stacksManagerAddress: '0x[DEV-MANAGER-ADDRESS]',
       privateKey: process.env.EVM_PRIVATE_KEY || '0x[DEV-EVM-KEY]',
-      gasLimit: 500000,
+      gasLimit: 800000,
       maxRetries: 3
     },
     monitoring: {

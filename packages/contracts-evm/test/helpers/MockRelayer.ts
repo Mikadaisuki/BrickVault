@@ -10,11 +10,13 @@ import { StacksCrossChainManager } from '../../typechain-types/src';
  * 3. Call EVM StacksCrossChainManager to mint OFTUSDC
  * 
  * Simplified Flow:
- * - Users deposit sBTC on Stacks
+ * - Users self-register their Stacks address to EVM custodian mapping
+ * - Users deposit sBTC on Stacks (no property-specific logic)
  * - Relayer detects deposit and sends message to EVM
  * - EVM mints OFTUSDC to user's custodian address
  * - Users can freely invest OFTUSDC in any property
  * - No withdrawal back to sBTC (platform balance only)
+ * - No stage transitions or property-specific logic
  * 
  * Language: TypeScript/JavaScript
  * - Can interact with both Stacks (Clarity) and EVM (Solidity)
@@ -24,7 +26,7 @@ import { StacksCrossChainManager } from '../../typechain-types/src';
 
 export interface StacksEvent {
   id: string;
-  eventType: 'deposit' | 'stage-transition';
+  eventType: 'deposit';
   user: string;
   amount: string;
   stacksTxHash: string;
@@ -86,65 +88,6 @@ export class MockRelayer {
   }
 
 
-  /**
-   * Simulate a Stacks stage transition event (from EVM to Stacks)
-   * This simulates what would happen when EVM PropertyDAO changes stage
-   */
-  async simulateStacksStageTransitionEvent(
-    propertyId: number,
-    newStage: number,
-    stacksTxHash: string
-  ): Promise<string> {
-    const eventId = ethers.keccak256(
-      ethers.toUtf8Bytes(`stage-transition-${propertyId}-${newStage}-${Date.now()}`)
-    );
-
-    const event: StacksEvent = {
-      id: eventId,
-      eventType: 'stage-transition' as any, // Extend the interface
-      user: 'platform', // Stage changes are initiated by platform
-      amount: newStage.toString(),
-      stacksTxHash,
-      timestamp: Date.now(),
-      processed: false
-    };
-
-    this.stacksEvents.set(eventId, event);
-    console.log(`📡 MockRelayer: Simulated Stacks stage transition event ${eventId}`);
-    console.log(`   Property ID: ${propertyId}`);
-    console.log(`   New Stage: ${newStage}`);
-    return eventId;
-  }
-
-  /**
-   * Simulate Stacks acknowledgment back to EVM (message type 3)
-   * This simulates what happens after Stacks receives and processes a stage change
-   */
-  async simulateStacksStageAcknowledgment(
-    propertyId: number,
-    acknowledgedStage: number,
-    stacksTxHash: string
-  ): Promise<string> {
-    const eventId = ethers.keccak256(
-      ethers.toUtf8Bytes(`stage-ack-${propertyId}-${acknowledgedStage}-${Date.now()}`)
-    );
-
-    const event: StacksEvent = {
-      id: eventId,
-      eventType: 'stage-transition' as any, // Use same type but different handling
-      user: 'stacks', // Acknowledgment comes from Stacks
-      amount: acknowledgedStage.toString(),
-      stacksTxHash,
-      timestamp: Date.now(),
-      processed: false
-    };
-
-    this.stacksEvents.set(eventId, event);
-    console.log(`📡 MockRelayer: Simulated Stacks stage acknowledgment ${eventId}`);
-    console.log(`   Property ID: ${propertyId}`);
-    console.log(`   Acknowledged Stage: ${acknowledgedStage}`);
-    return eventId;
-  }
 
   /**
    * Get a Stacks event by ID
@@ -169,7 +112,7 @@ export class MockRelayer {
 
   /**
    * Process a cross-chain message (simulate relayer monitoring and processing)
-   * This is the main function that simulates what a real relayer would do
+   * This matches the REAL relayer logic in EVMMonitor.processStacksDeposit()
    */
   async processCrossChainMessage(
     eventId: string,
@@ -185,9 +128,14 @@ export class MockRelayer {
       throw new Error(`MockRelayer: Event ${eventId} already processed`);
     }
 
-    // Generate message ID (include event ID and tx hash for uniqueness)
+    // Only handle deposit events (message type 1)
+    if (event.eventType !== 'deposit') {
+      throw new Error(`MockRelayer: Only deposit events are supported in simplified flow`);
+    }
+
+    // Generate message ID - SAME AS REAL RELAYER
     const messageId = ethers.keccak256(
-      ethers.toUtf8Bytes(`message-${eventId}-${event.stacksTxHash}-${Date.now()}`)
+      ethers.toUtf8Bytes(`${event.stacksTxHash}-${stacksAddress}-${event.amount}`)
     );
 
     // Check if message already processed
@@ -195,55 +143,49 @@ export class MockRelayer {
       throw new Error(`MockRelayer: Message ${messageId} already processed`);
     }
 
-    // Determine message type
-    let messageType: number;
-    switch (event.eventType) {
-      case 'deposit':
-        messageType = 1;
-        break;
-      case 'stage-transition':
-        // Message type 3 is for acknowledgments from Stacks to EVM
-        // Only process if this is an acknowledgment (user: 'stacks')
-        if (event.user === 'stacks') {
-          messageType = 3; // Acknowledgment from Stacks
-        } else {
-          // This is a stage transition TO Stacks, not FROM Stacks
-          // Don't send to EVM, just mark as processed
-          event.processed = true;
-          console.log(`✅ MockRelayer: Stage transition to Stacks processed (not sent to EVM)`);
-          return eventId; // Return eventId as messageId for consistency
-        }
-        break;
-      default:
-        throw new Error(`MockRelayer: Unknown event type ${event.eventType}`);
-    }
+    // Generate proof - SAME AS REAL RELAYER
+    const proof = ethers.keccak256(
+      ethers.toUtf8Bytes(`proof-${event.stacksTxHash}`)
+    );
 
-    // Generate mock proof (in real scenario, this would be a merkle proof)
-    const proof = ethers.keccak256(ethers.toUtf8Bytes(`proof-${eventId}`));
+    // Convert Stacks tx hash to bytes32 - SAME AS REAL RELAYER
+    const stacksTxHashBytes32 = event.stacksTxHash.startsWith('0x') && event.stacksTxHash.length === 66
+      ? event.stacksTxHash
+      : ethers.keccak256(ethers.toUtf8Bytes(event.stacksTxHash));
 
-    console.log(`🔄 MockRelayer: Processing cross-chain message ${messageId}`);
-    console.log(`   Event Type: ${event.eventType}`);
-    console.log(`   Stacks Address: ${stacksAddress}`);
-    console.log(`   EVM Custodian: ${evmCustodian}`);
-    console.log(`   Amount: ${event.amount}`);
-    
-    if (event.eventType === 'deposit') {
-      console.log(`   → Will mint OFTUSDC to custodian address`);
-    }
+    console.log(`\n📤 MockRelayer: Preparing EVM Transaction`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+    console.log(`Contract: StacksCrossChainManager.processCrossChainMessage()`);
+    console.log(`\nParameters:`);
+    console.log(`  messageId:       ${messageId}`);
+    console.log(`  messageType:     1 (deposit)`);
+    console.log(`  evmCustodian:    ${evmCustodian}`);
+    console.log(`  stacksAddress:   "${stacksAddress}"`);
+    console.log(`  amount:          ${event.amount}`);
+    console.log(`  stacksTxHash:    ${stacksTxHashBytes32}`);
+    console.log(`  proof:           ${proof.slice(0, 20)}...`);
+    console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n`);
 
     try {
-      // Call the EVM contract to process the message
+      // Call the EVM contract - SAME SIGNATURE AS REAL RELAYER
       const tx = await this.stacksManager.connect(this.relayerSigner).processCrossChainMessage(
         messageId,
-        messageType,
+        1, // messageType: 1 = deposit
         evmCustodian,
         stacksAddress,
         event.amount,
-        event.stacksTxHash,
+        stacksTxHashBytes32,
         proof
       );
 
-      await tx.wait();
+      console.log(`📤 Transaction sent: ${tx.hash}`);
+      console.log(`⏳ Waiting for confirmation...`);
+      
+      const receipt = await tx.wait();
+
+      console.log(`✅ Transaction confirmed!`);
+      console.log(`   Block: ${receipt?.blockNumber}`);
+      console.log(`   Gas Used: ${receipt?.gasUsed.toString()}\n`);
 
       // Mark event and message as processed
       event.processed = true;
