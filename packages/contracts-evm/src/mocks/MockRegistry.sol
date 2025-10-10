@@ -12,7 +12,6 @@ contract MockRegistry is Ownable, Pausable {
         uint256 depositCap;
         uint256 totalDeposited;
         uint8 status;
-        bool paused;
         uint256 createdAt;
     }
 
@@ -29,7 +28,6 @@ contract MockRegistry is Ownable, Pausable {
     );
 
     event PropertyStatusUpdated(uint256 indexed propertyId, uint8 newStatus);
-    event PropertyPaused(uint256 indexed propertyId, bool paused);
     event PropertyCapUpdated(uint256 indexed propertyId, uint256 newCap);
     // Simplified events for demo
 
@@ -50,7 +48,6 @@ contract MockRegistry is Ownable, Pausable {
             depositCap: depositCap,
             totalDeposited: 0,
             status: 1, // Active
-            paused: false,
             createdAt: block.timestamp
         });
 
@@ -63,12 +60,6 @@ contract MockRegistry is Ownable, Pausable {
         require(_propertyId < nextPropertyId, "PropertyRegistry: property not found");
         properties[_propertyId].status = _status;
         emit PropertyStatusUpdated(_propertyId, _status);
-    }
-
-    function setPropertyPaused(uint256 _propertyId, bool _paused) external onlyOwner {
-        require(_propertyId < nextPropertyId, "PropertyRegistry: property not found");
-        properties[_propertyId].paused = _paused;
-        emit PropertyPaused(_propertyId, _paused);
     }
 
     function updatePropertyCap(uint256 _propertyId, uint256 _newCap) external onlyOwner {
@@ -124,7 +115,7 @@ contract MockRegistry is Ownable, Pausable {
     function isPropertyActive(uint256 _propertyId) external view returns (bool) {
         if (_propertyId >= nextPropertyId) return false;
         Property memory prop = properties[_propertyId];
-        return prop.status == 1 && !prop.paused;
+        return prop.status == 1; // Status 1 = Active
     }
 
     function getVaultAddress(uint256 _propertyId) external view returns (address) {

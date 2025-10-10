@@ -61,17 +61,16 @@ describe('PropertyRegistryAnalytics', function () {
       const activeProperties = await registry.getPropertiesByStatus(1); // PropertyStatus.Active
       expect(activeProperties).to.have.length(3);
 
-      // Set property status to Paused
-      await registry.updatePropertyStatus(2, 2); // PropertyStatus.Paused
-      const pausedProperties = await registry.getPropertiesByStatus(2); // PropertyStatus.Paused
-      expect(pausedProperties).to.have.length(1);
-      expect(pausedProperties[0]).to.equal(2);
+      // Update status to inactive
+      await registry.updatePropertyStatus(2, 0); // PropertyStatus.Inactive
+      const inactiveProperties = await registry.getPropertiesByStatus(0); // PropertyStatus.Inactive
+      expect(inactiveProperties).to.have.length(1);
+      expect(inactiveProperties[0]).to.equal(2);
 
       // Update status to inactive
       await registry.updatePropertyStatus(3, 0); // PropertyStatus.Inactive
-      const inactiveProperties = await registry.getPropertiesByStatus(0); // PropertyStatus.Inactive
-      expect(inactiveProperties).to.have.length(1);
-      expect(inactiveProperties[0]).to.equal(3);
+      const inactiveProperties2 = await registry.getPropertiesByStatus(0); // PropertyStatus.Inactive
+      expect(inactiveProperties2).to.have.length(2);
     });
 
     it('Should get property status summary', async function () {
@@ -79,24 +78,21 @@ describe('PropertyRegistryAnalytics', function () {
       let summary = await registry.getPropertyStatusSummary();
       expect(summary.totalProperties).to.equal(3);
       expect(summary.activeProperties).to.equal(3);
-      expect(summary.pausedProperties).to.equal(0);
-      expect(summary.inactiveProperties).to.equal(0);
-
-      // Pause one property
-      await registry.setPropertyPaused(2, true);
-      summary = await registry.getPropertyStatusSummary();
-      expect(summary.totalProperties).to.equal(3);
-      expect(summary.activeProperties).to.equal(2);
-      expect(summary.pausedProperties).to.equal(1);
       expect(summary.inactiveProperties).to.equal(0);
 
       // Set one to inactive
+      await registry.updatePropertyStatus(2, 0); // PropertyStatus.Inactive
+      summary = await registry.getPropertyStatusSummary();
+      expect(summary.totalProperties).to.equal(3);
+      expect(summary.activeProperties).to.equal(2);
+      expect(summary.inactiveProperties).to.equal(1);
+
+      // Set another to inactive
       await registry.updatePropertyStatus(3, 0); // PropertyStatus.Inactive
       summary = await registry.getPropertyStatusSummary();
       expect(summary.totalProperties).to.equal(3);
       expect(summary.activeProperties).to.equal(1);
-      expect(summary.pausedProperties).to.equal(1);
-      expect(summary.inactiveProperties).to.equal(1);
+      expect(summary.inactiveProperties).to.equal(2);
     });
 
     it('Should handle empty property list', async function () {
@@ -111,7 +107,6 @@ describe('PropertyRegistryAnalytics', function () {
       const summary = await emptyRegistry.getPropertyStatusSummary();
       expect(summary.totalProperties).to.equal(0);
       expect(summary.activeProperties).to.equal(0);
-      expect(summary.pausedProperties).to.equal(0);
       expect(summary.inactiveProperties).to.equal(0);
     });
 
@@ -121,29 +116,23 @@ describe('PropertyRegistryAnalytics', function () {
       await registry.createProperty('Property 5', ethers.parseUnits('5000000', 18), await oftUSDC.getAddress());
 
       // Set different states
-      await registry.setPropertyPaused(2, true); // Pause property 2
+      await registry.updatePropertyStatus(2, 0); // Set property 2 to inactive
       await registry.updatePropertyStatus(3, 0); // Set property 3 to inactive
       await registry.updatePropertyStatus(4, 1); // Set property 4 to active (already active)
-      await registry.setPropertyPaused(5, true); // Pause property 5
 
       // Check active properties
       const activeProperties = await registry.getActiveProperties();
-      expect(activeProperties).to.have.length(2); // Properties 1 and 4 (paused properties are not active)
-
-      // Check paused properties (using status = 2 for Paused)
-      const pausedProperties = await registry.getPropertiesByStatus(2); // PropertyStatus.Paused
-      expect(pausedProperties).to.have.length(0); // Properties with paused flag are not counted here, only by status
+      expect(activeProperties).to.have.length(3); // Properties 1, 4, and 5
 
       // Check inactive properties
       const inactiveProperties = await registry.getPropertiesByStatus(0); // PropertyStatus.Inactive
-      expect(inactiveProperties).to.have.length(1); // Property 3
+      expect(inactiveProperties).to.have.length(2); // Properties 2 and 3
 
       // Check summary
       const summary = await registry.getPropertyStatusSummary();
       expect(summary.totalProperties).to.equal(5);
-      expect(summary.activeProperties).to.equal(2); // Properties 1 and 4
-      expect(summary.pausedProperties).to.equal(2); // Properties 2 and 5
-      expect(summary.inactiveProperties).to.equal(1); // Property 3
+      expect(summary.activeProperties).to.equal(3); // Properties 1, 4, and 5
+      expect(summary.inactiveProperties).to.equal(2); // Properties 2 and 3
     });
   });
 
@@ -171,7 +160,6 @@ describe('PropertyRegistryAnalytics', function () {
       expect(property.vault).to.not.equal(ethers.ZeroAddress);
       expect(property.depositCap).to.equal(ethers.parseUnits('2000000', 18));
       expect(property.status).to.equal(1); // PropertyStatus.Active
-      expect(property.paused).to.be.false;
     });
   });
 
@@ -181,31 +169,37 @@ describe('PropertyRegistryAnalytics', function () {
 
       // Test status transitions
       await registry.updatePropertyStatus(1, 1); // Active
-      await registry.updatePropertyStatus(1, 2); // Paused
-      await registry.updatePropertyStatus(1, 3); // Closing
-      await registry.updatePropertyStatus(1, 4); // Archived
+      let summary = await registry.getPropertyStatusSummary();
+      expect(summary.activeProperties).to.equal(1);
+      expect(summary.inactiveProperties).to.equal(0);
 
-      const summary = await registry.getPropertyStatusSummary();
+      await registry.updatePropertyStatus(1, 0); // Inactive
+      summary = await registry.getPropertyStatusSummary();
       expect(summary.totalProperties).to.equal(1);
       expect(summary.activeProperties).to.equal(0);
-      expect(summary.pausedProperties).to.equal(0);
-      expect(summary.inactiveProperties).to.equal(0); // Archived is not counted as inactive in the current logic
+      expect(summary.inactiveProperties).to.equal(1);
+
+      // Reactivate
+      await registry.updatePropertyStatus(1, 1); // Active
+      summary = await registry.getPropertyStatusSummary();
+      expect(summary.activeProperties).to.equal(1);
+      expect(summary.inactiveProperties).to.equal(0);
     });
 
-    it('Should handle pause/unpause correctly', async function () {
+    it('Should handle active/inactive transitions correctly', async function () {
       await registry.createProperty('Test Property', ethers.parseUnits('1000000', 18), await oftUSDC.getAddress());
 
       // Initially active
       let activeProperties = await registry.getActiveProperties();
       expect(activeProperties).to.have.length(1);
 
-      // Pause
-      await registry.setPropertyPaused(1, true);
+      // Set to inactive
+      await registry.updatePropertyStatus(1, 0);
       activeProperties = await registry.getActiveProperties();
       expect(activeProperties).to.have.length(0);
 
-      // Unpause
-      await registry.setPropertyPaused(1, false);
+      // Reactivate
+      await registry.updatePropertyStatus(1, 1);
       activeProperties = await registry.getActiveProperties();
       expect(activeProperties).to.have.length(1);
     });

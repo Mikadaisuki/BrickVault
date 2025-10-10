@@ -151,6 +151,11 @@
         "internalType": "address",
         "name": "environmentConfig",
         "type": "address"
+      },
+      {
+        "internalType": "address",
+        "name": "registry",
+        "type": "address"
       }
     ],
     "name": "createVault",

@@ -55,7 +55,7 @@ export default function Home() {
             </div>
           </Link>
 
-          <Link href="/stacks" className="bg-card rounded-lg border p-6 hover:border-primary transition-colors">
+          <Link href="/balance" className="bg-card rounded-lg border p-6 hover:border-primary transition-colors">
             <div className="flex items-center">
               <Bitcoin className="h-8 w-8 text-orange-500 mr-3" />
               <div>

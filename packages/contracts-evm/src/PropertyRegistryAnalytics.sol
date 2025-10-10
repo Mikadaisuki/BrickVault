@@ -21,7 +21,7 @@ contract PropertyRegistryAnalytics is PropertyRegistry {
         
         // Count active properties
         for (uint32 i = 1; i < nextPropertyId; i++) {
-            if (properties[i].status == PropertyStatus.Active && !properties[i].paused) {
+            if (properties[i].status == PropertyStatus.Active) {
                 count++;
             }
         }
@@ -31,7 +31,7 @@ contract PropertyRegistryAnalytics is PropertyRegistry {
         uint32 index = 0;
         
         for (uint32 i = 1; i < nextPropertyId; i++) {
-            if (properties[i].status == PropertyStatus.Active && !properties[i].paused) {
+            if (properties[i].status == PropertyStatus.Active) {
                 activeProperties[index] = i;
                 index++;
             }
@@ -73,13 +73,11 @@ contract PropertyRegistryAnalytics is PropertyRegistry {
      * @dev Get property status summary
      * @return totalProperties Total number of properties
      * @return activeProperties Number of active properties
-     * @return pausedProperties Number of paused properties
      * @return inactiveProperties Number of inactive properties
      */
     function getPropertyStatusSummary() external view returns (
         uint256 totalProperties,
         uint256 activeProperties,
-        uint256 pausedProperties,
         uint256 inactiveProperties
     ) {
         totalProperties = nextPropertyId - 1;
@@ -87,10 +85,8 @@ contract PropertyRegistryAnalytics is PropertyRegistry {
         for (uint32 i = 1; i < nextPropertyId; i++) {
             Property memory property = properties[i];
             
-            if (property.status == PropertyStatus.Active && !property.paused) {
+            if (property.status == PropertyStatus.Active) {
                 activeProperties++;
-            } else if (property.paused) {
-                pausedProperties++;
             } else if (property.status == PropertyStatus.Inactive) {
                 inactiveProperties++;
             }

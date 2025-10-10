@@ -4,21 +4,20 @@ import { useState, useEffect } from 'react'
 import { useAccount, useReadContract } from 'wagmi'
 import { Building2, Layers, Users, DollarSign, Globe, Shield, Activity, Settings } from 'lucide-react'
 
-// Contract addresses from your latest deployment
+// Contract addresses from initial deployment
 const CONTRACT_ADDRESSES = {
-  MockLayerZeroEndpointV2: process.env.NEXT_PUBLIC_MOCK_ENDPOINT_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3',
-  OFTUSDC: process.env.NEXT_PUBLIC_OFT_USDC_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
   EnvironmentConfig: process.env.NEXT_PUBLIC_ENVIRONMENT_CONFIG_ADDRESS || '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
-  PropertyRegistry: process.env.NEXT_PUBLIC_PROPERTY_REGISTRY_ADDRESS || '0x0165878A594ca255338adfa4d48449f69242Eb8F',
-  PropertyRegistryAnalytics: process.env.NEXT_PUBLIC_ANALYTICS_ADDRESS || '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9',
-  StacksCrossChainManager: process.env.NEXT_PUBLIC_STACKS_MANAGER_ADDRESS || '0xa513E6E4b8f2a923D98304ec87F64353C4D5C853',
-  PropertyVault: process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS || '0x3B02fF1e626Ed7a8fd6eC5299e2C54e1421B626B',
-  PropertyToken: process.env.NEXT_PUBLIC_PROPERTY_TOKEN_ADDRESS || '0x8A791620dd6260079BF849Dc5567aDC3F2FdC318',
-  PropertyDAO: process.env.NEXT_PUBLIC_PROPERTY_DAO_ADDRESS || '0x610178dA211FEF7D417bC0e6FeD39F05609AD788',
-  ShareOFT: process.env.NEXT_PUBLIC_SHARE_OFT_ADDRESS || '0xB7f8BC63BbcaD18155201308C8f3540b07f84F5e',
-  ShareOFTAdapter: process.env.NEXT_PUBLIC_SHARE_OFT_ADAPTER_ADDRESS || '0xA51c1fc2f0D1a1b8494Ed1FE312d7C3a78Ed91C0',
-  VaultBase: process.env.NEXT_PUBLIC_VAULT_BASE_ADDRESS || '0x0DCd1Bf9A1b36cE34237eEaFef220932846BCD82',
-  VaultComposerSync: process.env.NEXT_PUBLIC_VAULT_COMPOSER_SYNC_ADDRESS || '0x0B306BF915C4d645ff596e518fAf3F9669b97016',
+  MockLayerZeroEndpointA: process.env.NEXT_PUBLIC_MOCK_ENDPOINT_A_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+  MockLayerZeroEndpointB: process.env.NEXT_PUBLIC_MOCK_ENDPOINT_B_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
+  MockUSDC: process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS || '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
+  ShareOFTAdapter: process.env.NEXT_PUBLIC_SHARE_OFT_ADAPTER_ADDRESS || '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9',
+  OFTUSDC: process.env.NEXT_PUBLIC_OFT_USDC_ADDRESS || '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9',
+  VaultFactory: process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS || '0x5FC8d32690cc91D4c39d9d3abcBD16989F875707',
+  PropertyDAOFactory: process.env.NEXT_PUBLIC_PROPERTY_DAO_FACTORY_ADDRESS || '0x0165878A594ca255338adfa4d48449f69242Eb8F',
+  PropertyRegistry: process.env.NEXT_PUBLIC_PROPERTY_REGISTRY_ADDRESS || '0xa513E6E4b8f2a923D98304ec87F64353C4D5C853',
+  PropertyVault: process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS || '0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6',
+  PropertyDAO: process.env.NEXT_PUBLIC_PROPERTY_DAO_ADDRESS || '0x8A791620dd6260079BF849Dc5567aDC3F2FdC318',
+  StacksCrossChainManager: process.env.NEXT_PUBLIC_STACKS_MANAGER_ADDRESS || '0x610178dA211FEF7D417bC0e6FeD39F05609AD788',
 }
 
 // Simple ABI for checking contract existence
@@ -54,82 +53,76 @@ export function ContractStatus() {
   // Contract definitions with icons and categories
   const contractDefinitions = [
     {
-      name: 'MockLayerZeroEndpointV2',
-      address: CONTRACT_ADDRESSES.MockLayerZeroEndpointV2,
-      icon: <Layers className="h-5 w-5" />,
-      category: 'Infrastructure'
-    },
-    {
-      name: 'OFTUSDC',
-      address: CONTRACT_ADDRESSES.OFTUSDC,
-      icon: <DollarSign className="h-5 w-5" />,
-      category: 'Infrastructure'
-    },
-    {
       name: 'EnvironmentConfig',
       address: CONTRACT_ADDRESSES.EnvironmentConfig,
       icon: <Settings className="h-5 w-5" />,
       category: 'Infrastructure'
     },
     {
-      name: 'PropertyRegistry',
-      address: CONTRACT_ADDRESSES.PropertyRegistry,
-      icon: <Building2 className="h-5 w-5" />,
-      category: 'Registry'
-    },
-    {
-      name: 'PropertyRegistryAnalytics',
-      address: CONTRACT_ADDRESSES.PropertyRegistryAnalytics,
-      icon: <Activity className="h-5 w-5" />,
-      category: 'Registry'
-    },
-    {
-      name: 'StacksCrossChainManager',
-      address: CONTRACT_ADDRESSES.StacksCrossChainManager,
-      icon: <Globe className="h-5 w-5" />,
-      category: 'Cross-Chain'
-    },
-    {
-      name: 'PropertyVault',
-      address: CONTRACT_ADDRESSES.PropertyVault,
-      icon: <Building2 className="h-5 w-5" />,
-      category: 'Property'
-    },
-    {
-      name: 'PropertyToken',
-      address: CONTRACT_ADDRESSES.PropertyToken,
-      icon: <DollarSign className="h-5 w-5" />,
-      category: 'Property'
-    },
-    {
-      name: 'PropertyDAO',
-      address: CONTRACT_ADDRESSES.PropertyDAO,
-      icon: <Users className="h-5 w-5" />,
-      category: 'Property'
-    },
-    {
-      name: 'ShareOFT',
-      address: CONTRACT_ADDRESSES.ShareOFT,
+      name: 'MockLayerZeroEndpointA',
+      address: CONTRACT_ADDRESSES.MockLayerZeroEndpointA,
       icon: <Layers className="h-5 w-5" />,
-      category: 'Cross-Chain'
+      category: 'Infrastructure'
+    },
+    {
+      name: 'MockLayerZeroEndpointB',
+      address: CONTRACT_ADDRESSES.MockLayerZeroEndpointB,
+      icon: <Layers className="h-5 w-5" />,
+      category: 'Infrastructure'
+    },
+    {
+      name: 'MockUSDC',
+      address: CONTRACT_ADDRESSES.MockUSDC,
+      icon: <DollarSign className="h-5 w-5" />,
+      category: 'Token Layer'
     },
     {
       name: 'ShareOFTAdapter',
       address: CONTRACT_ADDRESSES.ShareOFTAdapter,
       icon: <Layers className="h-5 w-5" />,
-      category: 'Cross-Chain'
+      category: 'Token Layer'
     },
     {
-      name: 'VaultBase',
-      address: CONTRACT_ADDRESSES.VaultBase,
+      name: 'OFTUSDC',
+      address: CONTRACT_ADDRESSES.OFTUSDC,
+      icon: <DollarSign className="h-5 w-5" />,
+      category: 'Token Layer'
+    },
+    {
+      name: 'VaultFactory',
+      address: CONTRACT_ADDRESSES.VaultFactory,
       icon: <Building2 className="h-5 w-5" />,
-      category: 'Infrastructure'
+      category: 'Property Layer'
     },
     {
-      name: 'VaultComposerSync',
-      address: CONTRACT_ADDRESSES.VaultComposerSync,
+      name: 'PropertyDAOFactory',
+      address: CONTRACT_ADDRESSES.PropertyDAOFactory,
+      icon: <Users className="h-5 w-5" />,
+      category: 'Property Layer'
+    },
+    {
+      name: 'PropertyRegistry',
+      address: CONTRACT_ADDRESSES.PropertyRegistry,
+      icon: <Building2 className="h-5 w-5" />,
+      category: 'Property Layer'
+    },
+    {
+      name: 'PropertyVault',
+      address: CONTRACT_ADDRESSES.PropertyVault,
+      icon: <Building2 className="h-5 w-5" />,
+      category: 'Property Layer'
+    },
+    {
+      name: 'PropertyDAO',
+      address: CONTRACT_ADDRESSES.PropertyDAO,
+      icon: <Users className="h-5 w-5" />,
+      category: 'Property Layer'
+    },
+    {
+      name: 'StacksCrossChainManager',
+      address: CONTRACT_ADDRESSES.StacksCrossChainManager,
       icon: <Globe className="h-5 w-5" />,
-      category: 'Cross-Chain'
+      category: 'Cross-Chain Layer'
     }
   ]
 
@@ -140,33 +133,60 @@ export function ContractStatus() {
       
       for (const contract of contractDefinitions) {
         try {
-          // Try to read the owner function to check if contract exists
-          const result = await fetch('http://localhost:8545', {
+          // Check if code exists at the address
+          const codeResult = await fetch('http://localhost:8545', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
               jsonrpc: '2.0',
-              method: 'eth_call',
-              params: [
-                {
-                  to: contract.address,
-                  data: '0x8da5cb5b' // owner() function selector
-                },
-                'latest'
-              ],
+              method: 'eth_getCode',
+              params: [contract.address, 'latest'],
               id: 1
             })
           })
           
-          const response = await result.json()
-          const isDeployed = !response.error && response.result !== '0x'
+          const codeResponse = await codeResult.json()
+          // Contract is deployed if there's code at the address (more than just "0x")
+          const isDeployed = !codeResponse.error && codeResponse.result && codeResponse.result !== '0x'
+          
+          // Try to get owner if contract is deployed (but don't fail if it doesn't have owner())
+          let owner: string | undefined
+          if (isDeployed) {
+            try {
+              const ownerResult = await fetch('http://localhost:8545', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  jsonrpc: '2.0',
+                  method: 'eth_call',
+                  params: [
+                    {
+                      to: contract.address,
+                      data: '0x8da5cb5b' // owner() function selector
+                    },
+                    'latest'
+                  ],
+                  id: 2
+                })
+              })
+              
+              const ownerResponse = await ownerResult.json()
+              if (!ownerResponse.error && ownerResponse.result && ownerResponse.result !== '0x') {
+                owner = '0x' + ownerResponse.result.slice(-40)
+              }
+            } catch {
+              // Ignore if owner() doesn't exist
+            }
+          }
           
           contractStatuses.push({
             ...contract,
             isDeployed,
-            owner: isDeployed ? '0x' + response.result.slice(-40) : undefined
+            owner
           })
         } catch (error) {
           contractStatuses.push({

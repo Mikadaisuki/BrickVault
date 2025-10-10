@@ -6,7 +6,7 @@ import { Building2, Users, Settings, Plus, Pause, Play, DollarSign, AlertTriangl
 import { PROPERTY_REGISTRY_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, PROPERTY_DAO_ABI, PROPERTY_DAO_FACTORY_ABI } from '@brickvault/abi'
 import { CONTRACT_ADDRESSES } from '../../config/contracts'
 import { Header } from '@/components/Header'
-import { formatUnits } from 'viem'
+import { formatUnits, parseUnits } from 'viem'
 
 interface PropertyData {
   id: number
@@ -14,8 +14,7 @@ interface PropertyData {
   vault: string
   depositCap: bigint
   totalDeposited: bigint
-  status: number
-  paused: boolean
+  status: number  // 0 = Inactive, 1 = Active
   createdAt: bigint
   // Vault funding information
   vaultFundingProgress: number
@@ -117,6 +116,27 @@ export default function ManagementPage() {
   const [selectedPropertyForLiquidation, setSelectedPropertyForLiquidation] = useState<PropertyData | null>(null)
   const [isFinishingLiquidation, setIsFinishingLiquidation] = useState(false)
   const [isUpdatingNav, setIsUpdatingNav] = useState(false)
+  
+  // Deposit liquidation proceeds modal state
+  const [showDepositLiquidationModal, setShowDepositLiquidationModal] = useState(false)
+  const [selectedPropertyForLiquidationProceeds, setSelectedPropertyForLiquidationProceeds] = useState<PropertyData | null>(null)
+  const [liquidationProceedsAmount, setLiquidationProceedsAmount] = useState('')
+  const [isDepositingProceeds, setIsDepositingProceeds] = useState(false)
+  
+  // Property filter state
+  const [propertyFilter, setPropertyFilter] = useState<'all' | 'active' | 'inactive'>('active')
+  
+  // Deactivate confirmation modal state
+  const [showDeactivateConfirmModal, setShowDeactivateConfirmModal] = useState(false)
+  const [propertyToDeactivate, setPropertyToDeactivate] = useState<PropertyData | null>(null)
+  const [isDeactivating, setIsDeactivating] = useState(false)
+  
+  // Toast notification state
+  const [toast, setToast] = useState<{
+    show: boolean
+    message: string
+    type: 'success' | 'error' | 'info'
+  }>({ show: false, message: '', type: 'info' })
 
   const registryAddress = CONTRACT_ADDRESSES.PropertyRegistry
   const propertyDAOAddress = CONTRACT_ADDRESSES.PropertyDAO
@@ -127,6 +147,14 @@ export default function ManagementPage() {
   const { isLoading: isRentApprovalConfirming, isSuccess: isRentApprovalConfirmed } = useWaitForTransactionReceipt({
     hash: rentApprovalHash,
   })
+  
+  // Toast notification helper
+  const showToast = (message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ show: true, message, type })
+    setTimeout(() => {
+      setToast({ show: false, message: '', type: 'info' })
+    }, 5000)
+  }
 
   // Get contract owner
   const { data: owner, isLoading: ownerLoading } = useReadContract({
@@ -139,7 +167,7 @@ export default function ManagementPage() {
   })
 
   // Get property count
-  const { data: propertyCount } = useReadContract({
+  const { data: propertyCount, refetch: refetchPropertyCount } = useReadContract({
     address: registryAddress,
     abi: PROPERTY_REGISTRY_ABI,
     functionName: 'getPropertyCount',
@@ -183,7 +211,7 @@ export default function ManagementPage() {
         })
 
         if (propertyData) {
-          const property = propertyData as { name: string; vault: string; depositCap: bigint; totalDeposited: bigint; status: number; paused: boolean; createdAt: bigint }
+          const property = propertyData as { name: string; vault: string; depositCap: bigint; totalDeposited: bigint; status: number; createdAt: bigint }
           
           // Get actual deposited amount from the vault (totalAssets)
           let actualTotalDeposited = property.totalDeposited
@@ -201,6 +229,19 @@ export default function ManagementPage() {
           // Calculate vault funding progress
           const vaultIsFunded = isPropertyFunded(actualTotalDeposited, property.depositCap)
           const vaultFundingProgress = calculateFundingProgress(actualTotalDeposited, property.depositCap)
+          
+          // Get property name from vault as fallback
+          let propertyName = property.name || `Property #${i}`
+          try {
+            const vaultName = await publicClient.readContract({
+              address: property.vault as `0x${string}`,
+              abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+              functionName: 'name',
+            }) as string
+            propertyName = vaultName || propertyName
+          } catch (error) {
+            // Property name fetch failed, use fallback
+          }
           
           // Check if vault has DAO linked
           let daoAddress: string | undefined
@@ -292,12 +333,11 @@ export default function ManagementPage() {
           
           fetchedProperties.push({
             id: i,
-            name: property.name || `Property #${i}`,
+            name: propertyName,
             vault: property.vault,
             depositCap: property.depositCap,
             totalDeposited: actualTotalDeposited, // Use actual vault assets
-            status: Number(property.status),
-            paused: property.paused,
+            status: Number(property.status),  // 0 = Inactive, 1 = Active
             createdAt: property.createdAt,
             // Vault funding information
             vaultFundingProgress,
@@ -328,7 +368,9 @@ export default function ManagementPage() {
   // Manual refresh function
   const refreshProperties = async () => {
     try {
-      // Always refresh properties regardless of count changes
+      // First refetch the property count from the contract
+      await refetchPropertyCount()
+      // Then fetch all properties with the updated count
       await fetchProperties(true)
     } catch (error) {
       console.error('Error refreshing properties:', error)
@@ -571,7 +613,7 @@ export default function ManagementPage() {
         functionName: 'createProperty',
         args: [
           propertyName || 'New Property',
-          BigInt(Number(depositCap) * 1e18), // Convert to wei
+          parseUnits(depositCap, 18), // Convert to wei with proper precision
           CONTRACT_ADDRESSES.OFTUSDC // Use OFTUSDC as underlying asset
         ]
       })
@@ -624,7 +666,7 @@ export default function ManagementPage() {
         } else {
           // Fallback: If transaction was successful but we can't parse the event,
           // we can still proceed with a mock property ID and ask user to continue
-          alert('Property creation transaction completed successfully! However, we could not parse the event details. You can continue to the next step manually.')
+          showToast('Property creation transaction completed successfully! However, we could not parse the event details. You can continue to the next step manually.', 'info')
           
           // Set mock values and allow user to continue
           setCreatedPropertyId(1) // Use property ID 1 as fallback
@@ -633,13 +675,13 @@ export default function ManagementPage() {
           setIsCreating(false)
         }
       } else {
-        alert('No transaction receipt received. Please try again.')
+        showToast('No transaction receipt received. Please try again.', 'error')
         setIsCreating(false)
       }
     } catch (error) {
       setTxStatus('error')
       setCreationProgress(0)
-      alert('Failed to create property. Please try again.')
+      showToast('Failed to create property. Please try again.', 'error')
       setIsCreating(false)
     }
   }
@@ -739,7 +781,7 @@ export default function ManagementPage() {
     } catch (error) {
       setTxStatus('error')
       setCreationProgress(0)
-      alert('Failed to deploy and link DAO. Please try again.')
+      showToast('Failed to deploy and link DAO. Please try again.', 'error')
       setIsCreating(false)
     }
   }
@@ -807,17 +849,17 @@ export default function ManagementPage() {
             setCreationProgress(0)
           }, 1500)
         } else {
-          alert('PropertyDAO deployment completed but event not found. Please try again.')
+          showToast('PropertyDAO deployment completed but event not found. Please try again.', 'error')
           setIsCreating(false)
         }
       } else {
-        alert('No transaction receipt received. Please try again.')
+        showToast('No transaction receipt received. Please try again.', 'error')
         setIsCreating(false)
       }
     } catch (error) {
       setTxStatus('error')
       setCreationProgress(0)
-      alert('Failed to deploy DAO. Please try again.')
+      showToast('Failed to deploy DAO. Please try again.', 'error')
       setIsCreating(false)
     }
   }
@@ -863,13 +905,13 @@ export default function ManagementPage() {
           setCreationProgress(0)
         }, 1500)
       } else {
-        alert('No transaction receipt received. Please try again.')
+        showToast('No transaction receipt received. Please try again.', 'error')
         setIsCreating(false)
       }
     } catch (error) {
       setTxStatus('error')
       setCreationProgress(0)
-      alert('Failed to link DAO. Please try again.')
+      showToast('Failed to link DAO. Please try again.', 'error')
       setIsCreating(false)
     }
   }
@@ -888,7 +930,7 @@ export default function ManagementPage() {
         abi: PROPERTY_DAO_ABI,
         functionName: 'setFundingTarget',
         args: [
-          BigInt(Number(depositCap) * 1e18), // Convert to wei - use depositCap directly
+          parseUnits(depositCap, 18), // Convert to wei with proper precision - use depositCap directly
           Math.floor(new Date(fundingDeadline).getTime() / 1000) // Convert to unix timestamp
         ]
       })
@@ -929,18 +971,18 @@ export default function ManagementPage() {
           setTimeout(() => {
             refreshProperties()
           }, 1000)
-        }, 2000)
-      } else {
-        alert('No transaction receipt received. Please try again.')
+          }, 2000)
+        } else {
+          showToast('No transaction receipt received. Please try again.', 'error')
+          setIsCreating(false)
+        }
+      } catch (error) {
+        setTxStatus('error')
+        setCreationProgress(0)
+        showToast('Failed to set funding target. Please try again.', 'error')
         setIsCreating(false)
       }
-    } catch (error) {
-      setTxStatus('error')
-      setCreationProgress(0)
-      alert('Failed to set funding target. Please try again.')
-      setIsCreating(false)
     }
-  }
 
   // Reset creation flow
   const resetCreationFlow = () => {
@@ -975,7 +1017,7 @@ export default function ManagementPage() {
         args: [proposalId]
       })
       
-      alert(`Successfully executed proposal ${proposalId}`)
+      showToast(`Successfully executed proposal ${proposalId}`, 'success')
       
       // Refresh properties after a short delay
       setTimeout(() => {
@@ -985,7 +1027,7 @@ export default function ManagementPage() {
         }
       }, 2000)
     } catch (error) {
-      alert('Failed to execute proposal. Please try again.')
+      showToast('Failed to execute proposal. Please try again.', 'error')
     } finally {
       setLoading(false)
     }
@@ -1017,14 +1059,14 @@ export default function ManagementPage() {
       setSelectedPropertyForPurchase(null)
       setPurchasePropertyAddress('')
       
-      alert(`Successfully completed property purchase at ${purchasePropertyAddress}`)
+      showToast(`Successfully completed property purchase at ${purchasePropertyAddress}`, 'success')
       
       // Refresh properties after a short delay
       setTimeout(() => {
         fetchProperties()
       }, 2000)
     } catch (error) {
-      alert('Failed to complete property purchase. Please try again.')
+      showToast('Failed to complete property purchase. Please try again.', 'error')
     } finally {
       setIsCompletingPurchase(false)
     }
@@ -1045,7 +1087,7 @@ export default function ManagementPage() {
     if (!isOwner || !selectedPropertyForRent || !rentHarvestAmount) return
 
     if (isNaN(Number(rentHarvestAmount)) || Number(rentHarvestAmount) <= 0) {
-      alert('Please enter a valid amount')
+      showToast('Please enter a valid amount', 'error')
       return
     }
 
@@ -1055,7 +1097,7 @@ export default function ManagementPage() {
     setRentApprovalStatus('approving')
     setIsApprovingRent(true)
     
-    const amountInWei = BigInt(Number(rentHarvestAmount) * 1e18)
+    const amountInWei = parseUnits(rentHarvestAmount, 18)
     
     try {
       await writeContractAsync({
@@ -1080,7 +1122,7 @@ export default function ManagementPage() {
     } catch (error) {
       setRentApprovalStatus('none')
       setRentStep('idle')
-      alert('Failed to approve OFTUSDC. Please try again.')
+      showToast('Failed to approve OFTUSDC. Please try again.', 'error')
     } finally {
       setIsApprovingRent(false)
     }
@@ -1091,7 +1133,7 @@ export default function ManagementPage() {
     if (!isOwner || !selectedPropertyForRent || !rentHarvestAmount) return
 
     if (isNaN(Number(rentHarvestAmount)) || Number(rentHarvestAmount) <= 0) {
-      alert('Please enter a valid amount')
+      showToast('Please enter a valid amount', 'error')
       return
     }
 
@@ -1100,7 +1142,7 @@ export default function ManagementPage() {
       setRentApprovalStatus('approving')
       setRentStep('approving')
       
-      const amountInWei = BigInt(Number(rentHarvestAmount) * 1e18)
+      const amountInWei = parseUnits(rentHarvestAmount, 18)
       
       await writeContractAsync({
         address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
@@ -1124,7 +1166,7 @@ export default function ManagementPage() {
     } catch (error) {
       setRentApprovalStatus('none')
       setRentStep('idle')
-      alert('Failed to approve OFTUSDC. Please try again.')
+      showToast('Failed to approve OFTUSDC. Please try again.', 'error')
     } finally {
       setIsApprovingRent(false)
     }
@@ -1135,12 +1177,12 @@ export default function ManagementPage() {
     if (!isOwner || !selectedPropertyForRent || !rentHarvestAmount) return
 
     if (isNaN(Number(rentHarvestAmount)) || Number(rentHarvestAmount) <= 0) {
-      alert('Please enter a valid amount')
+      showToast('Please enter a valid amount', 'error')
       return
     }
 
     if (rentApprovalStatus !== 'approved') {
-      alert('Please approve OFTUSDC first before harvesting rent')
+      showToast('Please approve OFTUSDC first before harvesting rent', 'error')
       return
     }
 
@@ -1148,7 +1190,7 @@ export default function ManagementPage() {
       setIsHarvestingRent(true)
       setRentStep('harvesting')
       
-      const amountInWei = BigInt(Number(rentHarvestAmount) * 1e18)
+      const amountInWei = parseUnits(rentHarvestAmount, 18)
       
       // Harvest rent (this will transferFrom the caller to the vault)
       const hash = await writeContractAsync({
@@ -1158,7 +1200,7 @@ export default function ManagementPage() {
         args: [amountInWei]
       })
       
-      alert(`Successfully harvested ${rentHarvestAmount} OFTUSDC rent`)
+      showToast(`Successfully harvested ${rentHarvestAmount} OFTUSDC rent`, 'success')
       
       // Close modal and refresh properties
       setShowRentModal(false)
@@ -1173,7 +1215,7 @@ export default function ManagementPage() {
       }, 2000)
     } catch (error) {
       setRentStep('idle')
-      alert('Failed to harvest rent. Please try again.')
+      showToast('Failed to harvest rent. Please try again.', 'error')
     } finally {
       setIsHarvestingRent(false)
     }
@@ -1190,6 +1232,71 @@ export default function ManagementPage() {
   const handleOpenFinishLiquidationModal = (property: PropertyData) => {
     setSelectedPropertyForLiquidation(property)
     setShowFinishLiquidationModal(true)
+  }
+
+  // Function to open deposit liquidation proceeds modal
+  const handleOpenDepositLiquidationModal = (property: PropertyData) => {
+    setSelectedPropertyForLiquidationProceeds(property)
+    setLiquidationProceedsAmount('')
+    setShowDepositLiquidationModal(true)
+  }
+
+  // Function to deposit liquidation proceeds
+  const handleDepositLiquidationProceeds = async () => {
+    if (!isOwner || !selectedPropertyForLiquidationProceeds || !liquidationProceedsAmount) return
+
+    if (isNaN(Number(liquidationProceedsAmount)) || Number(liquidationProceedsAmount) <= 0) {
+      showToast('Please enter a valid amount', 'error')
+      return
+    }
+
+    try {
+      setIsDepositingProceeds(true)
+      
+      const amountInWei = parseUnits(liquidationProceedsAmount, 18)
+      
+      // First approve OFTUSDC
+      await writeContractAsync({
+        address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
+        abi: [
+          {
+            "inputs": [
+              {"internalType": "address", "name": "spender", "type": "address"},
+              {"internalType": "uint256", "name": "amount", "type": "uint256"}
+            ],
+            "name": "approve",
+            "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+            "stateMutability": "nonpayable",
+            "type": "function"
+          }
+        ],
+        functionName: 'approve',
+        args: [selectedPropertyForLiquidationProceeds.vault as `0x${string}`, amountInWei]
+      })
+
+      // Then deposit liquidation proceeds
+      const hash = await writeContractAsync({
+        address: selectedPropertyForLiquidationProceeds.vault as `0x${string}`,
+        abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+        functionName: 'depositLiquidationProceeds',
+        args: [amountInWei]
+      })
+      
+      showToast(`Successfully deposited ${liquidationProceedsAmount} OFTUSDC liquidation proceeds`, 'success')
+      
+      // Close modal and refresh properties
+      setShowDepositLiquidationModal(false)
+      setSelectedPropertyForLiquidationProceeds(null)
+      setLiquidationProceedsAmount('')
+      
+      setTimeout(() => {
+        fetchProperties()
+      }, 2000)
+    } catch (error) {
+      showToast('Failed to deposit liquidation proceeds. Please try again.', 'error')
+    } finally {
+      setIsDepositingProceeds(false)
+    }
   }
 
   // Function to finish liquidation
@@ -1230,14 +1337,14 @@ export default function ManagementPage() {
     if (!isOwner || !selectedPropertyForNav || !navUpdateValue) return
 
     if (isNaN(Number(navUpdateValue))) {
-      alert('Please enter a valid amount')
+      showToast('Please enter a valid amount', 'error')
       return
     }
 
     try {
       setIsUpdatingNav(true)
       
-      const amountInWei = BigInt(Number(navUpdateValue) * 1e18)
+      const amountInWei = parseUnits(navUpdateValue, 18)
       
       const hash = await writeContractAsync({
         address: selectedPropertyForNav.vault as `0x${string}`,
@@ -1246,7 +1353,7 @@ export default function ManagementPage() {
         args: [amountInWei]
       })
       
-      alert(`Successfully updated NAV by ${navUpdateValue} OFTUSDC`)
+      showToast(`Successfully updated NAV by ${navUpdateValue} OFTUSDC`, 'success')
       
       // Close modal and refresh properties
       setShowNavModal(false)
@@ -1257,11 +1364,81 @@ export default function ManagementPage() {
         fetchProperties()
       }, 2000)
     } catch (error) {
-      alert('Failed to update NAV. Please try again.')
+      showToast('Failed to update NAV. Please try again.', 'error')
     } finally {
       setIsUpdatingNav(false)
     }
   }
+
+  // Function to activate property
+  const handleActivateProperty = async (propertyId: number) => {
+    if (!isOwner) return
+
+    try {
+      setLoading(true)
+      
+      const hash = await writeContractAsync({
+        address: registryAddress,
+        abi: PROPERTY_REGISTRY_ABI,
+        functionName: 'updatePropertyStatus',
+        args: [propertyId, 1] // 1 = Active
+      })
+      
+      showToast(`Successfully activated property #${propertyId}`, 'success')
+      
+      // Refresh properties
+      setTimeout(() => {
+        fetchProperties()
+      }, 2000)
+    } catch (error) {
+      showToast('Failed to activate property. Please try again.', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Function to open deactivate confirmation modal
+  const handleOpenDeactivateModal = (property: PropertyData) => {
+    setPropertyToDeactivate(property)
+    setShowDeactivateConfirmModal(true)
+  }
+
+  // Function to deactivate property
+  const handleConfirmDeactivate = async () => {
+    if (!isOwner || !propertyToDeactivate) return
+
+    try {
+      setIsDeactivating(true)
+      
+      const hash = await writeContractAsync({
+        address: registryAddress,
+        abi: PROPERTY_REGISTRY_ABI,
+        functionName: 'updatePropertyStatus',
+        args: [propertyToDeactivate.id, 0] // 0 = Inactive
+      })
+      
+      showToast(`Successfully deactivated property #${propertyToDeactivate.id}`, 'success')
+      
+      // Close modal and refresh properties
+      setShowDeactivateConfirmModal(false)
+      setPropertyToDeactivate(null)
+      
+      setTimeout(() => {
+        fetchProperties()
+      }, 2000)
+    } catch (error) {
+      showToast('Failed to deactivate property. Please try again.', 'error')
+    } finally {
+      setIsDeactivating(false)
+    }
+  }
+
+  // Filter properties based on selected filter
+  const filteredProperties = properties.filter(property => {
+    if (propertyFilter === 'active') return property.status === 1
+    if (propertyFilter === 'inactive') return property.status === 0
+    return true // 'all'
+  })
 
   // Access denied component
   if (!mounted) {
@@ -1346,6 +1523,43 @@ export default function ManagementPage() {
   return (
     <div className="min-h-screen bg-background">
       <Header />
+      
+      {/* Toast Notification */}
+      {toast.show && (
+        <div className="fixed top-4 right-4 z-50 animate-in slide-in-from-top-2 duration-300">
+          <div className={`rounded-lg shadow-lg p-4 max-w-md ${
+            toast.type === 'success' ? 'bg-green-50 border border-green-200' :
+            toast.type === 'error' ? 'bg-red-50 border border-red-200' :
+            'bg-blue-50 border border-blue-200'
+          }`}>
+            <div className="flex items-start">
+              {toast.type === 'success' && <CheckCircle className="h-5 w-5 text-green-600 mr-3 mt-0.5" />}
+              {toast.type === 'error' && <AlertTriangle className="h-5 w-5 text-red-600 mr-3 mt-0.5" />}
+              {toast.type === 'info' && <AlertTriangle className="h-5 w-5 text-blue-600 mr-3 mt-0.5" />}
+              <div className="flex-1">
+                <p className={`text-sm ${
+                  toast.type === 'success' ? 'text-green-800' :
+                  toast.type === 'error' ? 'text-red-800' :
+                  'text-blue-800'
+                }`}>
+                  {toast.message}
+                </p>
+              </div>
+              <button
+                onClick={() => setToast({ show: false, message: '', type: 'info' })}
+                className="ml-3"
+              >
+                <X className={`h-4 w-4 ${
+                  toast.type === 'success' ? 'text-green-600' :
+                  toast.type === 'error' ? 'text-red-600' :
+                  'text-blue-600'
+                }`} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Platform Management</h1>
@@ -1532,7 +1746,7 @@ export default function ManagementPage() {
           </h2>
           <div className="flex items-center space-x-3">
           <span className="text-sm text-muted-foreground">
-            {properties.length} of {propertyCount?.toString() || '0'} properties
+            {filteredProperties.length} of {propertyCount?.toString() || '0'} properties
           </span>
             <button
               onClick={refreshProperties}
@@ -1552,6 +1766,58 @@ export default function ManagementPage() {
               )}
             </button>
           </div>
+        </div>
+
+        {/* Filter Tabs */}
+        <div className="flex items-center space-x-2 mb-6 border-b">
+          <button
+            onClick={() => setPropertyFilter('active')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+              propertyFilter === 'active'
+                ? 'border-green-500 text-green-600'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <CheckCircle className="h-4 w-4" />
+              <span>Active</span>
+              <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs">
+                {properties.filter(p => p.status === 1).length}
+              </span>
+            </div>
+          </button>
+          <button
+            onClick={() => setPropertyFilter('inactive')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+              propertyFilter === 'inactive'
+                ? 'border-gray-500 text-gray-600'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Pause className="h-4 w-4" />
+              <span>Inactive</span>
+              <span className="px-2 py-0.5 bg-gray-100 text-gray-800 rounded-full text-xs">
+                {properties.filter(p => p.status === 0).length}
+              </span>
+            </div>
+          </button>
+          <button
+            onClick={() => setPropertyFilter('all')}
+            className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
+              propertyFilter === 'all'
+                ? 'border-blue-500 text-blue-600'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
+            }`}
+          >
+            <div className="flex items-center space-x-2">
+              <Building2 className="h-4 w-4" />
+              <span>All Properties</span>
+              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">
+                {properties.length}
+              </span>
+            </div>
+          </button>
         </div>
 
         {/* Error State */}
@@ -1586,13 +1852,17 @@ export default function ManagementPage() {
           </div>
         )}
 
-        {properties.length === 0 && !fetchingProperties ? (
+        {filteredProperties.length === 0 && !fetchingProperties ? (
           <div className="text-center py-8">
             <Building2 className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <p className="text-muted-foreground">No properties found</p>
+            <p className="text-muted-foreground">
+              {propertyFilter === 'active' ? 'No active properties found' :
+               propertyFilter === 'inactive' ? 'No inactive properties found' :
+               'No properties found'}
+            </p>
             <p className="text-sm text-muted-foreground mt-2">
               {propertyCount && Number(propertyCount) > 0 
-                ? "Properties exist but couldn't be loaded. Try refreshing."
+                ? propertyFilter !== 'all' ? `Try switching to "All Properties" tab` : "Properties exist but couldn't be loaded. Try refreshing."
                 : "Create your first property to get started"
               }
             </p>
@@ -1605,9 +1875,9 @@ export default function ManagementPage() {
               </button>
             ) : null}
           </div>
-        ) : properties.length > 0 && (
+        ) : filteredProperties.length > 0 && (
           <div className="space-y-4">
-            {properties.map((property) => (
+            {filteredProperties.map((property) => (
               <div 
                 key={property.id} 
                 className="border rounded-lg p-4 cursor-pointer hover:shadow-lg transition-all duration-200 hover:border-primary"
@@ -1615,7 +1885,7 @@ export default function ManagementPage() {
               >
                 <div className="flex items-start justify-between mb-3">
                   <div>
-                    <h3 className="font-semibold text-lg">{property.name}</h3>
+                    <h3 className="font-semibold text-lg text-orange-600">{property.name}</h3>
                     <p className="text-sm text-muted-foreground flex items-center">
                       <MapPin className="mr-1 h-3 w-3" />
                       Vault: {property.vault.slice(0, 6)}...{property.vault.slice(-4)}
@@ -1645,9 +1915,9 @@ export default function ManagementPage() {
                        property.daoStage === 1 ? 'Funded' : 
                        property.daoStage === 0 ? 'Open to Fund' : 'Unknown'}
                     </span>
-                    {property.paused && !property.daoIsFullyFunded && (
-                      <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
-                        Paused
+                    {property.status === 0 && (
+                      <span className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800">
+                        Inactive
                       </span>
                     )}
                     {property.daoIsFullyFunded && property.daoStage < 2 && (
@@ -1728,8 +1998,10 @@ export default function ManagementPage() {
                   <div className="flex items-center">
                     <Users className="mr-2 h-4 w-4 text-muted-foreground" />
                     <div>
-                      <p className="text-sm text-muted-foreground">Status</p>
-                      <p className="font-semibold">{property.status}</p>
+                      <p className="text-sm text-muted-foreground">Property Status</p>
+                      <p className={`font-semibold ${property.status === 1 ? 'text-green-600' : 'text-gray-600'}`}>
+                        {property.status === 1 ? 'Active' : 'Inactive'}
+                      </p>
                     </div>
                   </div>
                   
@@ -1749,14 +2021,28 @@ export default function ManagementPage() {
                           View Details
                         </button>
                         {property.status === 1 ? (
-                          <button className="text-xs bg-yellow-100 text-yellow-800 px-2 py-1 rounded hover:bg-yellow-200">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleOpenDeactivateModal(property)
+                            }}
+                            disabled={loading}
+                            className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-50"
+                          >
                             <Pause className="h-3 w-3 inline mr-1" />
-                            Pause
+                            Deactivate
                           </button>
                         ) : (
-                          <button className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded hover:bg-green-200">
+                          <button 
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              handleActivateProperty(property.id)
+                            }}
+                            disabled={loading}
+                            className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded hover:bg-green-200 disabled:opacity-50"
+                          >
                             <Play className="h-3 w-3 inline mr-1" />
-                            Resume
+                            Activate
                           </button>
                         )}
                       </div>
@@ -1773,10 +2059,10 @@ export default function ManagementPage() {
       {showPropertyModal && selectedProperty && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
           <div className="bg-background rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-6">
-                <h2 className="text-3xl font-bold">{selectedProperty.name} Details</h2>
-                <button
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-6">
+                  <h2 className="text-3xl font-bold text-orange-600">{selectedProperty.name} Details</h2>
+                  <button
                   onClick={closePropertyModal}
                   className="p-2 hover:bg-accent rounded-md transition-colors"
                 >
@@ -1940,6 +2226,37 @@ export default function ManagementPage() {
                   </div>
                 )}
 
+                {/* Management Actions for Liquidating Properties */}
+                {selectedProperty.daoStage === 3 && (
+                  <div className="bg-accent rounded-lg p-4">
+                    <h3 className="font-semibold mb-3">Liquidation Management Actions</h3>
+                    <div className="flex flex-wrap gap-3">
+                      <button
+                        onClick={() => {
+                          setShowPropertyModal(false)
+                          handleOpenDepositLiquidationModal(selectedProperty)
+                        }}
+                        disabled={loading}
+                        className="flex items-center space-x-2 px-4 py-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 disabled:opacity-50 transition-colors"
+                      >
+                        <DollarSign className="h-4 w-4" />
+                        <span>Deposit Liquidation Proceeds</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setShowPropertyModal(false)
+                          handleOpenFinishLiquidationModal(selectedProperty)
+                        }}
+                        disabled={loading}
+                        className="flex items-center space-x-2 px-4 py-2 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 disabled:opacity-50 transition-colors"
+                      >
+                        <AlertTriangle className="h-4 w-4" />
+                        <span>Finish Liquidation</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {/* Liquidation Status for Liquidating Properties */}
                 {selectedProperty.daoStage === 3 && (
                   <div className="bg-accent rounded-lg p-4">
@@ -1959,7 +2276,7 @@ export default function ManagementPage() {
                           <AlertTriangle className="h-4 w-4 text-orange-600 mr-2 mt-0.5" />
                           <div className="text-sm text-orange-800">
                             <p className="font-medium">Property Under Liquidation</p>
-                            <p>This property is currently being liquidated. The vault is paused and investors can withdraw their remaining funds.</p>
+                            <p>This property is currently being liquidated. The vault is paused and all investor operations are frozen. Deposit the liquidation proceeds from the property sale, then finish the liquidation to allow investors to redeem their shares.</p>
                           </div>
                         </div>
                       </div>
@@ -2083,7 +2400,7 @@ export default function ManagementPage() {
                         <div className="flex items-start justify-between mb-3">
                           <div>
                             <div className="flex items-center gap-2">
-                              <h4 className="font-semibold">Proposal #{proposal.id}</h4>
+                              <h4 className="font-semibold">Proposal #{proposal.id} - {selectedProperty.name}</h4>
                               <span className={`px-2 py-1 rounded-full text-xs ${
                                 proposal.proposalType === 0 ? 'bg-red-100 text-red-800' :
                                 proposal.proposalType === 1 ? 'bg-green-100 text-green-800' : 
@@ -2606,7 +2923,7 @@ export default function ManagementPage() {
                       {properties.filter(p => p.daoStage === 2).map((property) => (
                         <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
                           <div className="flex items-center">
-                           <span className="text-sm font-medium">{property.name}</span>
+                           <span className="text-sm font-medium text-orange-600">{property.name}</span>
                             {property.propertyAddress && (
                               <span className="text-xs text-muted-foreground ml-2">
                                 ({property.propertyAddress})
@@ -2648,13 +2965,13 @@ export default function ManagementPage() {
                       <div className="flex items-center">
                         <h4 className="font-medium">Properties in Liquidation</h4>
                       </div>
-                      <span className="text-xs text-muted-foreground">Still active for rent & NAV</span>
+                      <span className="text-xs text-muted-foreground">Ready for proceeds deposit</span>
                     </div>
                     <div className="space-y-2">
                       {properties.filter(p => p.daoStage === 3).map((property) => (
                         <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
                           <div className="flex items-center">
-                           <span className="text-sm font-medium">{property.name}</span>
+                           <span className="text-sm font-medium text-orange-600">{property.name}</span>
                             {property.propertyAddress && (
                               <span className="text-xs text-muted-foreground ml-2">
                                 ({property.propertyAddress})
@@ -2666,18 +2983,11 @@ export default function ManagementPage() {
                               Liquidating
                             </span>
                             <button
-                              onClick={() => handleOpenRentModal(property)}
+                              onClick={() => handleOpenDepositLiquidationModal(property)}
                               disabled={loading}
-                              className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs hover:bg-green-200 disabled:opacity-50"
+                              className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs hover:bg-purple-200 disabled:opacity-50"
                             >
-                              Harvest Rent
-                            </button>
-                            <button
-                              onClick={() => handleOpenNavModal(property)}
-                              disabled={loading}
-                              className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 disabled:opacity-50"
-                            >
-                              Update NAV
+                              Deposit Proceeds
                             </button>
                             <button
                               onClick={() => handleOpenFinishLiquidationModal(property)}
@@ -2709,7 +3019,7 @@ export default function ManagementPage() {
                       {properties.filter(p => p.daoStage === 4).map((property) => (
                         <div key={property.id} className="flex items-center justify-between p-2 bg-accent rounded">
                           <div className="flex items-center">
-                           <span className="text-sm font-medium">{property.name}</span>
+                           <span className="text-sm font-medium text-orange-600">{property.name}</span>
                             {property.propertyAddress && (
                               <span className="text-xs text-muted-foreground ml-2">
                                 ({property.propertyAddress})
@@ -2761,7 +3071,7 @@ export default function ManagementPage() {
 
               <div className="space-y-4">
                 <div className="bg-accent rounded-lg p-4">
-                  <h3 className="font-medium mb-2">{selectedPropertyForRent.name}</h3>
+                  <h3 className="font-medium mb-2 text-orange-600">{selectedPropertyForRent.name}</h3>
                   <div className="text-sm text-muted-foreground space-y-1">
                     <p>Vault: {selectedPropertyForRent.vault.slice(0, 6)}...{selectedPropertyForRent.vault.slice(-4)}</p>
                     <p>Current Rent Harvested: {formatUnits(selectedPropertyForRent.totalRentHarvested, 18)} OFTUSDC</p>
@@ -2897,7 +3207,7 @@ export default function ManagementPage() {
 
               <div className="space-y-4">
                 <div className="bg-accent rounded-lg p-4">
-                  <h3 className="font-medium mb-2">{selectedPropertyForNav.name}</h3>
+                  <h3 className="font-medium mb-2 text-orange-600">{selectedPropertyForNav.name}</h3>
                   <div className="text-sm text-muted-foreground space-y-1">
                     <p>Vault: {selectedPropertyForNav.vault.slice(0, 6)}...{selectedPropertyForNav.vault.slice(-4)}</p>
                     {selectedPropertyForNav.propertyTokenAddress && (
@@ -2983,6 +3293,115 @@ export default function ManagementPage() {
         </div>
       )}
 
+      {/* Deposit Liquidation Proceeds Modal */}
+      {showDepositLiquidationModal && selectedPropertyForLiquidationProceeds && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <DollarSign className="h-5 w-5 mr-2 text-purple-600" />
+                  Deposit Liquidation Proceeds
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowDepositLiquidationModal(false)
+                    setSelectedPropertyForLiquidationProceeds(null)
+                    setLiquidationProceedsAmount('')
+                  }}
+                  className="p-2 hover:bg-accent rounded-md transition-colors"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-accent rounded-lg p-4">
+                  <h3 className="font-medium mb-2 text-orange-600">{selectedPropertyForLiquidationProceeds.name}</h3>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <p>Vault: {selectedPropertyForLiquidationProceeds.vault.slice(0, 6)}...{selectedPropertyForLiquidationProceeds.vault.slice(-4)}</p>
+                    {selectedPropertyForLiquidationProceeds.propertyAddress && (
+                      <p>Property: {selectedPropertyForLiquidationProceeds.propertyAddress}</p>
+                    )}
+                    <p>Current Stage: Liquidating (3)</p>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium mb-2">
+                    Liquidation Proceeds Amount (OFTUSDC) <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      value={liquidationProceedsAmount}
+                      onChange={(e) => setLiquidationProceedsAmount(e.target.value)}
+                      placeholder="0.00"
+                      min="0"
+                      step="0.01"
+                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 pr-12"
+                      required
+                    />
+                    <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">
+                      OFTUSDC
+                    </div>
+                  </div>
+                  {liquidationProceedsAmount && Number(liquidationProceedsAmount) > 0 && (
+                    <p className="text-sm text-purple-600 mt-1">
+                      ≈ ${(Number(liquidationProceedsAmount) * 1).toLocaleString()} USD
+                    </p>
+                  )}
+                  {liquidationProceedsAmount && (isNaN(Number(liquidationProceedsAmount)) || Number(liquidationProceedsAmount) <= 0) && (
+                    <p className="text-sm text-red-500 mt-1">Please enter a valid amount</p>
+                  )}
+                </div>
+
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-3">
+                  <div className="flex items-start">
+                    <AlertTriangle className="h-4 w-4 text-purple-600 mr-2 mt-0.5" />
+                    <div className="text-sm text-purple-800">
+                      <p className="font-medium">Liquidation Proceeds:</p>
+                      <p>After selling the property off-chain, deposit the sale proceeds here. This allows investors to redeem their shares for their proportional share of the sale amount.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowDepositLiquidationModal(false)
+                      setSelectedPropertyForLiquidationProceeds(null)
+                      setLiquidationProceedsAmount('')
+                    }}
+                    disabled={isDepositingProceeds}
+                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleDepositLiquidationProceeds}
+                    disabled={isDepositingProceeds || !liquidationProceedsAmount || isNaN(Number(liquidationProceedsAmount)) || Number(liquidationProceedsAmount) <= 0}
+                    className="px-6 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
+                  >
+                    {isDepositingProceeds ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Depositing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <DollarSign className="h-4 w-4" />
+                        <span>Deposit Proceeds</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Finish Liquidation Modal */}
       {showFinishLiquidationModal && selectedPropertyForLiquidation && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -3006,7 +3425,7 @@ export default function ManagementPage() {
 
               <div className="space-y-4">
                 <div className="bg-accent rounded-lg p-4">
-                  <h3 className="font-medium mb-2">{selectedPropertyForLiquidation.name}</h3>
+                  <h3 className="font-medium mb-2 text-orange-600">{selectedPropertyForLiquidation.name}</h3>
                   <div className="text-sm text-muted-foreground space-y-1">
                     <p>DAO: {selectedPropertyForLiquidation.daoAddress?.slice(0, 6)}...{selectedPropertyForLiquidation.daoAddress?.slice(-4)}</p>
                     {selectedPropertyForLiquidation.propertyAddress && (
@@ -3025,7 +3444,7 @@ export default function ManagementPage() {
                         <li>This will transition the property from "Liquidating" to "Liquidated" stage</li>
                         <li>The vault will be unpaused to allow liquidation proceeds withdrawal</li>
                         <li>This action cannot be undone</li>
-                        <li>Make sure all liquidation activities are complete before proceeding</li>
+                        <li>Make sure liquidation proceeds have been deposited before proceeding</li>
                       </ul>
                     </div>
                   </div>
@@ -3066,6 +3485,89 @@ export default function ManagementPage() {
         </div>
       )}
 
+      {/* Deactivate Confirmation Modal */}
+      {showDeactivateConfirmModal && propertyToDeactivate && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-background rounded-lg max-w-md w-full">
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <AlertTriangle className="h-5 w-5 mr-2 text-orange-600" />
+                  Deactivate Property
+                </h2>
+                <button
+                  onClick={() => {
+                    setShowDeactivateConfirmModal(false)
+                    setPropertyToDeactivate(null)
+                  }}
+                  disabled={isDeactivating}
+                  className="p-2 hover:bg-accent rounded-md transition-colors disabled:opacity-50"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                <div className="bg-accent rounded-lg p-4">
+                  <h3 className="font-medium mb-2 text-orange-600">{propertyToDeactivate.name}</h3>
+                  <div className="text-sm text-muted-foreground space-y-1">
+                    <p>Property ID: #{propertyToDeactivate.id}</p>
+                    <p>Vault: {propertyToDeactivate.vault.slice(0, 6)}...{propertyToDeactivate.vault.slice(-4)}</p>
+                    <p>Current Status: Active</p>
+                  </div>
+                </div>
+
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-start">
+                    <AlertTriangle className="h-5 w-5 text-orange-600 mr-3 mt-0.5" />
+                    <div className="text-sm text-orange-800">
+                      <p className="font-medium mb-2">⚠️ Deactivating this property will:</p>
+                      <ul className="space-y-1 list-disc list-inside">
+                        <li>Block all new deposits and mints to the property vault</li>
+                        <li>Prevent users from investing in this property</li>
+                        <li>Keep all existing investments and shares intact</li>
+                        <li>Allow property data to still be queried</li>
+                        <li>Can be reactivated at any time by the owner</li>
+                      </ul>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex justify-end space-x-3 pt-4">
+                  <button
+                    onClick={() => {
+                      setShowDeactivateConfirmModal(false)
+                      setPropertyToDeactivate(null)
+                    }}
+                    disabled={isDeactivating}
+                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleConfirmDeactivate}
+                    disabled={isDeactivating}
+                    className="px-6 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
+                  >
+                    {isDeactivating ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Deactivating...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Pause className="h-4 w-4" />
+                        <span>Deactivate Property</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Complete Purchase Modal */}
       {showCompletePurchaseModal && selectedPropertyForPurchase && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
@@ -3090,7 +3592,7 @@ export default function ManagementPage() {
 
               <div className="space-y-4">
                 <div className="bg-accent rounded-lg p-4">
-                  <h3 className="font-medium mb-2">{selectedPropertyForPurchase.name}</h3>
+                  <h3 className="font-medium mb-2 text-orange-600">{selectedPropertyForPurchase.name}</h3>
                   <div className="text-sm text-muted-foreground space-y-1">
                     <p>DAO: {selectedPropertyForPurchase.daoAddress?.slice(0, 6)}...{selectedPropertyForPurchase.daoAddress?.slice(-4)}</p>
                     <p>Vault: {selectedPropertyForPurchase.vault.slice(0, 6)}...{selectedPropertyForPurchase.vault.slice(-4)}</p>

@@ -63,6 +63,9 @@ export default function InvestmentsPage() {
   const [withdrawalStep, setWithdrawalStep] = useState<'idle' | 'withdrawing' | 'confirming' | 'success' | 'error'>('idle')
   const [withdrawalHash, setWithdrawalHash] = useState<string | null>(null)
   const [isWithdrawing, setIsWithdrawing] = useState(false)
+  
+  // Redeem state for liquidated properties
+  const [redeemSharesAmount, setRedeemSharesAmount] = useState('')
 
   // Proposal creation state
   const [showCreateProposalModal, setShowCreateProposalModal] = useState(false)
@@ -86,7 +89,7 @@ export default function InvestmentsPage() {
   })
 
   // Get property count
-  const { data: propertyCount } = useReadContract({
+  const { data: propertyCount, refetch: refetchPropertyCount } = useReadContract({
     address: registryAddress,
     abi: PROPERTY_REGISTRY_ABI,
     functionName: 'getPropertyCount',
@@ -129,7 +132,7 @@ export default function InvestmentsPage() {
         })
 
         if (propertyData) {
-          const property = propertyData as { name: string; vault: string; depositCap: bigint; totalDeposited: bigint; status: number; paused: boolean; createdAt: bigint }
+          const property = propertyData as { name: string; vault: string; depositCap: bigint; totalDeposited: bigint; status: number; createdAt: bigint }
           
           // Check if user has shares in this vault
           const userShares = await publicClient.readContract({
@@ -325,7 +328,15 @@ export default function InvestmentsPage() {
 
   // Manual refresh function
   const refreshInvestments = async () => {
-    await fetchUserInvestments(true)
+    try {
+      // First refetch the property count from the contract
+      await refetchPropertyCount()
+      // Then fetch all user investments with the updated count
+      await fetchUserInvestments(true)
+    } catch (error) {
+      console.error('Error refreshing investments:', error)
+      setInvestmentsError('Failed to refresh investments')
+    }
   }
 
   // Handle investment click to show details
@@ -368,6 +379,40 @@ export default function InvestmentsPage() {
     }
   }
 
+  // Handle redeem for liquidated properties
+  const handleRedeemShares = async () => {
+    if (!selectedInvestment || !address || !redeemSharesAmount) {
+      alert('Please enter a valid shares amount')
+      return
+    }
+
+    const sharesAmount = parseUnits(redeemSharesAmount, 18)
+    if (sharesAmount > selectedInvestment.shares) {
+      alert('Redeem amount exceeds your shares')
+      return
+    }
+
+    try {
+      setIsWithdrawing(true)
+      setWithdrawalStep('withdrawing')
+      
+      const hash = await writeContractAsync({
+        address: selectedInvestment.vaultAddress as `0x${string}`,
+        abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+        functionName: 'redeem',
+        args: [sharesAmount, address, address]
+      })
+
+      setWithdrawalHash(hash)
+      setWithdrawalStep('confirming')
+    } catch (error) {
+      console.error('Redeem failed:', error)
+      setWithdrawalStep('error')
+      setIsWithdrawing(false)
+      alert('Redeem failed. Please try again.')
+    }
+  }
+
   // Close investment modal
   const closeInvestmentModal = () => {
     setShowInvestmentModal(false)
@@ -378,6 +423,8 @@ export default function InvestmentsPage() {
     setWithdrawalStep('idle')
     setWithdrawalHash(null)
     setIsWithdrawing(false)
+    // Reset redeem state
+    setRedeemSharesAmount('')
   }
 
   // Handle create proposal modal
@@ -429,14 +476,6 @@ export default function InvestmentsPage() {
           case '2': // ThresholdUpdate
             const thresholdValue = parseUnits((parseFloat(proposalData.trim()) * 100).toString(), 18) // Convert percentage to basis points
             encodedData = `0x${thresholdValue.toString(16).padStart(64, '0')}`
-            break
-          case '4': // NAVUpdate
-            const navChange = parseUnits(proposalData.trim(), 18)
-            encodedData = `0x${navChange.toString(16).padStart(64, '0')}`
-            break
-          case '7': // PropertyStageChange
-            const stageValue = parseUnits(proposalData.trim(), 0)
-            encodedData = `0x${stageValue.toString(16).padStart(64, '0')}`
             break
           default:
             // For other proposal types (3, 5, 6), use empty data
@@ -584,6 +623,7 @@ export default function InvestmentsPage() {
       // Reset form after a delay
       setTimeout(() => {
         setWithdrawalAmount('')
+        setRedeemSharesAmount('')
         setWithdrawalStep('idle')
         setWithdrawalHash(null)
       }, 3000)
@@ -818,7 +858,7 @@ export default function InvestmentsPage() {
                 >
                   <div className="flex items-start justify-between mb-3">
                     <div>
-                      <h3 className="font-semibold text-lg">{investment.propertyName}</h3>
+                      <h3 className="font-semibold text-lg text-orange-600">{investment.propertyName}</h3>
                       <p className="text-sm text-muted-foreground flex items-center">
                         <MapPin className="mr-1 h-3 w-3" />
                         Property #{investment.propertyId}
@@ -914,7 +954,7 @@ export default function InvestmentsPage() {
             <div className="bg-background rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-3xl font-bold">{selectedInvestment.propertyName} Investment</h2>
+                  <h2 className="text-3xl font-bold text-orange-600">{selectedInvestment.propertyName} Investment</h2>
                   <button
                     onClick={closeInvestmentModal}
                     className="p-2 hover:bg-accent rounded-md transition-colors"
@@ -992,35 +1032,36 @@ export default function InvestmentsPage() {
                   </div>
                 </div>
 
-                {/* Rent Income Withdrawal Section */}
-                <div className="bg-accent rounded-lg p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h3 className="text-xl font-semibold flex items-center">
-                      <DollarSign className="mr-2 h-5 w-5" />
-                      Rent Income Withdrawal
-                    </h3>
-                  </div>
-
-                  <div className="space-y-4">
-                    {/* Max Withdrawable Info */}
-                    <div className="bg-background rounded-lg p-4 border">
-                      <div className="flex items-center justify-between">
-                        <span className="text-sm font-medium text-muted-foreground">Max Withdrawable:</span>
-                        <span className="font-semibold text-lg">
-                          {formatUnits(maxWithdrawable, 18)} USDC
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between mt-2">
-                        <span className="text-sm text-muted-foreground">Status:</span>
-                        <span className={`px-2 py-1 rounded-full text-xs ${
-                          maxWithdrawable > BigInt(0) 
-                            ? 'bg-green-100 text-green-800' 
-                            : 'bg-gray-100 text-gray-800'
-                        }`}>
-                          {maxWithdrawable > BigInt(0) ? 'Income Available' : 'No Income Available'}
-                        </span>
-                      </div>
+                {/* Rent Income Withdrawal Section (for non-liquidated properties) */}
+                {selectedInvestment.daoStage !== 4 && (
+                  <div className="bg-accent rounded-lg p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xl font-semibold flex items-center">
+                        <DollarSign className="mr-2 h-5 w-5" />
+                        Rent Income Withdrawal
+                      </h3>
                     </div>
+
+                    <div className="space-y-4">
+                      {/* Max Withdrawable Info */}
+                      <div className="bg-background rounded-lg p-4 border">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-muted-foreground">Max Withdrawable:</span>
+                          <span className="font-semibold text-lg">
+                            {formatUnits(maxWithdrawable, 18)} USDC
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-sm text-muted-foreground">Status:</span>
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            maxWithdrawable > BigInt(0) 
+                              ? 'bg-green-100 text-green-800' 
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {maxWithdrawable > BigInt(0) ? 'Income Available' : 'No Income Available'}
+                          </span>
+                        </div>
+                      </div>
 
                     {/* Withdrawal Form */}
                     {maxWithdrawable > BigInt(0) && (
@@ -1155,6 +1196,171 @@ export default function InvestmentsPage() {
                     )}
                   </div>
                 </div>
+                )}
+
+                {/* Redeem Liquidation Proceeds Section (for liquidated properties) */}
+                {selectedInvestment.daoStage === 4 && (
+                  <div className="bg-accent rounded-lg p-6">
+                    <div className="flex items-center justify-between mb-4">
+                      <h3 className="text-xl font-semibold flex items-center">
+                        <DollarSign className="mr-2 h-5 w-5 text-red-600" />
+                        Redeem Liquidation Proceeds
+                      </h3>
+                    </div>
+
+                    <div className="space-y-4">
+                      {/* Your Shares Info */}
+                      <div className="bg-background rounded-lg p-4 border">
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm font-medium text-muted-foreground">Your Shares:</span>
+                          <span className="font-semibold text-lg">
+                            {formatUnits(selectedInvestment.shares, 18)} Shares
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-sm text-muted-foreground">Share Percentage:</span>
+                          <span className="font-semibold">
+                            {selectedInvestment.sharePercentage.toFixed(2)}%
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between mt-2">
+                          <span className="text-sm text-muted-foreground">Status:</span>
+                          <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
+                            Property Liquidated
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Redeem Form */}
+                      <div className="space-y-3">
+                        <div>
+                          <label className="block text-sm font-medium mb-2">
+                            Shares to Redeem
+                          </label>
+                          <div className="flex space-x-2">
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              max={formatUnits(selectedInvestment.shares, 18)}
+                              value={redeemSharesAmount}
+                              onChange={(e) => setRedeemSharesAmount(e.target.value)}
+                              placeholder="0.00"
+                              className="flex-1 px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+                              disabled={isWithdrawing}
+                            />
+                            <button
+                              onClick={() => setRedeemSharesAmount(formatUnits(selectedInvestment.shares, 18))}
+                              className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition-colors text-sm"
+                              disabled={isWithdrawing}
+                            >
+                              Max
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Redeem Button */}
+                        <button
+                          onClick={handleRedeemShares}
+                          disabled={
+                            isWithdrawing || 
+                            !redeemSharesAmount || 
+                            parseFloat(redeemSharesAmount) <= 0 ||
+                            parseFloat(redeemSharesAmount) > parseFloat(formatUnits(selectedInvestment.shares, 18))
+                          }
+                          className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 ${
+                            withdrawalStep === 'success'
+                              ? 'bg-green-100 text-green-800'
+                              : withdrawalStep === 'error'
+                              ? 'bg-red-100 text-red-800'
+                              : isWithdrawing || withdrawalStep === 'confirming'
+                              ? 'bg-blue-100 text-blue-800 cursor-not-allowed'
+                              : 'bg-red-600 text-white hover:bg-red-700'
+                          }`}
+                        >
+                          {withdrawalStep === 'success' ? (
+                            <>
+                              <CheckCircle className="h-4 w-4" />
+                              <span>Redeemed Successfully!</span>
+                            </>
+                          ) : withdrawalStep === 'error' ? (
+                            <>
+                              <XCircle className="h-4 w-4" />
+                              <span>Redeem Failed</span>
+                            </>
+                          ) : isWithdrawing || withdrawalStep === 'confirming' ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                              <span>
+                                {withdrawalStep === 'confirming' ? 'Confirming...' : 'Redeeming...'}
+                              </span>
+                            </>
+                          ) : (
+                            <>
+                              <DollarSign className="h-4 w-4" />
+                              <span>Redeem Shares</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Transaction Hash Display */}
+                        {withdrawalHash && (
+                          <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                            <div className="flex items-center space-x-2">
+                              <Info className="h-4 w-4 text-blue-600" />
+                              <span className="text-sm font-medium text-blue-800">Transaction Hash:</span>
+                            </div>
+                            <p className="text-xs font-mono text-blue-700 mt-1 break-all">
+                              {withdrawalHash}
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Status Messages */}
+                        {withdrawalStep === 'success' && (
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-3">
+                            <div className="flex items-center space-x-2">
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                              <span className="text-sm font-medium text-green-800">
+                                Shares redeemed successfully!
+                              </span>
+                            </div>
+                            <p className="text-xs text-green-700 mt-1">
+                              Your liquidation proceeds have been transferred to your wallet. The form will reset automatically.
+                            </p>
+                          </div>
+                        )}
+
+                        {withdrawalStep === 'error' && (
+                          <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                            <div className="flex items-center space-x-2">
+                              <XCircle className="h-4 w-4 text-red-600" />
+                              <span className="text-sm font-medium text-red-800">
+                                Redeem failed
+                              </span>
+                            </div>
+                            <p className="text-xs text-red-700 mt-1">
+                              There was an error redeeming your shares. Please try again.
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Information Box */}
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <div className="flex items-center space-x-2">
+                          <Info className="h-4 w-4 text-red-600" />
+                          <span className="text-sm font-medium text-red-800">
+                            Liquidation Complete
+                          </span>
+                        </div>
+                        <p className="text-xs text-red-700 mt-1">
+                          This property has been liquidated. Redeeming your shares will burn them and transfer your proportional share of the liquidation proceeds to your wallet.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* Proposals Section */}
                 <div className="bg-accent rounded-lg p-6">
@@ -1396,7 +1602,7 @@ export default function InvestmentsPage() {
 
                 {/* Property Info */}
                 <div className="bg-accent rounded-lg p-4 mb-6">
-                  <h3 className="font-semibold mb-2">{selectedPropertyForProposal.propertyName}</h3>
+                  <h3 className="font-semibold mb-2 text-orange-600">{selectedPropertyForProposal.propertyName}</h3>
                   <div className="text-sm text-muted-foreground space-y-1">
                     <p>Property #{selectedPropertyForProposal.propertyId}</p>
                     <p>Your Shares: {formatUnits(selectedPropertyForProposal.shares, 18)}</p>
@@ -1420,19 +1626,15 @@ export default function InvestmentsPage() {
                       <option value="0">Property Liquidation</option>
                       <option value="2">Threshold Update</option>
                       <option value="3">Management Change</option>
-                      <option value="4">NAV Update</option>
                       <option value="5">Emergency Pause</option>
                       <option value="6">Emergency Unpause</option>
-                      <option value="7">Property Stage Change</option>
                     </select>
                     <p className="text-xs text-muted-foreground mt-1">
                       {proposalType === '0' && 'Propose to liquidate the property due to market conditions'}
                       {proposalType === '2' && 'Propose to update voting thresholds for governance decisions'}
                       {proposalType === '3' && 'Propose to change property management or manager'}
-                      {proposalType === '4' && 'Propose to update the Net Asset Value (NAV) of the property'}
                       {proposalType === '5' && 'Propose to pause all operations in case of emergency'}
                       {proposalType === '6' && 'Propose to resume operations after emergency pause'}
-                      {proposalType === '7' && 'Propose to change the property stage (e.g., Funded to Under Management)'}
                     </p>
                   </div>
 
@@ -1495,50 +1697,6 @@ export default function InvestmentsPage() {
                     </div>
                   )}
 
-                  {proposalType === '4' && (
-                    <div>
-                      <label className="block text-sm font-medium mb-2">
-                        NAV Change (USDC) <span className="text-red-500">*</span>
-                      </label>
-                      <input
-                        type="number"
-                        step="0.01"
-                        placeholder="Enter NAV change (positive or negative)"
-                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                        value={proposalData}
-                        onChange={(e) => setProposalData(e.target.value)}
-                        disabled={isCreatingProposal}
-                      />
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Positive values increase property value (appreciation), negative values decrease it (depreciation)
-                      </p>
-                    </div>
-                  )}
-
-                  {proposalType === '7' && (
-                    <div>
-                      <label className="block text-sm font-medium mb-2">
-                        New Stage <span className="text-red-500">*</span>
-                      </label>
-                      <select
-                        value={proposalData}
-                        onChange={(e) => setProposalData(e.target.value)}
-                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
-                        disabled={isCreatingProposal}
-                      >
-                        <option value="">Select new stage</option>
-                        <option value="0">Open to Fund</option>
-                        <option value="1">Funded</option>
-                        <option value="2">Under Management</option>
-                        <option value="3">Liquidating</option>
-                        <option value="4">Liquidated</option>
-                      </select>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        Select the new stage for the property
-                      </p>
-                    </div>
-                  )}
-
                   {/* Status Messages */}
                   {proposalCreationStep === 'success' && (
                     <div className="bg-green-50 border border-green-200 rounded-lg p-3">
@@ -1582,7 +1740,7 @@ export default function InvestmentsPage() {
                       disabled={
                         isCreatingProposal || 
                         !proposalDescription.trim() ||
-                        ((proposalType === '0' || proposalType === '2' || proposalType === '4' || proposalType === '7') && !proposalData.trim())
+                        ((proposalType === '0' || proposalType === '2') && !proposalData.trim())
                       }
                       className="px-6 py-2 bg-primary text-primary-foreground rounded-lg hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
                     >
@@ -1611,8 +1769,8 @@ export default function InvestmentsPage() {
                         <li>• Proposals require a 7-day voting period</li>
                         <li>• All investors can vote based on their share ownership</li>
                         <li>• Proposals must receive majority support to be executed</li>
-                        <li>• Only properties under management can have liquidation proposals</li>
                         <li>• Ensure all details are accurate before submitting</li>
+                        <li>• Emergency proposals can pause/unpause operations in critical situations</li>
                       </ul>
                     </div>
                   </div>

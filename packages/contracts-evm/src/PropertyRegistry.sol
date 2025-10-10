@@ -15,15 +15,11 @@ contract PropertyRegistry is Ownable {
     event PropertyCreated(uint32 indexed propertyId, address indexed vault, uint256 depositCap);
     event PropertyStatusUpdated(uint32 indexed propertyId, uint8 status);
     event PropertyCapUpdated(uint32 indexed propertyId, uint256 newCap);
-    event PropertyPaused(uint32 indexed propertyId, bool paused);
 
     // Property status enum
     enum PropertyStatus {
         Inactive,
-        Active,
-        Paused,
-        Closing,
-        Archived
+        Active
     }
 
     // Property struct
@@ -32,7 +28,6 @@ contract PropertyRegistry is Ownable {
         uint256 depositCap;
         uint256 totalDeposited;
         PropertyStatus status;
-        bool paused;
         uint256 createdAt;
     }
 
@@ -103,7 +98,8 @@ contract PropertyRegistry is Ownable {
             owner(),
             depositCap,
             propertyId,
-            address(environmentConfig)
+            address(environmentConfig),
+            address(this)  // Pass registry address
         );
 
         // Initialize property
@@ -112,7 +108,6 @@ contract PropertyRegistry is Ownable {
             depositCap: depositCap,
             totalDeposited: 0,
             status: PropertyStatus.Active,
-            paused: false,
             createdAt: block.timestamp
         });
 
@@ -123,9 +118,9 @@ contract PropertyRegistry is Ownable {
     }
 
     /**
-     * @dev Update property status
+     * @dev Update property status (activate or deactivate)
      * @param propertyId Property ID
-     * @param status New status
+     * @param status New status (Active or Inactive)
      */
     function updatePropertyStatus(uint32 propertyId, PropertyStatus status)
         external
@@ -134,20 +129,6 @@ contract PropertyRegistry is Ownable {
     {
         properties[propertyId].status = status;
         emit PropertyStatusUpdated(propertyId, uint8(status));
-    }
-
-    /**
-     * @dev Pause/unpause a property
-     * @param propertyId Property ID
-     * @param paused Whether to pause or unpause
-     */
-    function setPropertyPaused(uint32 propertyId, bool paused)
-        external
-        onlyOwner
-        propertyExists(propertyId)
-    {
-        properties[propertyId].paused = paused;
-        emit PropertyPaused(propertyId, paused);
     }
 
     /**
@@ -245,7 +226,6 @@ contract PropertyRegistry is Ownable {
     function isPropertyActive(uint32 propertyId) external view returns (bool isActive) {
         Property memory property = properties[propertyId];
         return property.vault != address(0) && 
-               property.status == PropertyStatus.Active && 
-               !property.paused;
+               property.status == PropertyStatus.Active;
     }
 }

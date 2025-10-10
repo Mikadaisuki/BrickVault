@@ -5,6 +5,11 @@ import './VaultBase.sol';
 import './PropertyToken.sol';
 import './EnvironmentConfig.sol';
 
+// Forward declaration to avoid circular dependency
+interface IPropertyRegistry {
+    function isPropertyActive(uint32 propertyId) external view returns (bool);
+}
+
 /**
  * @title PropertyVault
  * @dev Core ERC4626 vault functionality for property investments
@@ -20,6 +25,7 @@ contract PropertyVault is VaultBase {
     // State variables
     uint32 public immutable propertyId;
     EnvironmentConfig public immutable environmentConfig;
+    IPropertyRegistry public immutable registry;
     
     // Property purchase state
     bool public propertyPurchased;
@@ -34,14 +40,20 @@ contract PropertyVault is VaultBase {
     uint256 public lastRentHarvest;
     
     // Period management for income distribution
+    uint256 public currentPeriod;
     uint256 public currentPeriodIncome;
     uint256 public currentPeriodDistributed;
     mapping(address => uint256) public userPeriodWithdrawn;
+    mapping(address => uint256) public userLastWithdrawalPeriod;
     uint256 public lastNAVUpdate;
     uint256 public totalIncomeHarvested;
     uint256 public originalPrincipal;
 
-    // Modifiers - using inherited onlyOwner from VaultBase
+    // Modifiers
+    modifier onlyActiveProperty() {
+        require(registry.isPropertyActive(propertyId), 'PropertyVault: property is not active');
+        _;
+    }
 
     constructor(
         address _asset,
@@ -50,13 +62,16 @@ contract PropertyVault is VaultBase {
         address _owner,
         uint256 _depositCap,
         uint32 _propertyId,
-        address _environmentConfig
+        address _environmentConfig,
+        address _registry
     ) VaultBase(_asset, _name, _symbol, _owner, _depositCap) {
         require(_propertyId > 0, 'PropertyVault: invalid property ID');
         require(_environmentConfig != address(0), 'PropertyVault: invalid environment config address');
+        require(_registry != address(0), 'PropertyVault: invalid registry address');
         
         propertyId = _propertyId;
         environmentConfig = EnvironmentConfig(_environmentConfig);
+        registry = IPropertyRegistry(_registry);
         
         // Verify EnvironmentConfig contract
         try environmentConfig.isStrictErrorHandling() returns (bool) {
@@ -65,7 +80,39 @@ contract PropertyVault is VaultBase {
             revert('PropertyVault: invalid EnvironmentConfig contract');
         }
         
-        emit PropertyVaultInitialized(_propertyId, _owner);
+        emit PropertyVaultInitialized(_propertyId, _registry);
+    }
+
+    /**
+     * @dev Override deposit to check property is active
+     * @param assets Amount of assets to deposit
+     * @param receiver Address to receive shares
+     * @return shares Amount of shares minted
+     */
+    function deposit(uint256 assets, address receiver)
+        public
+        virtual
+        override
+        onlyActiveProperty
+        returns (uint256 shares)
+    {
+        return super.deposit(assets, receiver);
+    }
+
+    /**
+     * @dev Override mint to check property is active
+     * @param shares Amount of shares to mint
+     * @param receiver Address to receive shares
+     * @return assets Amount of assets deposited
+     */
+    function mint(uint256 shares, address receiver)
+        public
+        virtual
+        override
+        onlyActiveProperty
+        returns (uint256 assets)
+    {
+        return super.mint(shares, receiver);
     }
 
     /**
@@ -75,13 +122,10 @@ contract PropertyVault is VaultBase {
     function harvestRent(uint256 amount) external onlyOwner {
         require(amount > 0, 'PropertyVault: amount must be positive');
         
-        // Reset period when new income is harvested
-        if (currentPeriodDistributed > 0) {
-            // Previous period was fully distributed, reset for new period
-            currentPeriodIncome = 0;
-            currentPeriodDistributed = 0;
-            // Note: userPeriodWithdrawn mapping will be reset implicitly as new period starts
-        }
+        // Start a new period for each harvest
+        currentPeriod++;
+        currentPeriodIncome = amount;
+        currentPeriodDistributed = 0;
         
         // Transfer assets from caller to vault
         IERC20(asset()).transferFrom(msg.sender, address(this), amount);
@@ -97,11 +141,24 @@ contract PropertyVault is VaultBase {
         require(currentIncomeHarvested <= type(uint256).max - amount, 'PropertyVault: income harvested overflow');
         totalIncomeHarvested = currentIncomeHarvested + amount;
         
-        // Set current period income
-        currentPeriodIncome = amount;
-        
         emit Harvest(amount, totalAssets());
         emit RentHarvested(amount, totalAssets(), propertyId);
+    }
+
+    /**
+     * @dev Deposit liquidation proceeds after property sale
+     * @param amount Amount of OFTUSDC from property sale
+     * @notice This function is called after the property is sold during liquidation.
+     * Unlike harvestRent, this does NOT increment the period counter.
+     */
+    function depositLiquidationProceeds(uint256 amount) external onlyOwner {
+        require(amount > 0, 'PropertyVault: amount must be positive');
+        
+        // Transfer liquidation proceeds from platform to vault
+        // This adds to totalAssets() which is what users redeem against
+        IERC20(asset()).transferFrom(msg.sender, address(this), amount);
+        
+        emit Harvest(amount, totalAssets());
     }
 
     /**

@@ -1281,56 +1281,73 @@ describe('Complete Property Workflow Test', function () {
     console.log('✅ Final stage confirmed as Liquidated (4)');
 
     // ============================================================================
-    // TEST: USER WITHDRAWAL AFTER LIQUIDATION COMPLETE
+    // TEST: USER REDEEM AFTER LIQUIDATION COMPLETE
     // ============================================================================
-    console.log('\n📍 TEST: USER WITHDRAWAL AFTER LIQUIDATION COMPLETE');
+    console.log('\n📍 TEST: USER REDEEM AFTER LIQUIDATION COMPLETE');
     console.log('-'.repeat(60));
 
-    // Check if user can withdraw the harvested liquidation proceeds
-    console.log('💰 Testing if user can withdraw liquidation proceeds after liquidation complete...');
+    // Check if user can redeem shares for liquidation proceeds
+    console.log('💰 Testing if user can redeem shares for liquidation proceeds...');
     
-    // Get user's max withdrawable amount (should include the harvested rent from liquidation)
+    // Get user's current state
     const maxWithdrawableAfterLiquidation = await testVault.getMaxWithdrawable(investor1.address);
-    const userSharesAfterLiquidation = await testVault.balanceOf(investor1.address);
+    const userSharesBeforeLiquidation = await testVault.balanceOf(investor1.address);
     const vaultBalanceAfterLiquidation = await oftUSDC.balanceOf(await testVault.getAddress());
+    const totalSharesAfterLiquidation = await testVault.totalSupply();
     
-    console.log('   - User max withdrawable after liquidation:', ethers.formatUnits(maxWithdrawableAfterLiquidation, 18), 'USDC');
-    console.log('   - User shares after liquidation:', ethers.formatUnits(userSharesAfterLiquidation, 18));
-    console.log('   - Vault balance after liquidation:', ethers.formatUnits(vaultBalanceAfterLiquidation, 18), 'USDC');
+    console.log('   - User max withdrawable (rent income):', ethers.formatUnits(maxWithdrawableAfterLiquidation, 18), 'USDC (should be 0 in Liquidated stage)');
+    console.log('   - User shares:', ethers.formatUnits(userSharesBeforeLiquidation, 18));
+    console.log('   - Total vault shares:', ethers.formatUnits(totalSharesAfterLiquidation, 18));
+    console.log('   - Vault USDC balance:', ethers.formatUnits(vaultBalanceAfterLiquidation, 18), 'USDC');
+    console.log('   - User share percentage:', ethers.formatUnits((userSharesBeforeLiquidation * BigInt(10000)) / totalSharesAfterLiquidation, 2), '%');
     
-    if (maxWithdrawableAfterLiquidation > 0) {
+    // Calculate expected liquidation proceeds
+    const expectedProceeds = (vaultBalanceAfterLiquidation * userSharesBeforeLiquidation) / totalSharesAfterLiquidation;
+    console.log('   - Expected liquidation proceeds:', ethers.formatUnits(expectedProceeds, 18), 'USDC');
+    
+    // Verify maxWithdrawable is 0 (rent income not available in Liquidated stage)
+    expect(maxWithdrawableAfterLiquidation).to.equal(0);
+    console.log('✅ Max withdrawable correctly returns 0 in Liquidated stage (rent income not available)');
+    
+    // Test redeeming shares for liquidation proceeds
+    if (userSharesBeforeLiquidation > 0 && vaultBalanceAfterLiquidation > 0) {
       try {
-        // Attempt to withdraw liquidation proceeds
+        console.log('\n🔄 Attempting to redeem shares for liquidation proceeds...');
+        
         const userUSDCBefore = await oftUSDC.balanceOf(investor1.address);
         const userSharesBefore = await testVault.balanceOf(investor1.address);
         
-        console.log('   - User USDC before withdrawal:', ethers.formatUnits(userUSDCBefore, 18), 'USDC');
-        console.log('   - User shares before withdrawal:', ethers.formatUnits(userSharesBefore, 18));
+        console.log('   - User USDC before redeem:', ethers.formatUnits(userUSDCBefore, 18), 'USDC');
+        console.log('   - User shares before redeem:', ethers.formatUnits(userSharesBefore, 18));
         
-        await testVault.connect(investor1).withdraw(maxWithdrawableAfterLiquidation, investor1.address, investor1.address);
+        // Redeem ALL shares for liquidation proceeds
+        await testVault.connect(investor1).redeem(userSharesBefore, investor1.address, investor1.address);
         
         const userUSDCAfter = await oftUSDC.balanceOf(investor1.address);
         const userSharesAfter = await testVault.balanceOf(investor1.address);
         
-        console.log('✅ SUCCESS: User can withdraw liquidation proceeds after liquidation complete!');
-        console.log('   - User USDC after withdrawal:', ethers.formatUnits(userUSDCAfter, 18), 'USDC');
-        console.log('   - User shares after withdrawal:', ethers.formatUnits(userSharesAfter, 18));
+        console.log('\n✅ SUCCESS: User can redeem shares after liquidation complete!');
+        console.log('   - User USDC after redeem:', ethers.formatUnits(userUSDCAfter, 18), 'USDC');
+        console.log('   - User shares after redeem:', ethers.formatUnits(userSharesAfter, 18), '(should be 0)');
         console.log('   - Liquidation proceeds received:', ethers.formatUnits(userUSDCAfter - userUSDCBefore, 18), 'USDC');
-        console.log('   - Shares preserved:', userSharesBefore.toString() === userSharesAfter.toString());
+        console.log('   - Shares burned:', ethers.formatUnits(userSharesBefore - userSharesAfter, 18));
         
-        // Verify the withdrawal worked
+        // Verify the redeem worked
         expect(userUSDCAfter).to.be.greaterThan(userUSDCBefore);
-        expect(userSharesBefore).to.equal(userSharesAfter); // Shares should be preserved for liquidation proceeds
+        expect(userSharesAfter).to.equal(0); // All shares should be burned
+        expect(userUSDCAfter - userUSDCBefore).to.be.greaterThan(0);
+        
+        console.log('✅ Redeem functionality works correctly in Liquidated stage!');
+        console.log('✅ Shares were properly burned and USDC transferred');
         
       } catch (error: any) {
-        console.log('❌ FAILED: User cannot withdraw after liquidation complete');
+        console.log('❌ FAILED: User cannot redeem shares after liquidation complete');
         console.log('   - Error:', error.message);
-        console.log('   - This means withdrawals are still blocked even after liquidation');
+        console.log('   - This indicates the contract fix may not be working properly');
+        throw error; // Fail the test
       }
     } else {
-      console.log('ℹ️ No withdrawable amount available for user after liquidation');
-      console.log('   - This might be because user shares were burned during depreciation');
-      console.log('   - In a real liquidation, users would receive new shares or direct USDC distribution');
+      console.log('⚠️ Cannot test redeem - no shares or vault balance');
     }
 
     // ============================================================================
@@ -1373,6 +1390,196 @@ describe('Complete Property Workflow Test', function () {
     console.log('   - Liquidation completed successfully');
 
     console.log('\n✅ COMPLETE LIQUIDATION WORKFLOW TEST PASSED! 🎉');
+    console.log('='.repeat(80));
+  });
+
+  it('💰 Test Multiple Rent Harvest Periods', async function () {
+    console.log('\n' + '='.repeat(80));
+    console.log('💰 MULTIPLE RENT HARVEST PERIODS TEST');
+    console.log('='.repeat(80));
+
+    // Create property and setup
+    console.log('\n📋 Setting up property...');
+    const createTx = await propertyRegistry.connect(platformOwner).createProperty(
+      'Test Property for Multiple Harvests',
+      DEPOSIT_CAP,
+      await oftUSDC.getAddress()
+    );
+    const receipt = await createTx.wait();
+    
+    const propertyCreatedEvent = receipt?.logs.find(
+      (log: any) => log.fragment?.name === 'PropertyCreated'
+    );
+    const vaultAddress = propertyCreatedEvent?.args?.vault;
+    const propertyId = propertyCreatedEvent?.args?.propertyId;
+    
+    const testVault = await ethers.getContractAt('PropertyVaultGovernance', vaultAddress);
+    
+    // Deploy DAO and link
+    const PropertyDAO = await ethers.getContractFactory('PropertyDAO');
+    const testDAO = await PropertyDAO.deploy(vaultAddress, platformOwner.address);
+    await testDAO.waitForDeployment();
+    await testVault.connect(platformOwner).setDAO(await testDAO.getAddress());
+    
+    // Set funding and complete property purchase
+    const fundingDeadline = (await time.latest()) + 30 * 24 * 60 * 60;
+    await testDAO.connect(platformOwner).setFundingTarget(FUNDING_TARGET, fundingDeadline);
+    
+    // Fund the property
+    const investorAmount = ethers.parseUnits('100000', USDC_DECIMALS);
+    await mockUSDC.connect(platformOwner).mint(investor1.address, investorAmount);
+    await mockUSDC.connect(investor1).approve(await oftAdapter.getAddress(), investorAmount);
+    
+    const options = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
+    const sendParam = [2, ethers.zeroPadValue(investor1.address, 32), investorAmount, investorAmount, options, '0x', '0x'];
+    const [nativeFee] = await oftAdapter.quoteSend(sendParam, false);
+    await oftAdapter.connect(investor1).send(sendParam, [nativeFee, 0n], investor1.address, { value: nativeFee });
+    
+    const oftAmount = investorAmount * BigInt(10 ** 12);
+    await oftUSDC.connect(investor1).approve(vaultAddress, oftAmount);
+    await testVault.connect(investor1).deposit(oftAmount, investor1.address);
+    
+    // Execute purchase proposal
+    await testDAO.connect(investor1).vote(1, true);
+    await time.increase(7 * 24 * 60 * 60 + 1);
+    await testDAO.connect(platformOwner).executeProposal(1);
+    await testDAO.connect(platformOwner).completePropertyPurchase('Test Property Address');
+    
+    console.log('✅ Property setup complete and under management');
+
+    // ============================================================================
+    // PERIOD 1: First Rent Harvest
+    // ============================================================================
+    console.log('\n📍 PERIOD 1: First Rent Harvest');
+    console.log('-'.repeat(60));
+
+    const rent1Amount = ethers.parseUnits('5000', USDC_DECIMALS);
+    await mockUSDC.connect(platformOwner).mint(platformOwner.address, rent1Amount);
+    await mockUSDC.connect(platformOwner).approve(await oftAdapter.getAddress(), rent1Amount);
+    
+    const rent1Options = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
+    const rent1SendParam = [2, ethers.zeroPadValue(platformOwner.address, 32), rent1Amount, rent1Amount, rent1Options, '0x', '0x'];
+    const [rent1NativeFee] = await oftAdapter.quoteSend(rent1SendParam, false);
+    await oftAdapter.connect(platformOwner).send(rent1SendParam, [rent1NativeFee, 0n], platformOwner.address, { value: rent1NativeFee });
+    
+    const rent1AmountOFT = rent1Amount * BigInt(10 ** 12);
+    await oftUSDC.connect(platformOwner).approve(vaultAddress, rent1AmountOFT);
+    await testVault.connect(platformOwner).harvestRent(rent1AmountOFT);
+    
+    console.log('✅ Period 1 rent harvested:', ethers.formatUnits(rent1AmountOFT, 18), 'USDC');
+    
+    const period1 = await testVault.currentPeriod();
+    console.log('✅ Current period:', period1);
+
+    // User withdraws Period 1 income
+    const maxWithdrawable1 = await testVault.getMaxWithdrawable(investor1.address);
+    console.log('👤 Investor 1 max withdrawable (Period 1):', ethers.formatUnits(maxWithdrawable1, 18), 'USDC');
+    
+    const balanceBefore1 = await oftUSDC.balanceOf(investor1.address);
+    await testVault.connect(investor1).withdraw(maxWithdrawable1, investor1.address, investor1.address);
+    const balanceAfter1 = await oftUSDC.balanceOf(investor1.address);
+    
+    console.log('✅ Investor 1 withdrew:', ethers.formatUnits(balanceAfter1 - balanceBefore1, 18), 'USDC');
+    
+    const maxAfterWithdraw1 = await testVault.getMaxWithdrawable(investor1.address);
+    console.log('✅ Max withdrawable after Period 1 withdrawal:', ethers.formatUnits(maxAfterWithdraw1, 18), 'USDC');
+    expect(maxAfterWithdraw1).to.equal(0);
+
+    // ============================================================================
+    // PERIOD 2: Second Rent Harvest (NEW PERIOD)
+    // ============================================================================
+    console.log('\n📍 PERIOD 2: Second Rent Harvest (NEW PERIOD)');
+    console.log('-'.repeat(60));
+
+    const rent2Amount = ethers.parseUnits('6000', USDC_DECIMALS);
+    await mockUSDC.connect(platformOwner).mint(platformOwner.address, rent2Amount);
+    await mockUSDC.connect(platformOwner).approve(await oftAdapter.getAddress(), rent2Amount);
+    
+    const rent2Options = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
+    const rent2SendParam = [2, ethers.zeroPadValue(platformOwner.address, 32), rent2Amount, rent2Amount, rent2Options, '0x', '0x'];
+    const [rent2NativeFee] = await oftAdapter.quoteSend(rent2SendParam, false);
+    await oftAdapter.connect(platformOwner).send(rent2SendParam, [rent2NativeFee, 0n], platformOwner.address, { value: rent2NativeFee });
+    
+    const rent2AmountOFT = rent2Amount * BigInt(10 ** 12);
+    await oftUSDC.connect(platformOwner).approve(vaultAddress, rent2AmountOFT);
+    await testVault.connect(platformOwner).harvestRent(rent2AmountOFT);
+    
+    console.log('✅ Period 2 rent harvested:', ethers.formatUnits(rent2AmountOFT, 18), 'USDC');
+    
+    const period2 = await testVault.currentPeriod();
+    console.log('✅ Current period:', period2);
+    expect(period2).to.equal(period1 + BigInt(1));
+    console.log('✅ Period correctly incremented from', period1, 'to', period2);
+
+    // Check max withdrawable for Period 2 (should be FULL share of new period, not 0!)
+    const maxWithdrawable2 = await testVault.getMaxWithdrawable(investor1.address);
+    console.log('👤 Investor 1 max withdrawable (Period 2):', ethers.formatUnits(maxWithdrawable2, 18), 'USDC');
+    
+    // THIS IS THE KEY TEST - maxWithdrawable should be > 0 for new period!
+    expect(maxWithdrawable2).to.be.greaterThan(0);
+    console.log('✅ Max withdrawable is > 0 in new period (bug fixed!)');
+    
+    // User withdraws Period 2 income
+    const balanceBefore2 = await oftUSDC.balanceOf(investor1.address);
+    await testVault.connect(investor1).withdraw(maxWithdrawable2, investor1.address, investor1.address);
+    const balanceAfter2 = await oftUSDC.balanceOf(investor1.address);
+    
+    console.log('✅ Investor 1 withdrew (Period 2):', ethers.formatUnits(balanceAfter2 - balanceBefore2, 18), 'USDC');
+    expect(balanceAfter2 - balanceBefore2).to.equal(maxWithdrawable2);
+    
+    const maxAfterWithdraw2 = await testVault.getMaxWithdrawable(investor1.address);
+    console.log('✅ Max withdrawable after Period 2 withdrawal:', ethers.formatUnits(maxAfterWithdraw2, 18), 'USDC');
+    expect(maxAfterWithdraw2).to.equal(0);
+
+    // ============================================================================
+    // PERIOD 3: Third Rent Harvest
+    // ============================================================================
+    console.log('\n📍 PERIOD 3: Third Rent Harvest');
+    console.log('-'.repeat(60));
+
+    const rent3Amount = ethers.parseUnits('4000', USDC_DECIMALS);
+    await mockUSDC.connect(platformOwner).mint(platformOwner.address, rent3Amount);
+    await mockUSDC.connect(platformOwner).approve(await oftAdapter.getAddress(), rent3Amount);
+    
+    const rent3Options = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
+    const rent3SendParam = [2, ethers.zeroPadValue(platformOwner.address, 32), rent3Amount, rent3Amount, rent3Options, '0x', '0x'];
+    const [rent3NativeFee] = await oftAdapter.quoteSend(rent3SendParam, false);
+    await oftAdapter.connect(platformOwner).send(rent3SendParam, [rent3NativeFee, 0n], platformOwner.address, { value: rent3NativeFee });
+    
+    const rent3AmountOFT = rent3Amount * BigInt(10 ** 12);
+    await oftUSDC.connect(platformOwner).approve(vaultAddress, rent3AmountOFT);
+    await testVault.connect(platformOwner).harvestRent(rent3AmountOFT);
+    
+    console.log('✅ Period 3 rent harvested:', ethers.formatUnits(rent3AmountOFT, 18), 'USDC');
+    
+    const period3 = await testVault.currentPeriod();
+    console.log('✅ Current period:', period3);
+    expect(period3).to.equal(period2 + BigInt(1));
+
+    const maxWithdrawable3 = await testVault.getMaxWithdrawable(investor1.address);
+    console.log('👤 Investor 1 max withdrawable (Period 3):', ethers.formatUnits(maxWithdrawable3, 18), 'USDC');
+    expect(maxWithdrawable3).to.be.greaterThan(0);
+    
+    console.log('✅ Period 3 income also available for withdrawal');
+
+    // ============================================================================
+    // SUMMARY
+    // ============================================================================
+    console.log('\n' + '='.repeat(80));
+    console.log('📊 MULTIPLE PERIODS SUMMARY');
+    console.log('='.repeat(80));
+
+    console.log('\n💰 Income Summary:');
+    console.log('   - Period 1 Harvest:', ethers.formatUnits(rent1AmountOFT, 18), 'USDC → Withdrawn ✅');
+    console.log('   - Period 2 Harvest:', ethers.formatUnits(rent2AmountOFT, 18), 'USDC → Withdrawn ✅');
+    console.log('   - Period 3 Harvest:', ethers.formatUnits(rent3AmountOFT, 18), 'USDC → Available for withdrawal');
+
+    console.log('\n✅ Period Reset Logic Working:');
+    console.log('   - Each harvest creates a new period');
+    console.log('   - User can withdraw from each period independently');
+    console.log('   - userPeriodWithdrawn resets automatically for new periods');
+
+    console.log('\n✅ MULTIPLE RENT HARVEST PERIODS TEST PASSED! 🎉');
     console.log('='.repeat(80));
   });
 
@@ -1640,6 +1847,274 @@ describe('Complete Property Workflow Test', function () {
     console.log('   - Both users have platform balance for free investment');
 
     console.log('\n✅ STACKS CROSS-CHAIN sBTC DEPOSIT → OFTUSDC MINTING TEST PASSED! 🎉');
+    console.log('='.repeat(80));
+  });
+
+  it('🔒 Test Property Status Control (Active/Inactive)', async function () {
+    console.log('\n' + '='.repeat(80));
+    console.log('🔒 PROPERTY STATUS CONTROL TEST (Active/Inactive)');
+    console.log('='.repeat(80));
+
+    // ============================================================================
+    // PHASE 1: CREATE PROPERTY AND VERIFY INITIAL ACTIVE STATUS
+    // ============================================================================
+    console.log('\n📍 PHASE 1: CREATE PROPERTY (Initial Status: Active)');
+    console.log('-'.repeat(80));
+
+    console.log('Creating property via PropertyRegistry...');
+    const createTx = await propertyRegistry.connect(platformOwner).createProperty(
+      'Test Property for Status Control',
+      DEPOSIT_CAP,
+      await oftUSDC.getAddress()
+    );
+    const receipt = await createTx.wait();
+    
+    const propertyCreatedEvent = receipt?.logs.find(
+      (log: any) => log.fragment?.name === 'PropertyCreated'
+    );
+    const vaultAddress = propertyCreatedEvent?.args?.vault;
+    const propertyId = propertyCreatedEvent?.args?.propertyId;
+    
+    console.log('✅ Property ID:', propertyId);
+    console.log('✅ Vault Address:', vaultAddress);
+
+    const testVault = await ethers.getContractAt('PropertyVaultGovernance', vaultAddress);
+
+    // Check initial property status
+    const initialProperty = await propertyRegistry.getProperty(propertyId);
+    console.log('✅ Initial property status:', initialProperty.status, '(Active = 1)');
+    expect(initialProperty.status).to.equal(1); // Active
+
+    // Check if property is active
+    const isActive = await propertyRegistry.isPropertyActive(propertyId);
+    console.log('✅ isPropertyActive():', isActive);
+    expect(isActive).to.be.true;
+
+    // ============================================================================
+    // PHASE 2: TEST DEPOSITS WORK WHEN PROPERTY IS ACTIVE
+    // ============================================================================
+    console.log('\n📍 PHASE 2: TEST DEPOSITS WORK WHEN ACTIVE');
+    console.log('-'.repeat(80));
+
+    // Prepare test deposit
+    const testDepositAmount = ethers.parseUnits('10000', USDC_DECIMALS); // 10K USDC
+    await mockUSDC.connect(platformOwner).mint(investor1.address, testDepositAmount);
+    
+    console.log('👤 Investor 1 preparing deposit...');
+    console.log('   - Amount:', ethers.formatUnits(testDepositAmount, USDC_DECIMALS), 'USDC');
+
+    // Convert USDC to OFTUSDC
+    await mockUSDC.connect(investor1).approve(await oftAdapter.getAddress(), testDepositAmount);
+    const options = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
+    const sendParam = [
+      2,
+      ethers.zeroPadValue(investor1.address, 32),
+      testDepositAmount,
+      testDepositAmount,
+      options,
+      '0x',
+      '0x'
+    ];
+    const [nativeFee] = await oftAdapter.quoteSend(sendParam, false);
+    await oftAdapter.connect(investor1).send(sendParam, [nativeFee, 0n], investor1.address, { value: nativeFee });
+    
+    const oftAmount = testDepositAmount * BigInt(10 ** 12);
+    console.log('✅ Converted to OFTUSDC:', ethers.formatUnits(oftAmount, 18));
+
+    // Deposit to vault (should succeed because property is Active)
+    console.log('💰 Attempting deposit to Active property...');
+    await oftUSDC.connect(investor1).approve(vaultAddress, oftAmount);
+    await testVault.connect(investor1).deposit(oftAmount, investor1.address);
+    
+    const investor1Shares = await testVault.balanceOf(investor1.address);
+    console.log('✅ Deposit successful! Shares received:', ethers.formatUnits(investor1Shares, 18));
+    expect(investor1Shares).to.be.greaterThan(0);
+
+    // ============================================================================
+    // PHASE 3: SET PROPERTY TO INACTIVE
+    // ============================================================================
+    console.log('\n📍 PHASE 3: SET PROPERTY TO INACTIVE');
+    console.log('-'.repeat(80));
+
+    console.log('🔄 Setting property status to Inactive...');
+    await propertyRegistry.connect(platformOwner).updatePropertyStatus(propertyId, 0); // 0 = Inactive
+    
+    const inactiveProperty = await propertyRegistry.getProperty(propertyId);
+    console.log('✅ Property status updated:', inactiveProperty.status, '(Inactive = 0)');
+    expect(inactiveProperty.status).to.equal(0);
+
+    // Verify isPropertyActive returns false
+    const isStillActive = await propertyRegistry.isPropertyActive(propertyId);
+    console.log('✅ isPropertyActive():', isStillActive);
+    expect(isStillActive).to.be.false;
+
+    // ============================================================================
+    // PHASE 4: TEST DEPOSITS ARE BLOCKED WHEN INACTIVE
+    // ============================================================================
+    console.log('\n📍 PHASE 4: TEST DEPOSITS ARE BLOCKED WHEN INACTIVE');
+    console.log('-'.repeat(80));
+
+    // Prepare another deposit attempt
+    const blockedDepositAmount = ethers.parseUnits('5000', USDC_DECIMALS);
+    await mockUSDC.connect(platformOwner).mint(investor2.address, blockedDepositAmount);
+    
+    console.log('👤 Investor 2 attempting deposit to Inactive property...');
+    console.log('   - Amount:', ethers.formatUnits(blockedDepositAmount, USDC_DECIMALS), 'USDC');
+
+    // Convert USDC to OFTUSDC
+    await mockUSDC.connect(investor2).approve(await oftAdapter.getAddress(), blockedDepositAmount);
+    const blockedSendParam = [
+      2,
+      ethers.zeroPadValue(investor2.address, 32),
+      blockedDepositAmount,
+      blockedDepositAmount,
+      options,
+      '0x',
+      '0x'
+    ];
+    const [blockedNativeFee] = await oftAdapter.quoteSend(blockedSendParam, false);
+    await oftAdapter.connect(investor2).send(blockedSendParam, [blockedNativeFee, 0n], investor2.address, { value: blockedNativeFee });
+    
+    const blockedOftAmount = blockedDepositAmount * BigInt(10 ** 12);
+    await oftUSDC.connect(investor2).approve(vaultAddress, blockedOftAmount);
+
+    // Attempt deposit (should fail)
+    console.log('🚫 Attempting deposit to Inactive property...');
+    try {
+      await testVault.connect(investor2).deposit(blockedOftAmount, investor2.address);
+      console.log('❌ ERROR: Deposit should have been blocked but succeeded!');
+      expect.fail('Deposit should have been blocked when property is Inactive');
+    } catch (error: any) {
+      console.log('✅ Deposit correctly blocked!');
+      console.log('   - Error message:', error.message.split('\n')[0]);
+      // Transaction reverted - that's what we want!
+      expect(error.message).to.match(/reverted|property is not active/i);
+    }
+
+    // Verify investor2 has no shares
+    const investor2Shares = await testVault.balanceOf(investor2.address);
+    console.log('✅ Investor 2 shares:', ethers.formatUnits(investor2Shares, 18), '(should be 0)');
+    expect(investor2Shares).to.equal(0);
+
+    // ============================================================================
+    // PHASE 5: TEST MINT IS ALSO BLOCKED WHEN INACTIVE
+    // ============================================================================
+    console.log('\n📍 PHASE 5: TEST MINT IS ALSO BLOCKED WHEN INACTIVE');
+    console.log('-'.repeat(80));
+
+    console.log('🚫 Attempting mint() on Inactive property...');
+    const sharesToMint = ethers.parseUnits('1000', 18);
+    
+    try {
+      await testVault.connect(investor2).mint(sharesToMint, investor2.address);
+      console.log('❌ ERROR: Mint should have been blocked but succeeded!');
+      expect.fail('Mint should have been blocked when property is Inactive');
+    } catch (error: any) {
+      console.log('✅ Mint correctly blocked!');
+      console.log('   - Error message:', error.message.split('\n')[0]);
+      // Transaction reverted - that's what we want!
+      expect(error.message).to.match(/reverted|property is not active/i);
+    }
+
+    // ============================================================================
+    // PHASE 6: VERIFY PROPERTY CAN STILL BE QUERIED WHEN INACTIVE
+    // ============================================================================
+    console.log('\n📍 PHASE 6: VERIFY PROPERTY CAN STILL BE QUERIED');
+    console.log('-'.repeat(80));
+
+    console.log('🔍 Querying Inactive property data...');
+    const queriedProperty = await propertyRegistry.getProperty(propertyId);
+    console.log('✅ Property data retrieved:');
+    console.log('   - Vault:', queriedProperty.vault);
+    console.log('   - Deposit Cap:', ethers.formatUnits(queriedProperty.depositCap, 18));
+    console.log('   - Total Deposited:', ethers.formatUnits(queriedProperty.totalDeposited, 18));
+    console.log('   - Status:', queriedProperty.status, '(Inactive)');
+    console.log('   - Created At:', new Date(Number(queriedProperty.createdAt) * 1000).toLocaleString());
+
+    // Verify vault address can be retrieved
+    const vaultFromRegistry = await propertyRegistry.getVaultAddress(propertyId);
+    console.log('✅ Vault address retrieved:', vaultFromRegistry);
+    expect(vaultFromRegistry).to.equal(vaultAddress);
+
+    // Verify shares of existing investor are preserved
+    const investor1SharesAfterInactive = await testVault.balanceOf(investor1.address);
+    console.log('✅ Investor 1 shares preserved:', ethers.formatUnits(investor1SharesAfterInactive, 18));
+    expect(investor1SharesAfterInactive).to.equal(investor1Shares);
+
+    // ============================================================================
+    // PHASE 7: REACTIVATE PROPERTY
+    // ============================================================================
+    console.log('\n📍 PHASE 7: REACTIVATE PROPERTY');
+    console.log('-'.repeat(80));
+
+    console.log('🔄 Setting property status back to Active...');
+    await propertyRegistry.connect(platformOwner).updatePropertyStatus(propertyId, 1); // 1 = Active
+    
+    const reactivatedProperty = await propertyRegistry.getProperty(propertyId);
+    console.log('✅ Property status updated:', reactivatedProperty.status, '(Active = 1)');
+    expect(reactivatedProperty.status).to.equal(1);
+
+    const isActiveAgain = await propertyRegistry.isPropertyActive(propertyId);
+    console.log('✅ isPropertyActive():', isActiveAgain);
+    expect(isActiveAgain).to.be.true;
+
+    // ============================================================================
+    // PHASE 8: TEST DEPOSITS WORK AGAIN AFTER REACTIVATION
+    // ============================================================================
+    console.log('\n📍 PHASE 8: TEST DEPOSITS WORK AFTER REACTIVATION');
+    console.log('-'.repeat(80));
+
+    console.log('👤 Investor 2 attempting deposit to reactivated property...');
+    
+    // Investor 2 already has OFTUSDC from previous blocked attempt, so just approve and deposit
+    await oftUSDC.connect(investor2).approve(vaultAddress, blockedOftAmount);
+    await testVault.connect(investor2).deposit(blockedOftAmount, investor2.address);
+    
+    const investor2SharesAfterReactivation = await testVault.balanceOf(investor2.address);
+    console.log('✅ Deposit successful after reactivation!');
+    console.log('   - Shares received:', ethers.formatUnits(investor2SharesAfterReactivation, 18));
+    expect(investor2SharesAfterReactivation).to.be.greaterThan(0);
+
+    // ============================================================================
+    // PHASE 9: SUMMARY
+    // ============================================================================
+    console.log('\n' + '='.repeat(80));
+    console.log('📊 PROPERTY STATUS CONTROL SUMMARY');
+    console.log('='.repeat(80));
+
+    console.log('\n🏠 Property Information:');
+    console.log('   - Property ID:', propertyId);
+    console.log('   - Name: Test Property for Status Control');
+    console.log('   - Final Status:', reactivatedProperty.status, '(Active)');
+
+    console.log('\n✅ Status Transitions Tested:');
+    console.log('   1. ✅ Property created as Active');
+    console.log('   2. ✅ Deposits work when Active');
+    console.log('   3. ✅ Status changed to Inactive');
+    console.log('   4. ✅ Deposits blocked when Inactive');
+    console.log('   5. ✅ Mint blocked when Inactive');
+    console.log('   6. ✅ Property can still be queried when Inactive');
+    console.log('   7. ✅ Existing shares preserved when Inactive');
+    console.log('   8. ✅ Property reactivated to Active');
+    console.log('   9. ✅ Deposits work again after reactivation');
+
+    console.log('\n👥 Investor Summary:');
+    console.log('   Investor 1:');
+    console.log('     - Deposited when Active:', ethers.formatUnits(oftAmount, 18), 'OFTUSDC');
+    console.log('     - Shares:', ethers.formatUnits(investor1SharesAfterInactive, 18));
+    console.log('   Investor 2:');
+    console.log('     - Blocked when Inactive: ✅');
+    console.log('     - Deposited after reactivation:', ethers.formatUnits(blockedOftAmount, 18), 'OFTUSDC');
+    console.log('     - Shares:', ethers.formatUnits(investor2SharesAfterReactivation, 18));
+
+    console.log('\n🔒 Security Features Verified:');
+    console.log('   - Property status enforced at vault level');
+    console.log('   - Both deposit() and mint() respect property status');
+    console.log('   - Existing investments preserved during inactive period');
+    console.log('   - Property data remains queryable when inactive');
+    console.log('   - Owner can reactivate property anytime');
+
+    console.log('\n✅ PROPERTY STATUS CONTROL TEST PASSED! 🎉');
     console.log('='.repeat(80));
   });
 });

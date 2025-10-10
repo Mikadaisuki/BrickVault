@@ -3,12 +3,7 @@
     "inputs": [
       {
         "internalType": "address",
-        "name": "_usdcToken",
-        "type": "address"
-      },
-      {
-        "internalType": "address",
-        "name": "_treasury",
+        "name": "_oftusdcToken",
         "type": "address"
       },
       {
@@ -77,40 +72,9 @@
         "internalType": "uint8",
         "name": "messageType",
         "type": "uint8"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
       }
     ],
     "name": "CrossChainMessageProcessed",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "sbtcAmount",
-        "type": "uint256"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "usdcAmount",
-        "type": "uint256"
-      }
-    ],
-    "name": "FundsConverted",
     "type": "event"
   },
   {
@@ -137,24 +101,24 @@
     "inputs": [
       {
         "indexed": true,
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
+        "internalType": "string",
+        "name": "stacksAddress",
+        "type": "string"
       },
       {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "totalUsdc",
-        "type": "uint256"
+        "indexed": true,
+        "internalType": "address",
+        "name": "evmAddress",
+        "type": "address"
       },
       {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "totalSbtc",
-        "type": "uint256"
+        "indexed": true,
+        "internalType": "address",
+        "name": "registrant",
+        "type": "address"
       }
     ],
-    "name": "PropertyPurchaseInitiated",
+    "name": "StacksAddressRegistered",
     "type": "event"
   },
   {
@@ -167,12 +131,6 @@
         "type": "address"
       },
       {
-        "indexed": true,
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
-      },
-      {
         "indexed": false,
         "internalType": "uint256",
         "name": "sbtcAmount",
@@ -181,7 +139,7 @@
       {
         "indexed": false,
         "internalType": "uint256",
-        "name": "shares",
+        "name": "oftusdcAmount",
         "type": "uint256"
       },
       {
@@ -211,37 +169,6 @@
       }
     ],
     "name": "StacksStageChange",
-    "type": "event"
-  },
-  {
-    "anonymous": false,
-    "inputs": [
-      {
-        "indexed": true,
-        "internalType": "address",
-        "name": "user",
-        "type": "address"
-      },
-      {
-        "indexed": true,
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
-      },
-      {
-        "indexed": false,
-        "internalType": "uint256",
-        "name": "shares",
-        "type": "uint256"
-      },
-      {
-        "indexed": true,
-        "internalType": "bytes32",
-        "name": "messageId",
-        "type": "bytes32"
-      }
-    ],
-    "name": "StacksWithdrawalRequested",
     "type": "event"
   },
   {
@@ -284,67 +211,10 @@
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "dao",
-        "type": "address"
-      }
-    ],
-    "name": "authorizeDAO",
+    "inputs": [],
+    "name": "authorizeAsMinter",
     "outputs": [],
     "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "vault",
-        "type": "address"
-      }
-    ],
-    "name": "authorizeVault",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "name": "authorizedDAOs",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "name": "authorizedVaults",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "",
-        "type": "bool"
-      }
-    ],
-    "stateMutability": "view",
     "type": "function"
   },
   {
@@ -369,24 +239,6 @@
   {
     "inputs": [
       {
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
-      },
-      {
-        "internalType": "uint256",
-        "name": "usdAmount",
-        "type": "uint256"
-      }
-    ],
-    "name": "completeSbtcConversion",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
         "internalType": "bytes32",
         "name": "",
         "type": "bytes32"
@@ -403,11 +255,6 @@
         "internalType": "uint8",
         "name": "messageType",
         "type": "uint8"
-      },
-      {
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
       },
       {
         "internalType": "address",
@@ -520,11 +367,6 @@
             "type": "uint8"
           },
           {
-            "internalType": "uint32",
-            "name": "propertyId",
-            "type": "uint32"
-          },
-          {
             "internalType": "address",
             "name": "evmCustodian",
             "type": "address"
@@ -583,35 +425,6 @@
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
-      }
-    ],
-    "name": "getPendingStageChange",
-    "outputs": [
-      {
-        "internalType": "bool",
-        "name": "isPending",
-        "type": "bool"
-      },
-      {
-        "internalType": "uint8",
-        "name": "pendingStage",
-        "type": "uint8"
-      },
-      {
-        "internalType": "uint256",
-        "name": "timestamp",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [],
     "name": "getSbtcPrice",
     "outputs": [
@@ -632,14 +445,9 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "evmCustodian",
-        "type": "address"
-      },
-      {
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
+        "internalType": "string",
+        "name": "stacksAddress",
+        "type": "string"
       }
     ],
     "name": "getStacksUserInfo",
@@ -651,12 +459,7 @@
       },
       {
         "internalType": "uint256",
-        "name": "usdValueAtDeposit",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "sharesMinted",
+        "name": "oftusdcMinted",
         "type": "uint256"
       },
       {
@@ -675,11 +478,6 @@
         "type": "bytes32"
       },
       {
-        "internalType": "string",
-        "name": "stacksAddress",
-        "type": "string"
-      },
-      {
         "internalType": "address",
         "name": "evmCustodianAddress",
         "type": "address"
@@ -689,13 +487,7 @@
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
-      }
-    ],
+    "inputs": [],
     "name": "getTotalStacksDeposits",
     "outputs": [
       {
@@ -705,39 +497,11 @@
       },
       {
         "internalType": "uint256",
-        "name": "totalUsdValue",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "totalShares",
+        "name": "totalOftusdc",
         "type": "uint256"
       }
     ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
-      },
-      {
-        "internalType": "uint256",
-        "name": "totalUsdc",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "totalSbtc",
-        "type": "uint256"
-      }
-    ],
-    "name": "handlePropertyPurchaseInitiation",
-    "outputs": [],
-    "stateMutability": "nonpayable",
+    "stateMutability": "pure",
     "type": "function"
   },
   {
@@ -762,14 +526,28 @@
   {
     "inputs": [
       {
-        "internalType": "address",
-        "name": "evmCustodian",
-        "type": "address"
-      },
+        "internalType": "bytes32",
+        "name": "stacksTxHash",
+        "type": "bytes32"
+      }
+    ],
+    "name": "isStacksTxHashUsed",
+    "outputs": [
       {
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
+        "internalType": "bool",
+        "name": "used",
+        "type": "bool"
+      }
+    ],
+    "stateMutability": "view",
+    "type": "function"
+  },
+  {
+    "inputs": [
+      {
+        "internalType": "string",
+        "name": "stacksAddress",
+        "type": "string"
       }
     ],
     "name": "isStacksUser",
@@ -803,10 +581,10 @@
   },
   {
     "inputs": [],
-    "name": "owner",
+    "name": "oftusdcToken",
     "outputs": [
       {
-        "internalType": "address",
+        "internalType": "contract OFTUSDC",
         "name": "",
         "type": "address"
       }
@@ -815,19 +593,13 @@
     "type": "function"
   },
   {
-    "inputs": [
-      {
-        "internalType": "uint32",
-        "name": "",
-        "type": "uint32"
-      }
-    ],
-    "name": "pendingStageChanges",
+    "inputs": [],
+    "name": "owner",
     "outputs": [
       {
-        "internalType": "uint8",
+        "internalType": "address",
         "name": "",
-        "type": "uint8"
+        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -859,11 +631,6 @@
         "type": "uint8"
       },
       {
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
-      },
-      {
         "internalType": "address",
         "name": "evmCustodian",
         "type": "address"
@@ -885,7 +652,7 @@
       },
       {
         "internalType": "bytes",
-        "name": "proof",
+        "name": "",
         "type": "bytes"
       }
     ],
@@ -911,72 +678,6 @@
       }
     ],
     "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint32",
-        "name": "",
-        "type": "uint32"
-      }
-    ],
-    "name": "propertyStacksInfo",
-    "outputs": [
-      {
-        "internalType": "uint256",
-        "name": "totalSbtcLocked",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "totalUsdValueLocked",
-        "type": "uint256"
-      },
-      {
-        "internalType": "uint256",
-        "name": "totalSharesMinted",
-        "type": "uint256"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint32",
-        "name": "",
-        "type": "uint32"
-      }
-    ],
-    "name": "propertyToVault",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
-      },
-      {
-        "internalType": "address",
-        "name": "vaultAddress",
-        "type": "address"
-      }
-    ],
-    "name": "registerProperty",
-    "outputs": [],
-    "stateMutability": "nonpayable",
     "type": "function"
   },
   {
@@ -1013,19 +714,6 @@
   {
     "inputs": [],
     "name": "renounceOwnership",
-    "outputs": [],
-    "stateMutability": "nonpayable",
-    "type": "function"
-  },
-  {
-    "inputs": [
-      {
-        "internalType": "uint32",
-        "name": "propertyId",
-        "type": "uint32"
-      }
-    ],
-    "name": "retryStageChangeNotification",
     "outputs": [],
     "stateMutability": "nonpayable",
     "type": "function"
@@ -1091,17 +779,47 @@
   {
     "inputs": [
       {
-        "internalType": "uint32",
+        "internalType": "string",
         "name": "",
-        "type": "uint32"
+        "type": "string"
       }
     ],
-    "name": "stageChangeTimestamps",
+    "name": "stacksUsers",
     "outputs": [
       {
         "internalType": "uint256",
-        "name": "",
+        "name": "sbtcDeposited",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "oftusdcMinted",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bool",
+        "name": "hasDeposited",
+        "type": "bool"
+      },
+      {
+        "internalType": "uint256",
+        "name": "depositTimestamp",
+        "type": "uint256"
+      },
+      {
+        "internalType": "bytes32",
+        "name": "stacksTxHash",
+        "type": "bytes32"
+      },
+      {
+        "internalType": "string",
+        "name": "stacksAddress",
+        "type": "string"
+      },
+      {
+        "internalType": "address",
+        "name": "evmCustodian",
+        "type": "address"
       }
     ],
     "stateMutability": "view",
@@ -1121,19 +839,6 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "treasury",
-    "outputs": [
-      {
-        "internalType": "address",
-        "name": "",
-        "type": "address"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "uint256",
@@ -1147,13 +852,19 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "usdcToken",
+    "inputs": [
+      {
+        "internalType": "bytes32",
+        "name": "",
+        "type": "bytes32"
+      }
+    ],
+    "name": "usedStacksTxHashes",
     "outputs": [
       {
-        "internalType": "contract IERC20",
+        "internalType": "bool",
         "name": "",
-        "type": "address"
+        "type": "bool"
       }
     ],
     "stateMutability": "view",

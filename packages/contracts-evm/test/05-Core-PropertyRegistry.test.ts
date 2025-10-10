@@ -237,22 +237,15 @@ describe('PropertyRegistry - Actual Testing', function () {
     });
 
     it('Should update property status', async function () {
-      await registry.updatePropertyStatus(propertyId, 2); // Paused
-      
-      const property = await registry.getProperty(propertyId);
-      expect(property.status).to.equal(2);
-    });
-
-    it('Should pause/unpause property', async function () {
-      await registry.setPropertyPaused(propertyId, true);
+      await registry.updatePropertyStatus(propertyId, 0); // Inactive
       
       let property = await registry.getProperty(propertyId);
-      expect(property.paused).to.be.true;
+      expect(property.status).to.equal(0);
 
-      await registry.setPropertyPaused(propertyId, false);
+      await registry.updatePropertyStatus(propertyId, 1); // Active
       
       property = await registry.getProperty(propertyId);
-      expect(property.paused).to.be.false;
+      expect(property.status).to.equal(1);
     });
 
     it.skip('Should update property cap', async function () {
@@ -342,20 +335,17 @@ describe('PropertyRegistry - Actual Testing', function () {
       let property = await registry.properties(propertyId);
       expect(property.status).to.equal(1); // Active
 
-      // Pause the property
-      await registry.setPropertyPaused(propertyId, true);
-      property = await registry.properties(propertyId);
-      expect(property.paused).to.be.true;
-
-      // Unpause
-      await registry.setPropertyPaused(propertyId, false);
-      property = await registry.properties(propertyId);
-      expect(property.paused).to.be.false;
+      // Check active status
+      let isActive = await registry.isPropertyActive(propertyId);
+      expect(isActive).to.be.true;
 
       // Set status to inactive
       await registry.updatePropertyStatus(propertyId, 0); // Inactive
       property = await registry.properties(propertyId);
       expect(property.status).to.equal(0); // Inactive
+
+      isActive = await registry.isPropertyActive(propertyId);
+      expect(isActive).to.be.false;
     });
 
     // Note: getVaultAddress test removed as function was removed to reduce contract size
@@ -477,12 +467,6 @@ describe('PropertyRegistry - Actual Testing', function () {
     it('Should only allow owner to update property status', async function () {
       await expect(
         registry.connect(user1).updatePropertyStatus(1, 1)
-      ).to.be.revertedWithCustomError(registry, 'OwnableUnauthorizedAccount');
-    });
-
-    it('Should only allow owner to pause property', async function () {
-      await expect(
-        registry.connect(user1).setPropertyPaused(1, true)
       ).to.be.revertedWithCustomError(registry, 'OwnableUnauthorizedAccount');
     });
 

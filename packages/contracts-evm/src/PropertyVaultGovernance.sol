@@ -33,8 +33,9 @@ contract PropertyVaultGovernance is PropertyVault {
         address _owner,
         uint256 _depositCap,
         uint32 _propertyId,
-        address _environmentConfig
-    ) PropertyVault(_asset, _name, _symbol, _owner, _depositCap, _propertyId, _environmentConfig) {}
+        address _environmentConfig,
+        address _registry
+    ) PropertyVault(_asset, _name, _symbol, _owner, _depositCap, _propertyId, _environmentConfig, _registry) {}
 
     function setDAO(address _dao) external onlyOwner {
         require(_dao != address(0), 'Invalid DAO');
@@ -107,6 +108,13 @@ contract PropertyVaultGovernance is PropertyVault {
             // Track distributed income
             totalIncomeDistributed += assets;
             currentPeriodDistributed += assets;
+            
+            // Reset user's withdrawn amount if this is a new period
+            if (userLastWithdrawalPeriod[owner] != currentPeriod) {
+                userPeriodWithdrawn[owner] = 0;
+                userLastWithdrawalPeriod[owner] = currentPeriod;
+            }
+            
             userPeriodWithdrawn[owner] += assets;
             
             // Return 0 shares (no shares burned)
@@ -202,9 +210,18 @@ contract PropertyVaultGovernance is PropertyVault {
     
     function _getPeriodIncomeShare(address user, uint256 userShares) internal view returns (uint256) {
         if (totalSupply() == 0) return 0;
+        
         uint256 userPeriodShare = (currentPeriodIncome * userShares) / totalSupply();
-        uint256 userWithdrawn = userPeriodWithdrawn[user];
-        return userPeriodShare > userWithdrawn ? userPeriodShare - userWithdrawn : 0;
+        
+        // Check if user has withdrawn in the current period
+        if (userLastWithdrawalPeriod[user] == currentPeriod) {
+            // User already withdrew in this period, calculate remaining
+            uint256 userWithdrawn = userPeriodWithdrawn[user];
+            return userPeriodShare > userWithdrawn ? userPeriodShare - userWithdrawn : 0;
+        } else {
+            // User hasn't withdrawn in this period yet, full share available
+            return userPeriodShare;
+        }
     }
 
 

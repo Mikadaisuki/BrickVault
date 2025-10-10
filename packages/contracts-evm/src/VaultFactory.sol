@@ -28,7 +28,8 @@ contract VaultFactory is Ownable {
         address vaultOwner,
         uint256 depositCap,
         uint32 propertyId,
-        address environmentConfig
+        address environmentConfig,
+        address registry
     ) external returns (address vault) {
         require(authorizedCallers[msg.sender] || msg.sender == owner(), 'Not authorized');
         
@@ -39,7 +40,8 @@ contract VaultFactory is Ownable {
             vaultOwner,
             depositCap,
             propertyId,
-            environmentConfig
+            environmentConfig,
+            registry
         ));
         emit VaultCreated(vault, propertyId);
     }

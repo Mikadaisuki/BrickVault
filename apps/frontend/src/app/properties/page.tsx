@@ -42,6 +42,7 @@ interface PropertyCard {
   totalShares: string
   pricePerShare: string
   status: string
+  registryStatus: number  // 0 = Inactive, 1 = Active (from PropertyRegistry)
   imageUrl?: string
   description: string
   vaultAddress: string
@@ -95,7 +96,8 @@ export default function PropertiesPage() {
   
   // Type assertion to fix ReactNode issue
   const isConfirmedTyped = Boolean(isConfirmed) as boolean
-  const isConfirmedSuccess = Boolean(isConfirmed)
+  const isConfirmedSuccess = Boolean(isConfirmed) as boolean
+  const showSuccessMessage: boolean = isConfirmed === true
   
   // Track investment approval transaction separately
   const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>()
@@ -110,7 +112,7 @@ export default function PropertiesPage() {
   const registryAddress = process.env.NEXT_PUBLIC_PROPERTY_REGISTRY_ADDRESS as `0x${string}`
 
   // Get property count
-  const { data: propertyCount, error: countError, isLoading: countLoading } = useReadContract({
+  const { data: propertyCount, error: countError, isLoading: countLoading, refetch: refetchPropertyCount } = useReadContract({
     address: registryAddress,
     abi: PROPERTY_REGISTRY_ABI,
     functionName: 'getPropertyCount',
@@ -198,6 +200,8 @@ export default function PropertiesPage() {
         case 0: return 'Open to Fund'
         case 1: return 'Funded'
         case 2: return 'Under Management'
+        case 3: return 'Liquidating'
+        case 4: return 'Liquidated'
         default: return 'Unknown'
       }
     }
@@ -237,6 +241,21 @@ export default function PropertiesPage() {
     }
     
     switch (statusText) {
+      case 'Open to Fund':
+        description += 'Now accepting new investments with competitive returns.'
+        break
+      case 'Funded':
+        description += 'Funding complete. Property purchase proposal in voting.'
+        break
+      case 'Under Management':
+        description += 'Property is actively managed and generating rental income for investors.'
+        break
+      case 'Liquidating':
+        description += 'Property is being liquidated. All operations are frozen.'
+        break
+      case 'Liquidated':
+        description += 'Property has been liquidated. Investors can redeem their shares for proceeds.'
+        break
       case 'Active':
         description += 'Now accepting new investments with competitive returns.'
         break
@@ -257,6 +276,12 @@ export default function PropertiesPage() {
     const categories = ['Commercial', 'Residential', 'Mixed-Use', 'Industrial', 'Retail']
     const index = parseInt(vaultAddress.slice(-1), 16) % categories.length
     return categories[index]
+  }
+
+  const getPropertyImage = (propertyId: number): string => {
+    // Cycle through p1.jpg, p2.jpg, p3.jpg based on property ID
+    const imageNumber = ((propertyId - 1) % 3) + 1
+    return `/p${imageNumber}.jpg`
   }
 
   // Investment functions
@@ -347,11 +372,242 @@ export default function PropertiesPage() {
       setIsRefreshing(true)
       setLoading(true)
       
-      // Always refresh properties by triggering the useEffect
-      setProperties([])
-      setLoading(true)
+      // First refetch the property count from the contract
+      const result = await refetchPropertyCount()
+      
+      // Force re-fetch of properties even if count hasn't changed
+      if (!publicClient) {
+        console.error('❌ No publicClient available for fetching properties')
+        setLoading(false)
+        return
+      }
+
+      const count = result.data || propertyCount
+      if (!count || count === 0) {
+        console.log('📋 No properties found in registry')
+        setProperties([])
+        setLoading(false)
+        return
+      }
+
+      console.log(`🔍 Refreshing ${Number(count)} properties from network...`)
+
+      const fetchedProperties: PropertyCard[] = []
+      const totalCount = Number(count as bigint)
+      
+      // Fetch all properties dynamically
+      for (let i = 1; i <= totalCount; i++) {
+        try {
+          // Fetch property data from contract
+          const propertyData = await publicClient.readContract({
+            address: registryAddress,
+            abi: PROPERTY_REGISTRY_ABI,
+            functionName: 'getProperty',
+            args: [i],
+          })
+
+          if (propertyData) {
+            // Handle both array and object formats from contract
+            let vault: string, depositCap: bigint, totalDeposited: bigint, status: number, createdAt: number;
+            
+            if (Array.isArray(propertyData) && propertyData.length >= 5) {
+              // Array format: [vault, depositCap, totalDeposited, status, createdAt]
+              [vault, depositCap, totalDeposited, status, createdAt] = propertyData as [string, bigint, bigint, number, number];
+            } else if (propertyData && typeof propertyData === 'object') {
+              const property = propertyData as { vault: string; depositCap: bigint; totalDeposited: bigint; status: number; createdAt: bigint }
+              vault = property.vault;
+              depositCap = property.depositCap;
+              totalDeposited = property.totalDeposited;
+              status = property.status;
+              createdAt = Number(property.createdAt);
+            } else {
+              console.warn(`Invalid property data format for property #${i}`)
+              continue
+            }
+            
+            const vaultAddress = vault as string;
+            
+            // Get property name from vault
+            let propertyName: string;
+            try {
+              const vaultName = await publicClient?.readContract({
+                address: vaultAddress as `0x${string}`,
+                abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+                functionName: 'name',
+              }) as string;
+              propertyName = vaultName || `Property #${i}`;
+            } catch (error) {
+              propertyName = `Property #${i}`;
+            }
+            
+            // Fetch DAO information
+            let daoAddress: string | undefined;
+            let daoStage = 0;
+            let daoFundingProgress = 0;
+            let daoIsFullyFunded = false;
+            let daoInvested = '0';
+            let daoFundingTarget = '0';
+            let propertyAddress: string | undefined;
+            let propertyTokenAddress: string | undefined;
+            let totalRentHarvested = '0';
+        
+            try {
+              const vaultDAO = await publicClient?.readContract({
+                address: vaultAddress as `0x${string}`,
+                abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+                functionName: 'dao',
+              }) as string;
+          
+              if (vaultDAO && vaultDAO !== '0x0000000000000000000000000000000000000000') {
+                daoAddress = vaultDAO;
+                
+                const propertyInfo = await publicClient?.readContract({
+                  address: vaultDAO as `0x${string}`,
+                  abi: PROPERTY_DAO_ABI,
+                  functionName: 'propertyInfo',
+                }) as any;
+                
+                if (propertyInfo && Array.isArray(propertyInfo) && propertyInfo.length >= 6) {
+                  const [stage, totalValue, totalInvested, fundingTarget, fundingDeadline, isFullyFunded] = propertyInfo;
+                  
+                  daoStage = Number(stage);
+                  daoInvested = formatUnits(totalInvested, 18);
+                  daoFundingTarget = formatUnits(fundingTarget, 18);
+                  daoFundingProgress = Number(fundingTarget) > 0 ? (Number(totalInvested) / Number(fundingTarget)) * 100 : 0;
+                  daoIsFullyFunded = isFullyFunded;
+                  
+                  if (daoStage >= 2) {
+                    try {
+                      const propAddress = await publicClient?.readContract({
+                        address: vaultDAO as `0x${string}`,
+                        abi: PROPERTY_DAO_ABI,
+                        functionName: 'propertyAddress',
+                      }) as string;
+                      propertyAddress = propAddress;
+                    } catch (error) {
+                      // Property address not available
+                    }
+                  }
+                }
+              }
+            } catch (error) {
+              // DAO info fetch failed
+            }
+        
+            // Get property token address
+            try {
+              const tokenAddress = await publicClient?.readContract({
+                address: vaultAddress as `0x${string}`,
+                abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+                functionName: 'getPropertyToken',
+              }) as string;
+              
+              if (tokenAddress && tokenAddress !== '0x0000000000000000000000000000000000000000') {
+                propertyTokenAddress = tokenAddress;
+              }
+            } catch (error) {
+              // Property token address not available
+            }
+        
+            // Get total rent harvested
+            try {
+              const rentHarvested = await publicClient?.readContract({
+                address: vaultAddress as `0x${string}`,
+                abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+                functionName: 'totalRentHarvested',
+              }) as bigint;
+              
+              totalRentHarvested = formatUnits(rentHarvested, 18);
+            } catch (error) {
+              // Total rent harvested not available
+            }
+        
+            // Get vault total assets and supply
+            let totalAssets = totalDeposited;
+            let totalSupply = BigInt(1000000) * BigInt(1e18);
+        
+            try {
+              const vaultTotalAssets = await publicClient?.readContract({
+                address: vaultAddress as `0x${string}`,
+                abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+                functionName: 'totalAssets',
+              }) as bigint;
+              
+              if (vaultTotalAssets) {
+                totalAssets = vaultTotalAssets;
+              }
+            } catch (error) {
+              // Use default
+            }
+        
+            try {
+              const vaultTotalSupply = await publicClient?.readContract({
+                address: vaultAddress as `0x${string}`,
+                abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+                functionName: 'totalSupply',
+              }) as bigint;
+              
+              if (vaultTotalSupply) {
+                totalSupply = vaultTotalSupply;
+              }
+            } catch (error) {
+              // Use default
+            }
+        
+            const fundingProgress = Number(depositCap) > 0 
+              ? (Number(totalAssets) / Number(depositCap)) * 100 
+              : 0
+        
+            const pricePerShare = totalSupply && totalAssets && Number(totalSupply) > 0 
+              ? Number(totalAssets) / Number(totalSupply) / 1e18 
+              : 1.0
+            
+            // Calculate remaining funding needed (shares available)
+            const remainingFunding = depositCap > totalAssets ? depositCap - totalAssets : BigInt(0)
+        
+            const propertyCard: PropertyCard = {
+              id: i.toString(),
+              name: propertyName,
+              location: propertyName,
+              price: `${(Number(depositCap) / 1e18 / 1000).toFixed(0)}K`,
+              totalShares: (Number(remainingFunding) / 1e18).toFixed(0), // Shares available = remaining funding needed
+              pricePerShare: (Number(depositCap) / 1e18).toFixed(0), // Total shares = deposit cap
+
+              status: getPropertyStatusText(daoStage, Number(status)),
+              registryStatus: Number(status), // 0 = Inactive, 1 = Active
+              imageUrl: getPropertyImage(i),
+              description: generateDescription(vaultAddress, depositCap, totalDeposited, Number(status), daoStage),
+              vaultAddress: vaultAddress,
+              depositCap: (Number(depositCap) / 1e18).toFixed(0),
+              totalDeposited: totalAssets ? (Number(totalAssets) / 1e18).toFixed(2) : (Number(totalDeposited) / 1e18).toFixed(2),
+              createdAt: Number(createdAt),
+              isPurchased: totalAssets ? Number(totalAssets) > 0 : Number(totalDeposited) > 0,
+              fundingProgress,
+              category: getPropertyCategory(vaultAddress),
+              daoAddress,
+              daoStage,
+              daoFundingProgress,
+              daoIsFullyFunded,
+              daoInvested,
+              daoFundingTarget,
+              propertyAddress,
+              propertyTokenAddress,
+              totalRentHarvested
+            }
+            
+            fetchedProperties.push(propertyCard)
+          }
+        } catch (error) {
+          console.error(`❌ Error fetching property #${i}:`, error)
+        }
+      }
+
+      console.log(`✅ Successfully refreshed ${fetchedProperties.length} properties`)
+      setProperties(fetchedProperties)
+      setLoading(false)
     } catch (error) {
       console.error('Error refreshing properties:', error)
+      setLoading(false)
     } finally {
       setIsRefreshing(false)
     }
@@ -398,19 +654,18 @@ export default function PropertiesPage() {
 
           if (propertyData) {
             // Handle both array and object formats from contract
-            let vault: string, depositCap: bigint, totalDeposited: bigint, status: number, isPurchased: boolean, createdAt: number;
+            let vault: string, depositCap: bigint, totalDeposited: bigint, status: number, createdAt: number;
             
-            if (Array.isArray(propertyData) && propertyData.length >= 6) {
-              // Array format: [vault, depositCap, totalDeposited, status, isPurchased, createdAt]
-              [vault, depositCap, totalDeposited, status, isPurchased, createdAt] = propertyData as [string, bigint, bigint, number, boolean, number];
+            if (Array.isArray(propertyData) && propertyData.length >= 5) {
+              // Array format: [vault, depositCap, totalDeposited, status, createdAt]
+              [vault, depositCap, totalDeposited, status, createdAt] = propertyData as [string, bigint, bigint, number, number];
             } else if (propertyData && typeof propertyData === 'object') {
-              // Object format: { vault, depositCap, totalDeposited, status, paused, createdAt }
-              const property = propertyData as { vault: string; depositCap: bigint; totalDeposited: bigint; status: number; paused: boolean; createdAt: bigint }
+              // Object format: { vault, depositCap, totalDeposited, status, createdAt }
+              const property = propertyData as { vault: string; depositCap: bigint; totalDeposited: bigint; status: number; createdAt: bigint }
               vault = property.vault;
               depositCap = property.depositCap;
               totalDeposited = property.totalDeposited;
               status = property.status;
-              isPurchased = property.paused; // Use paused as isPurchased indicator
               createdAt = Number(property.createdAt);
             } else {
               console.warn(`Invalid property data format for property #${i}`)
@@ -560,15 +815,20 @@ export default function PropertiesPage() {
           ? Number(totalAssets) / Number(totalSupply) / 1e18 
           : 1.0
         
+        // Calculate remaining funding needed (shares available)
+        const remainingFunding = depositCap > totalAssets ? depositCap - totalAssets : BigInt(0)
+        
             const propertyCard: PropertyCard = {
               id: i.toString(),
               name: propertyName,
               location: propertyName,
               price: `${(Number(depositCap) / 1e18 / 1000).toFixed(0)}K`,
-              totalShares: totalSupply ? (Number(totalSupply) / 1e18).toFixed(0) : '1000000',
-              pricePerShare: pricePerShare.toFixed(6),
+              totalShares: (Number(remainingFunding) / 1e18).toFixed(0), // Shares available = remaining funding needed
+              pricePerShare: (Number(depositCap) / 1e18).toFixed(0), // Total shares = deposit cap
+
               status: getPropertyStatusText(daoStage, Number(status)),
-              imageUrl: `/api/placeholder/400/300?vault=${vaultAddress.slice(-4)}`,
+              registryStatus: Number(status), // 0 = Inactive, 1 = Active
+              imageUrl: getPropertyImage(i),
               description: generateDescription(vaultAddress, depositCap, totalDeposited, Number(status), daoStage),
               vaultAddress: vaultAddress,
               depositCap: (Number(depositCap) / 1e18).toFixed(0),
@@ -611,6 +871,8 @@ export default function PropertiesPage() {
       case 'Open to Fund': return 'bg-yellow-100 text-yellow-800'
       case 'Funded': return 'bg-blue-100 text-blue-800'
       case 'Under Management': return 'bg-green-100 text-green-800'
+      case 'Liquidating': return 'bg-orange-100 text-orange-800'
+      case 'Liquidated': return 'bg-red-100 text-red-800'
       case 'Active': return 'bg-green-100 text-green-800'
       case 'Draft': return 'bg-gray-100 text-gray-800'
       case 'Paused': return 'bg-yellow-100 text-yellow-800'
@@ -635,7 +897,11 @@ export default function PropertiesPage() {
     
     const matchesCategory = selectedCategory === 'all' || property.category === selectedCategory
     
-    return matchesSearch && matchesCategory
+    // Show active properties and also show liquidating/liquidated for transparency
+    // Only hide inactive (registryStatus === 0) properties
+    const isActive = property.registryStatus === 1
+    
+    return matchesSearch && matchesCategory && isActive
   })
 
   const sortedProperties = [...filteredProperties].sort((a, b) => {
@@ -854,12 +1120,14 @@ export default function PropertiesPage() {
                 onClick={() => setSelectedProperty(property)}
               >
                 {/* Property Image */}
-                <div className={`bg-gradient-to-br from-blue-500 to-purple-600 relative overflow-hidden ${
+                <div className={`relative overflow-hidden ${
                   viewMode === 'list' ? 'w-64 flex-shrink-0' : 'aspect-video'
                 }`}>
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <Building2 className="h-16 w-16 text-white opacity-80" />
-                  </div>
+                  <img 
+                    src={property.imageUrl} 
+                    alt={property.name}
+                    className="w-full h-full object-cover"
+                  />
                   
                   {/* Status Badge */}
                   <div className="absolute top-4 left-4">
@@ -907,7 +1175,7 @@ export default function PropertiesPage() {
                   {/* Header */}
                   <div className="mb-4">
                     <div className="flex items-start justify-between mb-2">
-                      <h3 className="text-xl font-semibold line-clamp-1">{property.name}</h3>
+                      <h3 className="text-xl font-semibold line-clamp-1 text-orange-600">{property.name}</h3>
                     </div>
                     <p className="text-muted-foreground flex items-center text-sm">
                       <MapPin className="h-3 w-3 mr-1" />
@@ -921,13 +1189,13 @@ export default function PropertiesPage() {
                       <span className="text-2xl font-bold text-primary">${property.price}</span>
                       <span className="text-sm text-muted-foreground">OFTUSDC</span>
                     </div>
-                    <p className="text-xs text-muted-foreground">${property.pricePerShare} per share</p>
+                    <p className="text-xs text-muted-foreground">Total: ${property.pricePerShare} shares</p>
                   </div>
 
                   {/* Stats */}
                   <div className={`grid gap-3 mb-4 ${viewMode === 'list' ? 'grid-cols-4' : 'grid-cols-2'}`}>
                     <div>
-                      <p className="text-xs text-muted-foreground">Total Shares</p>
+                      <p className="text-xs text-muted-foreground">Shares Available</p>
                       <p className="font-semibold">{property.totalShares}</p>
                     </div>
                     <div>
@@ -987,7 +1255,7 @@ export default function PropertiesPage() {
             <div className="bg-background rounded-lg max-w-4xl w-full max-h-[90vh] overflow-y-auto">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-3xl font-bold">{selectedProperty.name}</h2>
+                  <h2 className="text-3xl font-bold text-orange-600">{selectedProperty.name}</h2>
                   <button
                     onClick={() => setSelectedProperty(null)}
                     className="p-2 hover:bg-accent rounded-md transition-colors"
@@ -997,8 +1265,12 @@ export default function PropertiesPage() {
                 </div>
 
                 {/* Image */}
-                <div className="aspect-video bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg mb-6 flex items-center justify-center">
-                  <Building2 className="h-20 w-20 text-white opacity-80" />
+                <div className="aspect-video rounded-lg mb-6 overflow-hidden">
+                  <img 
+                    src={selectedProperty.imageUrl} 
+                    alt={selectedProperty.name}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
 
                 {/* Description */}
@@ -1020,10 +1292,19 @@ export default function PropertiesPage() {
                   <div className="bg-accent rounded-lg p-4">
                     <div className="flex items-center gap-2 mb-2">
                       <Users className="h-4 w-4 text-primary" />
-                      <span className="text-sm text-muted-foreground">Shares</span>
+                      <span className="text-sm text-muted-foreground">Shares Available</span>
                     </div>
                     <p className="text-2xl font-bold">{selectedProperty.totalShares}</p>
                     <p className="text-xs text-muted-foreground">Available</p>
+                  </div>
+
+                  <div className="bg-accent rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <DollarSign className="h-4 w-4 text-primary" />
+                      <span className="text-sm text-muted-foreground">Total Shares</span>
+                    </div>
+                    <p className="text-2xl font-bold">{selectedProperty.pricePerShare}</p>
+                    <p className="text-xs text-muted-foreground">Total</p>
                   </div>
 
                   <div className="bg-accent rounded-lg p-4">
@@ -1089,6 +1370,8 @@ export default function PropertiesPage() {
                     {selectedProperty.status === 'Open to Fund' ? 'Invest Now' : 
                      selectedProperty.status === 'Funded' ? 'Voting in Progress' :
                      selectedProperty.status === 'Under Management' ? 'Property Active' :
+                     selectedProperty.status === 'Liquidating' ? 'Liquidation in Progress' :
+                     selectedProperty.status === 'Liquidated' ? 'Liquidation Complete' :
                      `Property ${selectedProperty.status}`}
                   </button>
                   
@@ -1120,7 +1403,7 @@ export default function PropertiesPage() {
             <div className="bg-background rounded-lg max-w-md w-full">
               <div className="p-6">
                 <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-2xl font-bold">Invest in {selectedProperty.name}</h2>
+                  <h2 className="text-2xl font-bold">Invest in <span className="text-orange-600">{selectedProperty.name}</span></h2>
                   <button
                     onClick={closeInvestmentModal}
                     className="p-2 hover:bg-accent rounded-md transition-colors"
@@ -1132,12 +1415,16 @@ export default function PropertiesPage() {
                 {/* Property Info */}
                 <div className="bg-accent rounded-lg p-4 mb-6">
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm text-muted-foreground">Total Value</span>
+                    <span className="text-sm text-muted-foreground">Total Value (Deposit Cap)</span>
                     <span className="font-semibold">${selectedProperty.depositCap} OFTUSDC</span>
                   </div>
                   <div className="flex justify-between items-center mb-2">
-                    <span className="text-sm text-muted-foreground">Price per Share</span>
-                    <span className="font-semibold">${selectedProperty.pricePerShare}</span>
+                    <span className="text-sm text-muted-foreground">Total Shares</span>
+                    <span className="font-semibold">{selectedProperty.pricePerShare}</span>
+                  </div>
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-sm text-muted-foreground">Shares Available</span>
+                    <span className="font-semibold">{selectedProperty.totalShares}</span>
                   </div>
                   <div className="flex justify-between items-center">
                     <span className="text-sm text-muted-foreground">Funding Progress</span>
@@ -1158,18 +1445,31 @@ export default function PropertiesPage() {
                   <label className="block text-sm font-medium text-foreground mb-2">
                     Investment Amount (OFTUSDC)
                   </label>
-                  <input
-                    type="number"
-                    value={investmentAmount}
-                    onChange={(e) => setInvestmentAmount(e.target.value)}
-                    className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-background text-foreground"
-                    placeholder="Enter amount to invest"
-                    step="0.000001"
-                    min="0"
-                  />
+                  <div className="flex space-x-2">
+                    <input
+                      type="number"
+                      value={investmentAmount}
+                      onChange={(e) => setInvestmentAmount(e.target.value)}
+                      className="flex-1 px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-background text-foreground"
+                      placeholder="Enter amount to invest"
+                      step="0.000001"
+                      min="0"
+                    />
+                    <button
+                      onClick={() => {
+                        // Max is the remaining capacity (deposit cap - total deposited)
+                        const maxAvailable = selectedProperty.totalShares
+                        setInvestmentAmount(maxAvailable)
+                      }}
+                      className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+                      disabled={!selectedProperty.totalShares || Number(selectedProperty.totalShares) <= 0}
+                    >
+                      Max
+                    </button>
+                  </div>
                   {investmentAmount && (
                     <p className="text-sm text-muted-foreground mt-1">
-                      You will receive approximately {(parseFloat(investmentAmount) / parseFloat(selectedProperty.pricePerShare)).toFixed(6)} shares
+                      You will receive {investmentAmount} vault shares (1:1 ratio)
                     </p>
                   )}
                 </div>
@@ -1184,14 +1484,15 @@ export default function PropertiesPage() {
                   </div>
                 )}
 
-                {isConfirmed === true ? (
+                {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+                {(isConfirmed as any) && (
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-4">
                     <div className="flex items-center">
                       <CheckCircle className="h-4 w-4 text-green-600 mr-3" />
                       <span className="text-green-800">Investment successful!</span>
                     </div>
                   </div>
-                ) : null}
+                )}
 
                 {error && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">

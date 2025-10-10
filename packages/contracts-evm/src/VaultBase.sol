@@ -69,6 +69,7 @@ contract VaultBase is ERC4626, Ownable, Pausable, ReentrancyGuard {
      */
     function mint(uint256 shares, address receiver)
         public
+        virtual
         override
         nonReentrant
         whenNotPaused

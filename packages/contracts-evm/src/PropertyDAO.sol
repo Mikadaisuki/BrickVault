@@ -399,13 +399,19 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
             propertyInfo.isFullyFunded = true;
         } else if (newStage == PropertyStage.Liquidating) {
             isLiquidating = true;
-            propertyVault.pauseForLiquidation();
+            // Initiate liquidation on vault (sets isLiquidating flag and pauses)
+            propertyVault.initiateLiquidation();
         } else if (newStage == PropertyStage.Liquidated) {
-            // Unpause vault to allow liquidation proceeds withdrawal
-            try propertyVault.unpause() {
-                // Vault unpaused successfully
+            // Complete liquidation: unpause vault and clear isLiquidating flag
+            try propertyVault.completeLiquidation() {
+                // Liquidation completed successfully
             } catch {
-                // If unpause fails, continue - this is not critical
+                // If completeLiquidation fails, try unpause as fallback
+                try propertyVault.unpause() {
+                    // Vault unpaused successfully
+                } catch {
+                    // If unpause also fails, continue - this is not critical
+                }
             }
         }
         
@@ -450,8 +456,8 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         
         // Change stage to Liquidating
         propertyInfo.stage = PropertyStage.Liquidating;
-        // Pause the vault
-        propertyVault.pauseForLiquidation();
+        // Initiate liquidation on vault (sets isLiquidating flag and pauses)
+        propertyVault.initiateLiquidation();
         
         emit PropertyLiquidated(propertyId, salePrice, salePrice);
         return true;
@@ -780,11 +786,16 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         
         // Handle stage-specific logic
         if (PropertyStage(newStage) == PropertyStage.Liquidated) {
-            // Unpause vault to allow liquidation proceeds withdrawal
-            try propertyVault.unpause() {
-                // Vault unpaused successfully
+            // Complete liquidation: unpause vault and clear isLiquidating flag
+            try propertyVault.completeLiquidation() {
+                // Liquidation completed successfully
             } catch {
-                // If unpause fails, continue - this is not critical
+                // If completeLiquidation fails, try unpause as fallback
+                try propertyVault.unpause() {
+                    // Vault unpaused successfully
+                } catch {
+                    // If unpause also fails, continue - this is not critical
+                }
             }
         }
         
