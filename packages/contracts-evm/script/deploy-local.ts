@@ -1,15 +1,35 @@
 import { ethers } from 'hardhat';
 
 async function main() {
-  console.log('🚀 Starting Cross-Chain USDC Demo Deployment...\n');
+  console.log('🚀 Starting BrickVault Property Investment Platform Deployment...\n');
+  console.log('='.repeat(80));
+  console.log('📋 DEPLOYMENT ARCHITECTURE');
+  console.log('='.repeat(80));
+  console.log('');
+  console.log('🎯 UNIFIED ADAPTER ARCHITECTURE:');
+  console.log('  ✅ Hub Chain: MockUSDC → USDCOFTAdapter → OFTUSDC → PropertyVault');
+  console.log('  ✅ Spoke Chain: MockUSDC → USDCOFTAdapter → Bridge → OFTUSDC on Hub');
+  console.log('  ✅ Same USDCOFTAdapter contract on ALL chains');
+  console.log('  ✅ All vault shares stay on hub chain');
+  console.log('  ✅ Users vote/harvest/redeem on hub only');
+  console.log('  ✅ Users can redeem USDC to ANY chain via adapter');
+  console.log('');
+  console.log('💡 Benefits:');
+  console.log('  • Perfect consistency: Same contract, same flow everywhere');
+  console.log('  • Perfect fungibility: All OFTUSDC backed by locked USDC');
+  console.log('  • Flexible redemption: Withdraw to any chain with adapter');
+  console.log('  • Shared liquidity: One unified USDC pool across all chains');
+  console.log('');
+  console.log('='.repeat(80));
+  console.log('\n');
 
   // Get signers
   // @ts-expect-error - Hardhat type augmentation
   const signers = await ethers.getSigners();
   const [deployer, user1, user2] = signers;
   console.log('📋 Deployer:', deployer.address);
-  console.log('👤 User 1:', user1.address);
-  console.log('👤 User 2:', user2.address);
+  console.log('👤 User 1 (Hub User):', user1.address);
+  console.log('👤 User 2 (Spoke User):', user2.address);
   console.log('💰 Deployer Balance:', ethers.formatEther(await deployer.provider.getBalance(deployer.address)), 'ETH\n');
 
   // 1. Deploy EnvironmentConfig
@@ -21,66 +41,102 @@ async function main() {
 
   // 2. Deploy Mock LayerZero Endpoints V2 (two separate chains)
   console.log('\n2️⃣ Deploying Mock LayerZero Endpoints V2...');
-  const eidA = 1; // Source chain (where USDC and OFTAdapter are)
-  const eidB = 2; // Destination chain (where OFTUSDC and PropertyVault are)
+  const SPOKE_EID = 2; // Spoke chain (Arbitrum/Optimism - where users have USDC)
+  const HUB_EID = 1;   // Hub chain (Sepolia - where PropertyVault lives)
   
   const EndpointV2Mock = await ethers.getContractFactory('EndpointV2Mock');
-  const mockEndpointA = await EndpointV2Mock.deploy(eidA);
-  await mockEndpointA.waitForDeployment();
-  console.log('✅ Mock LayerZero Endpoint A (eid:', eidA, ') deployed to:', await mockEndpointA.getAddress());
   
-  const mockEndpointB = await EndpointV2Mock.deploy(eidB);
-  await mockEndpointB.waitForDeployment();
-  console.log('✅ Mock LayerZero Endpoint B (eid:', eidB, ') deployed to:', await mockEndpointB.getAddress());
+  // Hub endpoint (where PropertyVault and OFTUSDC live)
+  const hubEndpoint = await EndpointV2Mock.deploy(HUB_EID);
+  await hubEndpoint.waitForDeployment();
+  console.log('✅ Hub Endpoint (EID', HUB_EID, ') deployed to:', await hubEndpoint.getAddress());
+  
+  // Spoke endpoint (where users have USDC)
+  const spokeEndpoint = await EndpointV2Mock.deploy(SPOKE_EID);
+  await spokeEndpoint.waitForDeployment();
+  console.log('✅ Spoke Endpoint (EID', SPOKE_EID, ') deployed to:', await spokeEndpoint.getAddress());
 
-  // 3. Deploy MockUSDC (canonical ERC20)
-  console.log('\n3️⃣ Deploying MockUSDC...');
+  // 3. Deploy MockUSDC on HUB chain (simulates USDC for hub users)
+  console.log('\n3️⃣ Deploying MockUSDC on HUB...');
   const MockUSDC = await ethers.getContractFactory('MockUSDC');
-  const mockUSDC = await MockUSDC.deploy(
-    'USD Coin',
+  const mockUSDCHub = await MockUSDC.deploy(
+    'USD Coin (Hub)',
     'USDC',
     6, // USDC has 6 decimals
     deployer.address
   );
-  await mockUSDC.waitForDeployment();
-  console.log('✅ MockUSDC deployed to:', await mockUSDC.getAddress());
-  console.log('📊 MockUSDC total supply:', ethers.formatUnits(await mockUSDC.totalSupply(), 6), 'USDC');
+  await mockUSDCHub.waitForDeployment();
+  console.log('✅ MockUSDC (Hub) deployed to:', await mockUSDCHub.getAddress());
 
-  // 4. Deploy ShareOFTAdapter for USDC (on chain A)
-  console.log('\n4️⃣ Deploying ShareOFTAdapter (Chain A)...');
-  const ShareOFTAdapter = await ethers.getContractFactory('ShareOFTAdapter');
-  const oftAdapter = await ShareOFTAdapter.deploy(
-    await mockUSDC.getAddress(),
-    await mockEndpointA.getAddress(),
+  // 3.5. Deploy MockUSDC on SPOKE chain (simulates USDC for spoke users)
+  console.log('\n3️⃣.5️⃣ Deploying MockUSDC on SPOKE...');
+  const mockUSDCSpoke = await MockUSDC.deploy(
+    'USD Coin (Spoke)',
+    'USDC',
+    6,
     deployer.address
   );
-  await oftAdapter.waitForDeployment();
-  console.log('✅ ShareOFTAdapter deployed to:', await oftAdapter.getAddress());
+  await mockUSDCSpoke.waitForDeployment();
+  console.log('✅ MockUSDC (Spoke) deployed to:', await mockUSDCSpoke.getAddress());
 
-  // 5. Deploy OFTUSDC (the actual token that vault will accept) (on chain B)
-  console.log('\n5️⃣ Deploying OFTUSDC (Chain B)...');
+  // 4. Deploy OFTUSDC on HUB (the token that PropertyVault accepts)
+  console.log('\n4️⃣ Deploying OFTUSDC on HUB...');
   const OFTUSDC = await ethers.getContractFactory('OFTUSDC');
   const oftUSDC = await OFTUSDC.deploy(
-    'USD Coin OFT',
-    'USDC',
-    await mockEndpointB.getAddress(),
+    'OFT USDC',
+    'OFTUSDC',
+    await hubEndpoint.getAddress(),
     deployer.address
   );
   await oftUSDC.waitForDeployment();
   console.log('✅ OFTUSDC deployed to:', await oftUSDC.getAddress());
   console.log('📊 OFTUSDC total supply:', ethers.formatUnits(await oftUSDC.totalSupply(), 18), 'OFTUSDC');
+  console.log('   📝 This is the unified OFT token on hub chain');
 
-  // 5.5. Configure LayerZero endpoints for cross-chain communication
-  console.log('\n5️⃣.5️⃣ Configuring LayerZero endpoints...');
-  await mockEndpointA.setDestLzEndpoint(await oftUSDC.getAddress(), await mockEndpointB.getAddress());
-  await mockEndpointB.setDestLzEndpoint(await oftAdapter.getAddress(), await mockEndpointA.getAddress());
+  // 5. Deploy USDCOFTAdapter on HUB (unified architecture - same contract as spoke)
+  console.log('\n5️⃣ Deploying USDCOFTAdapter on HUB...');
+  const USDCOFTAdapter = await ethers.getContractFactory('USDCOFTAdapter');
+  const usdcOFTAdapterHub = await USDCOFTAdapter.deploy(
+    await mockUSDCHub.getAddress(),
+    await hubEndpoint.getAddress(),
+    deployer.address
+  );
+  await usdcOFTAdapterHub.waitForDeployment();
+  console.log('✅ USDCOFTAdapter (Hub) deployed to:', await usdcOFTAdapterHub.getAddress());
+  console.log('   📝 For hub users: same-chain USDC wrapping');
+
+  // 6. Deploy USDCOFTAdapter on SPOKE (same contract, different chain)
+  console.log('\n6️⃣ Deploying USDCOFTAdapter on SPOKE...');
+  const usdcOFTAdapterSpoke = await USDCOFTAdapter.deploy(
+    await mockUSDCSpoke.getAddress(),
+    await spokeEndpoint.getAddress(),
+    deployer.address
+  );
+  await usdcOFTAdapterSpoke.waitForDeployment();
+  console.log('✅ USDCOFTAdapter (Spoke) deployed to:', await usdcOFTAdapterSpoke.getAddress());
+  console.log('   📝 For spoke users: cross-chain USDC bridging');
+
+  // 6.5. Configure LayerZero endpoints for cross-chain communication
+  console.log('\n6️⃣.5️⃣ Configuring LayerZero endpoints...');
+  await hubEndpoint.setDestLzEndpoint(await oftUSDC.getAddress(), await hubEndpoint.getAddress());
+  await hubEndpoint.setDestLzEndpoint(await usdcOFTAdapterHub.getAddress(), await hubEndpoint.getAddress());
+  await spokeEndpoint.setDestLzEndpoint(await oftUSDC.getAddress(), await hubEndpoint.getAddress());
+  await spokeEndpoint.setDestLzEndpoint(await usdcOFTAdapterSpoke.getAddress(), await spokeEndpoint.getAddress());
   console.log('✅ LayerZero endpoints configured');
 
-  // 5.6. Set peers for cross-chain communication
-  console.log('\n5️⃣.6️⃣ Setting up peer relationships...');
-  await oftAdapter.connect(deployer).setPeer(eidB, ethers.zeroPadValue(await oftUSDC.getAddress(), 32));
-  await oftUSDC.connect(deployer).setPeer(eidA, ethers.zeroPadValue(await oftAdapter.getAddress(), 32));
-  console.log('✅ Peer relationships established');
+  // 6.6. Set peers for unified adapter architecture
+  console.log('\n6️⃣.6️⃣ Setting up peer relationships...');
+  
+  // Hub Adapter ↔ Hub OFTUSDC (same-chain wrapping)
+  await usdcOFTAdapterHub.connect(deployer).setPeer(HUB_EID, ethers.zeroPadValue(await oftUSDC.getAddress(), 32));
+  await oftUSDC.connect(deployer).setPeer(HUB_EID, ethers.zeroPadValue(await usdcOFTAdapterHub.getAddress(), 32));
+  console.log('✅ Hub: Adapter ↔ OFTUSDC (same-chain)');
+  
+  // Spoke Adapter ↔ Hub OFTUSDC (cross-chain bridging)
+  await usdcOFTAdapterSpoke.connect(deployer).setPeer(HUB_EID, ethers.zeroPadValue(await oftUSDC.getAddress(), 32));
+  await oftUSDC.connect(deployer).setPeer(SPOKE_EID, ethers.zeroPadValue(await usdcOFTAdapterSpoke.getAddress(), 32));
+  console.log('✅ Spoke Adapter ↔ Hub OFTUSDC (cross-chain)');
+  console.log('   📝 Unified architecture: Same contract, different chains!');
 
   // 6. Deploy VaultFactory
   console.log('\n6️⃣ Deploying VaultFactory...');
@@ -161,13 +217,14 @@ async function main() {
   // 9. Transfer USDC to users for testing
   console.log('\n9️⃣ Setting up test users with MockUSDC...');
   const userAmount = ethers.parseUnits('10000', 6); // 10K USDC per user
-  await mockUSDC.transfer(user1.address, userAmount);
-  await mockUSDC.transfer(user2.address, userAmount);
   
-  const user1Balance = await mockUSDC.balanceOf(user1.address);
-  const user2Balance = await mockUSDC.balanceOf(user2.address);
-  console.log('✅ User 1 MockUSDC balance:', ethers.formatUnits(user1Balance, 6), 'USDC');
-  console.log('✅ User 2 MockUSDC balance:', ethers.formatUnits(user2Balance, 6), 'USDC');
+  // Hub users get hub USDC
+  await mockUSDCHub.transfer(user1.address, userAmount);
+  console.log('✅ User 1 (Hub) MockUSDC balance:', ethers.formatUnits(userAmount, 6), 'USDC');
+  
+  // Spoke users get spoke USDC
+  await mockUSDCSpoke.transfer(user2.address, userAmount);
+  console.log('✅ User 2 (Spoke) MockUSDC balance:', ethers.formatUnits(userAmount, 6), 'USDC');
 
   // 10. Deploy StacksCrossChainManager for Stacks integration
   console.log('\n🔟 Deploying StacksCrossChainManager...');
@@ -187,21 +244,45 @@ async function main() {
   await stacksManager.updateSbtcPrice(initialPrice);
   console.log('✅ Initial sBTC price set to: $95,000');
 
-  // 10.2 Authorize StacksCrossChainManager as OFTUSDC minter
-  console.log('\n🔟.2️⃣ Authorizing StacksCrossChainManager as OFTUSDC minter...');
-  await oftUSDC.addAuthorizedMinter(await stacksManager.getAddress());
-  console.log('✅ StacksCrossChainManager authorized to mint OFTUSDC');
-
-  // 11. Transfer some OFTUSDC to users for direct testing
-  console.log('\n1️⃣1️⃣ Setting up OFTUSDC for users...');
-  const oftAmount = ethers.parseUnits('5000', 18); // 5K OFTUSDC per user
-  await oftUSDC.transfer(user1.address, oftAmount);
-  await oftUSDC.transfer(user2.address, oftAmount);
+  // 10.2 Fund the StacksCrossChainManager liquidity pool
+  console.log('\n🔟.2️⃣ Funding StacksCrossChainManager liquidity pool...');
+  // First, hub user wraps USDC to OFTUSDC via adapter
+  const poolFundAmount = ethers.parseUnits('50000', 6); // 50K USDC
+  const poolFundAmountOFT = ethers.parseUnits('50000', 18); // 50K OFTUSDC (18 decimals)
   
-  const user1OFTBalance = await oftUSDC.balanceOf(user1.address);
-  const user2OFTBalance = await oftUSDC.balanceOf(user2.address);
-  console.log('✅ User 1 OFTUSDC balance:', ethers.formatUnits(user1OFTBalance, 18), 'OFTUSDC');
-  console.log('✅ User 2 OFTUSDC balance:', ethers.formatUnits(user2OFTBalance, 18), 'OFTUSDC');
+  // Approve adapter to spend USDC
+  await mockUSDCHub.connect(deployer).approve(await usdcOFTAdapterHub.getAddress(), poolFundAmount);
+  
+  // Convert USDC to OFTUSDC via adapter (same-chain wrapping on hub)
+  const sendParam = {
+    dstEid: HUB_EID,
+    to: ethers.zeroPadValue(deployer.address, 32),
+    amountLD: poolFundAmount,
+    minAmountLD: poolFundAmount,
+    extraOptions: '0x',
+    composeMsg: '0x',
+    oftCmd: '0x'
+  };
+  
+  const [nativeFee] = await usdcOFTAdapterHub.quoteSend(sendParam, false);
+  await usdcOFTAdapterHub.connect(deployer).send(sendParam, { nativeFee, lzTokenFee: 0 }, deployer.address, { value: nativeFee });
+  console.log('✅ Converted 50K USDC → OFTUSDC via adapter');
+  
+  // Fund the liquidity pool
+  await oftUSDC.connect(deployer).approve(await stacksManager.getAddress(), poolFundAmountOFT);
+  await stacksManager.connect(deployer).fundLiquidityPool(poolFundAmountOFT);
+  console.log('✅ Funded liquidity pool with 50K OFTUSDC (backed by locked USDC)');
+  
+  const poolBalance = await stacksManager.getPoolBalance();
+  console.log('✅ Pool balance:', ethers.formatUnits(poolBalance, 18), 'OFTUSDC');
+
+  // Verify OFTUSDC lockbox model with liquidity pool
+  console.log('\n1️⃣1️⃣ Verifying OFTUSDC lockbox model...');
+  const totalSupply = await oftUSDC.totalSupply();
+  console.log('✅ OFTUSDC total supply:', ethers.formatUnits(totalSupply, 18), 'OFTUSDC');
+  console.log('   📝 Lockbox model: All OFTUSDC is backed by locked USDC in adapter');
+  console.log('   📝 Hub/Spoke users: USDCOFTAdapter.send() to convert USDC → OFTUSDC');
+  console.log('   📝 Stacks users: Receive OFTUSDC from liquidity pool (backed by locked USDC)');
 
   // 11. Display deployment summary
   console.log('\n' + '='.repeat(80));
@@ -212,18 +293,21 @@ async function main() {
   console.log('-'.repeat(80));
   console.log('Infrastructure:');
   console.log('  🔧 EnvironmentConfig:', await environmentConfig.getAddress());
-  console.log('  🌐 LayerZero Endpoint A (eid ' + eidA + '):', await mockEndpointA.getAddress());
-  console.log('  🌐 LayerZero Endpoint B (eid ' + eidB + '):', await mockEndpointB.getAddress());
+  console.log('  🌐 Hub Endpoint (EID ' + HUB_EID + '):', await hubEndpoint.getAddress());
+  console.log('  🌐 Spoke Endpoint (EID ' + SPOKE_EID + '):', await spokeEndpoint.getAddress());
   
-  console.log('\nToken Layer:');
-  console.log('  💰 MockUSDC (6 decimals):', await mockUSDC.getAddress());
-  console.log('  🔗 ShareOFTAdapter:', await oftAdapter.getAddress());
-  console.log('  🚀 OFTUSDC (18 decimals):', await oftUSDC.getAddress());
+  console.log('\nToken Layer (Unified Adapter Architecture):');
+  console.log('  💰 MockUSDC (Hub - 6 decimals):', await mockUSDCHub.getAddress());
+  console.log('  💰 MockUSDC (Spoke - 6 decimals):', await mockUSDCSpoke.getAddress());
+  console.log('  🌉 USDCOFTAdapter (Hub):', await usdcOFTAdapterHub.getAddress());
+  console.log('  🌉 USDCOFTAdapter (Spoke):', await usdcOFTAdapterSpoke.getAddress());
+  console.log('  🚀 OFTUSDC (Hub - 18 decimals):', await oftUSDC.getAddress());
+  console.log('     📝 Same adapter contract on all chains!');
   
-  console.log('\nProperty Layer:');
+  console.log('\nProperty Layer (All on Hub):');
   console.log('  🏭 VaultFactory:', await vaultFactory.getAddress());
   console.log('  📊 PropertyRegistry:', await propertyRegistry.getAddress());
-  console.log('  🏠 PropertyVault (PropertyVaultGovernance):', propertyVaultAddress);
+  console.log('  🏠 PropertyVault:', propertyVaultAddress);
   console.log('  🗳️  PropertyDAO:', await propertyDAO.getAddress());
   
   console.log('\nCross-Chain Layer:');
@@ -233,19 +317,55 @@ async function main() {
   
   console.log('\n👥 Test Users:');
   console.log('  Platform:', deployer.address);
-  console.log('  User 1:', user1.address, '(10K USDC + 5K OFTUSDC)');
-  console.log('  User 2:', user2.address, '(10K USDC + 5K OFTUSDC)');
+  console.log('  User 1 (Hub):', user1.address, '(10K Hub USDC)');
+  console.log('  User 2 (Spoke):', user2.address, '(10K Spoke USDC)');
   
   console.log('\n' + '='.repeat(80));
-  console.log('📖 COMPLETE INVESTMENT FLOW:');
+  console.log('📖 COMPLETE INVESTMENT FLOW (UNIFIED ADAPTER):');
   console.log('='.repeat(80));
   console.log('\n💰 FUNDING PHASE (OpenToFund Stage):');
-  console.log('  1. Users have MockUSDC (6 decimals - like real USDC)');
-  console.log('  2. Users convert MockUSDC → OFTUSDC via ShareOFTAdapter (6→18 decimals)');
-  console.log('  3. Users deposit OFTUSDC to PropertyVault');
-  console.log('  4. Users receive vault shares (voting power)');
-  console.log('  5. When funding target reached → Auto-transition to Funded stage');
-  console.log('  6. Auto-create PropertyPurchase proposal for voting');
+  console.log('');
+  console.log('Hub Chain Users (User 1) - Same-Chain Wrapping:');
+  console.log('  1. Have MockUSDC on hub (6 decimals)');
+  console.log('  2. Approve USDCOFTAdapter (Hub)');
+  console.log('  3. Call USDCOFTAdapter.send(HUB_EID, user, amount)');
+  console.log('     → Adapter locks USDC, sends LayerZero message to OFTUSDC');
+  console.log('     → OFTUSDC mints tokens to user (18 decimals)');
+  console.log('  4. Receive OFTUSDC on hub - pays small LayerZero fee');
+  console.log('  5. Deposit OFTUSDC to PropertyVault');
+  console.log('  6. Receive vault shares (voting power)');
+  console.log('');
+  console.log('Spoke Chain Users (User 2) - Cross-Chain Bridging:');
+  console.log('  1. Have MockUSDC on spoke (6 decimals)');
+  console.log('  2. Approve USDCOFTAdapter (Spoke)');
+  console.log('  3. Call USDCOFTAdapter.send(HUB_EID, user, amount)');
+  console.log('     → Adapter locks USDC, bridges to hub via LayerZero');
+  console.log('     → OFTUSDC mints tokens on hub (18 decimals)');
+  console.log('  4. Receive OFTUSDC on hub - pays LayerZero fee');
+  console.log('  5. Deposit OFTUSDC to PropertyVault on hub');
+  console.log('  6. Receive vault shares (voting power) on hub');
+  console.log('');
+  console.log('Stacks Chain Users - sBTC Deposits via Liquidity Pool:');
+  console.log('  1. Have sBTC on Stacks chain');
+  console.log('  2. Deposit sBTC to brick-vault-gateway contract on Stacks');
+  console.log('  3. Relayer processes deposit → calls StacksCrossChainManager');
+  console.log('     → Converts sBTC to USD value using price oracle');
+  console.log('     → Transfers OFTUSDC from liquidity pool (backed by locked USDC)');
+  console.log('  4. Receive backed OFTUSDC on hub (custodial EVM address)');
+  console.log('  5. Deposit OFTUSDC to PropertyVault on hub');
+  console.log('  6. Receive vault shares (voting power) on hub');
+  console.log('  💡 Pool is funded with OFTUSDC that came from locked USDC via adapter');
+  console.log('  💡 All OFTUSDC is fully backed - no unbacked minting!');
+  console.log('');
+  console.log('💡 Key Benefits of Unified Adapter:');
+  console.log('  ✅ Same contract on all chains (hub + spoke)');
+  console.log('  ✅ Same flow everywhere: approve → send(EID) → receive OFT');
+  console.log('  ✅ Users can redeem to ANY chain (not just hub)');
+  console.log('  ✅ Perfect fungibility across all chains');
+  console.log('');
+  console.log('Auto-Transition:');
+  console.log('  • When funding target reached → Auto-transition to Funded stage');
+  console.log('  • Auto-create PropertyPurchase proposal for voting');
   
   console.log('\n🗳️  VOTING PHASE (Funded Stage):');
   console.log('  1. Shareholders vote on property purchase proposal');
@@ -271,6 +391,12 @@ async function main() {
   console.log('\nFunding Target:', ethers.formatUnits(FUNDING_TARGET, 18), 'OFTUSDC');
   console.log('Current Stage: OpenToFund (deposits enabled)');
   console.log('\n✨ Users can now invest in the property!');
+  console.log('\n📝 ARCHITECTURE NOTES:');
+  console.log('   ✅ Unified Adapter: Same USDCOFTAdapter on all chains');
+  console.log('   ✅ Hub users: adapter.send(HUB_EID) - same chain wrapping');
+  console.log('   ✅ Spoke users: adapter.send(HUB_EID) - cross-chain bridging');
+  console.log('   ✅ Redemption: Users can withdraw USDC to ANY chain');
+  console.log('   ✅ All shares stay on hub (voting/harvest/management)');
   console.log('='.repeat(80));
 
   // Save deployment info to a JSON file for frontend
@@ -279,10 +405,12 @@ async function main() {
     chainId: 31337,
     contracts: {
       EnvironmentConfig: await environmentConfig.getAddress(),
-      MockLayerZeroEndpointA: await mockEndpointA.getAddress(),
-      MockLayerZeroEndpointB: await mockEndpointB.getAddress(),
-      MockUSDC: await mockUSDC.getAddress(),
-      ShareOFTAdapter: await oftAdapter.getAddress(),
+      HubEndpoint: await hubEndpoint.getAddress(),
+      SpokeEndpoint: await spokeEndpoint.getAddress(),
+      MockUSDCHub: await mockUSDCHub.getAddress(),
+      MockUSDCSpoke: await mockUSDCSpoke.getAddress(),
+      USDCOFTAdapterHub: await usdcOFTAdapterHub.getAddress(),
+      USDCOFTAdapterSpoke: await usdcOFTAdapterSpoke.getAddress(),
       OFTUSDC: await oftUSDC.getAddress(),
       VaultFactory: await vaultFactory.getAddress(),
       PropertyRegistry: await propertyRegistry.getAddress(),
@@ -291,13 +419,13 @@ async function main() {
       StacksCrossChainManager: await stacksManager.getAddress()
     },
     layerzero: {
-      eidA: eidA,
-      eidB: eidB
+      hubEID: HUB_EID,
+      spokeEID: SPOKE_EID
     },
     users: {
       deployer: deployer.address,
-      user1: user1.address,
-      user2: user2.address
+      user1: user1.address + ' (Hub)',
+      user2: user2.address + ' (Spoke)'
     },
     configuration: {
       vaultDepositCap: VAULT_DEPOSIT_CAP.toString(),
@@ -339,12 +467,14 @@ NEXT_PUBLIC_RPC_URL=http://localhost:8545
 
 # Infrastructure Contracts
 NEXT_PUBLIC_ENVIRONMENT_CONFIG_ADDRESS=${await environmentConfig.getAddress()}
-NEXT_PUBLIC_MOCK_LAYERZERO_ENDPOINT_A_ADDRESS=${await mockEndpointA.getAddress()}
-NEXT_PUBLIC_MOCK_LAYERZERO_ENDPOINT_B_ADDRESS=${await mockEndpointB.getAddress()}
+NEXT_PUBLIC_HUB_ENDPOINT_ADDRESS=${await hubEndpoint.getAddress()}
+NEXT_PUBLIC_SPOKE_ENDPOINT_ADDRESS=${await spokeEndpoint.getAddress()}
 
-# Token Contracts
-NEXT_PUBLIC_MOCK_USDC_ADDRESS=${await mockUSDC.getAddress()}
-NEXT_PUBLIC_SHARE_OFT_ADAPTER_ADDRESS=${await oftAdapter.getAddress()}
+# Token Contracts (Unified Adapter Architecture)
+NEXT_PUBLIC_MOCK_USDC_HUB_ADDRESS=${await mockUSDCHub.getAddress()}
+NEXT_PUBLIC_MOCK_USDC_SPOKE_ADDRESS=${await mockUSDCSpoke.getAddress()}
+NEXT_PUBLIC_USDC_OFT_ADAPTER_HUB_ADDRESS=${await usdcOFTAdapterHub.getAddress()}
+NEXT_PUBLIC_USDC_OFT_ADAPTER_SPOKE_ADDRESS=${await usdcOFTAdapterSpoke.getAddress()}
 NEXT_PUBLIC_OFT_USDC_ADDRESS=${await oftUSDC.getAddress()}
 
 # Property Platform Contracts
@@ -354,9 +484,12 @@ NEXT_PUBLIC_PROPERTY_REGISTRY_ADDRESS=${await propertyRegistry.getAddress()}
 NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS=${propertyVaultAddress}
 NEXT_PUBLIC_PROPERTY_DAO_ADDRESS=${await propertyDAO.getAddress()}
 
+# Cross-Chain Contracts
+NEXT_PUBLIC_STACKS_CROSS_CHAIN_MANAGER_ADDRESS=${await stacksManager.getAddress()}
+
 # LayerZero Configuration
-NEXT_PUBLIC_LAYERZERO_EID_A=1
-NEXT_PUBLIC_LAYERZERO_EID_B=2
+NEXT_PUBLIC_LAYERZERO_HUB_EID=${HUB_EID}
+NEXT_PUBLIC_LAYERZERO_SPOKE_EID=${SPOKE_EID}
 
 # Token Decimals
 NEXT_PUBLIC_USDC_DECIMALS=6
@@ -382,12 +515,14 @@ NEXT_PUBLIC_RPC_URL=http://localhost:8545
 
 # Infrastructure Contracts
 NEXT_PUBLIC_ENVIRONMENT_CONFIG_ADDRESS=
-NEXT_PUBLIC_MOCK_LAYERZERO_ENDPOINT_A_ADDRESS=
-NEXT_PUBLIC_MOCK_LAYERZERO_ENDPOINT_B_ADDRESS=
+NEXT_PUBLIC_HUB_ENDPOINT_ADDRESS=
+NEXT_PUBLIC_SPOKE_ENDPOINT_ADDRESS=
 
-# Token Contracts
-NEXT_PUBLIC_MOCK_USDC_ADDRESS=
-NEXT_PUBLIC_SHARE_OFT_ADAPTER_ADDRESS=
+# Token Contracts (Unified Adapter Architecture)
+NEXT_PUBLIC_MOCK_USDC_HUB_ADDRESS=
+NEXT_PUBLIC_MOCK_USDC_SPOKE_ADDRESS=
+NEXT_PUBLIC_USDC_OFT_ADAPTER_HUB_ADDRESS=
+NEXT_PUBLIC_USDC_OFT_ADAPTER_SPOKE_ADDRESS=
 NEXT_PUBLIC_OFT_USDC_ADDRESS=
 
 # Property Platform Contracts
@@ -397,9 +532,12 @@ NEXT_PUBLIC_PROPERTY_REGISTRY_ADDRESS=
 NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS=
 NEXT_PUBLIC_PROPERTY_DAO_ADDRESS=
 
+# Cross-Chain Contracts
+NEXT_PUBLIC_STACKS_CROSS_CHAIN_MANAGER_ADDRESS=
+
 # LayerZero Configuration
-NEXT_PUBLIC_LAYERZERO_EID_A=1
-NEXT_PUBLIC_LAYERZERO_EID_B=2
+NEXT_PUBLIC_LAYERZERO_HUB_EID=1
+NEXT_PUBLIC_LAYERZERO_SPOKE_EID=2
 
 # Token Decimals
 NEXT_PUBLIC_USDC_DECIMALS=6
@@ -427,12 +565,14 @@ NEXT_PUBLIC_VAULT_DEPOSIT_CAP=
 export const CONTRACT_ADDRESSES = {
   // Infrastructure
   EnvironmentConfig: process.env.NEXT_PUBLIC_ENVIRONMENT_CONFIG_ADDRESS as \`0x\${string}\`,
-  MockLayerZeroEndpointA: process.env.NEXT_PUBLIC_MOCK_LAYERZERO_ENDPOINT_A_ADDRESS as \`0x\${string}\`,
-  MockLayerZeroEndpointB: process.env.NEXT_PUBLIC_MOCK_LAYERZERO_ENDPOINT_B_ADDRESS as \`0x\${string}\`,
+  HubEndpoint: process.env.NEXT_PUBLIC_HUB_ENDPOINT_ADDRESS as \`0x\${string}\`,
+  SpokeEndpoint: process.env.NEXT_PUBLIC_SPOKE_ENDPOINT_ADDRESS as \`0x\${string}\`,
   
-  // Tokens
-  MockUSDC: process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as \`0x\${string}\`,
-  ShareOFTAdapter: process.env.NEXT_PUBLIC_SHARE_OFT_ADAPTER_ADDRESS as \`0x\${string}\`,
+  // Tokens (Unified Adapter Architecture)
+  MockUSDCHub: process.env.NEXT_PUBLIC_MOCK_USDC_HUB_ADDRESS as \`0x\${string}\`,
+  MockUSDCSpoke: process.env.NEXT_PUBLIC_MOCK_USDC_SPOKE_ADDRESS as \`0x\${string}\`,
+  USDCOFTAdapterHub: process.env.NEXT_PUBLIC_USDC_OFT_ADAPTER_HUB_ADDRESS as \`0x\${string}\`,
+  USDCOFTAdapterSpoke: process.env.NEXT_PUBLIC_USDC_OFT_ADAPTER_SPOKE_ADDRESS as \`0x\${string}\`,
   OFTUSDC: process.env.NEXT_PUBLIC_OFT_USDC_ADDRESS as \`0x\${string}\`,
   
   // Property Platform
@@ -441,6 +581,9 @@ export const CONTRACT_ADDRESSES = {
   PropertyRegistry: process.env.NEXT_PUBLIC_PROPERTY_REGISTRY_ADDRESS as \`0x\${string}\`,
   PropertyVault: process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS as \`0x\${string}\`,
   PropertyDAO: process.env.NEXT_PUBLIC_PROPERTY_DAO_ADDRESS as \`0x\${string}\`,
+  
+  // Cross-Chain
+  StacksCrossChainManager: process.env.NEXT_PUBLIC_STACKS_CROSS_CHAIN_MANAGER_ADDRESS as \`0x\${string}\`,
 } as const;
 
 export const TOKEN_DECIMALS = {
@@ -456,10 +599,10 @@ export const NETWORK_CONFIG = {
 } as const;
 
 export const LAYERZERO_CONFIG = {
-  eidA: parseInt(process.env.NEXT_PUBLIC_LAYERZERO_EID_A || '1'), // Chain A (USDC + Adapter)
-  eidB: parseInt(process.env.NEXT_PUBLIC_LAYERZERO_EID_B || '2'), // Chain B (OFTUSDC + Vault)
-  endpointA: CONTRACT_ADDRESSES.MockLayerZeroEndpointA,
-  endpointB: CONTRACT_ADDRESSES.MockLayerZeroEndpointB,
+  hubEID: parseInt(process.env.NEXT_PUBLIC_LAYERZERO_HUB_EID || '1'), // Hub chain (Sepolia - PropertyVault)
+  spokeEID: parseInt(process.env.NEXT_PUBLIC_LAYERZERO_SPOKE_EID || '2'), // Spoke chain (Arbitrum/Optimism)
+  hubEndpoint: CONTRACT_ADDRESSES.HubEndpoint,
+  spokeEndpoint: CONTRACT_ADDRESSES.SpokeEndpoint,
 } as const;
 
 export const PROPERTY_CONFIG = {

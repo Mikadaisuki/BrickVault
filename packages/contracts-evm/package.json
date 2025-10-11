@@ -8,9 +8,9 @@
     "build": "hardhat compile",
     "test": "hardhat test",
     "coverage": "hardhat coverage",
-    "deploy:local-full": "hardhat run script/deploy-local.ts --network localhost",
-    "deploy:sepolia": "hardhat run script/deploy.ts --network sepolia",
-    "deploy:base-sepolia": "hardhat run script/deploy.ts --network base-sepolia",
+    "deploy:local": "hardhat run script/deploy-local.ts --network localhost",
+    "deploy:testnet": "hardhat run script/deploy-testnet.ts --network sepolia",
+    "mint:testnet": "hardhat run script/mint-usdc-testnet.ts --network sepolia",
     "type-check": "tsc --noEmit",
     "lint": "eslint src test script --ext .ts",
     "clean": "hardhat clean"
@@ -33,6 +33,7 @@
     "@types/chai": "^4.3.0",
     "@types/mocha": "^10.0.0",
     "chai": "^4.3.0",
+    "dotenv": "^16.6.1",
     "ethers": "^6.8.0",
     "hardhat": "^2.19.0",
     "typescript": "^5.0.0"

@@ -1,5 +1,6 @@
 import { HardhatUserConfig } from 'hardhat/config';
 import '@nomicfoundation/hardhat-toolbox';
+import 'dotenv/config';
 
 const config: HardhatUserConfig = {
   solidity: {
@@ -27,14 +28,24 @@ const config: HardhatUserConfig = {
       allowUnlimitedContractSize: true, // Allow contracts > 24KB for testing
     },
     sepolia: {
-      url: process.env.EVM_RPC_SEPOLIA || 'https://sepolia.infura.io/v3/YOUR_KEY',
+      url: process.env.EVM_RPC_SEPOLIA || 'https://eth-sepolia.public.blastapi.io',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 11155111,
     },
-    'base-sepolia': {
+    baseSepolia: {
       url: process.env.EVM_RPC_BASE_SEPOLIA || 'https://sepolia.base.org',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 84532,
+    },
+    arbitrumSepolia: {
+      url: process.env.EVM_RPC_ARBITRUM_SEPOLIA || 'https://sepolia-rollup.arbitrum.io/rpc',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 421614,
+    },
+    optimismSepolia: {
+      url: process.env.EVM_RPC_OPTIMISM_SEPOLIA || 'https://sepolia.optimism.io',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 11155420,
     },
   },
   gasReporter: {
@@ -44,7 +55,9 @@ const config: HardhatUserConfig = {
   etherscan: {
     apiKey: {
       sepolia: process.env.ETHERSCAN_API_KEY || '',
-      'base-sepolia': process.env.BASESCAN_API_KEY || '',
+      baseSepolia: process.env.BASESCAN_API_KEY || '',
+      arbitrumSepolia: process.env.ARBISCAN_API_KEY || '',
+      optimismSepolia: process.env.OPTIMISM_API_KEY || '',
     },
   },
   typechain: {

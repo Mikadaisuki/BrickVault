@@ -8,6 +8,7 @@ import PropertyDAOFactoryABI from '../abis/PropertyDAOFactory.json';
 import PropertyTokenABI from '../abis/PropertyToken.json';
 import VaultFactoryABI from '../abis/VaultFactory.json';
 import OFTUSDCABI from '../abis/OFTUSDC.json';
+import USDCOFTAdapterABI from '../abis/USDCOFTAdapter.json';
 import ShareOFTABI from '../abis/ShareOFT.json';
 import ShareOFTAdapterABI from '../abis/ShareOFTAdapter.json';
 import VaultBaseABI from '../abis/VaultBase.json';
@@ -26,6 +27,7 @@ export const PROPERTY_DAO_FACTORY_ABI = PropertyDAOFactoryABI;
 export const PROPERTY_TOKEN_ABI = PropertyTokenABI;
 export const VAULT_FACTORY_ABI = VaultFactoryABI;
 export const OFT_USDC_ABI = OFTUSDCABI;
+export const USDC_OFT_ADAPTER_ABI = USDCOFTAdapterABI;
 export const SHARE_OFT_ABI = ShareOFTABI;
 export const SHARE_OFT_ADAPTER_ABI = ShareOFTAdapterABI;
 export const VAULT_BASE_ABI = VaultBaseABI;
@@ -45,6 +47,7 @@ export const ABIS = {
   PropertyToken: PROPERTY_TOKEN_ABI,
   VaultFactory: VAULT_FACTORY_ABI,
   OFTUSDC: OFT_USDC_ABI,
+  USDCOFTAdapter: USDC_OFT_ADAPTER_ABI,
   ShareOFT: SHARE_OFT_ABI,
   ShareOFTAdapter: SHARE_OFT_ADAPTER_ABI,
   VaultBase: VAULT_BASE_ABI,

@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
 import { parseUnits, formatUnits, pad } from 'viem'
-import { MOCK_USDC_ABI, OFT_USDC_ABI, SHARE_OFT_ADAPTER_ABI, PROPERTY_VAULT_GOVERNANCE_ABI } from '@brickvault/abi'
+import { MOCK_USDC_ABI, OFT_USDC_ABI, USDC_OFT_ADAPTER_ABI, PROPERTY_VAULT_GOVERNANCE_ABI } from '@brickvault/abi'
 import { Options } from '@layerzerolabs/lz-v2-utilities'
 import { CONTRACT_ADDRESSES, TOKEN_DECIMALS, LAYERZERO_CONFIG } from '../../config/contracts'
 import { Header } from '@/components/Header'
@@ -29,7 +29,6 @@ import {
   Shield,
   Globe
 } from 'lucide-react'
-// @ts-ignore - v8+ APIs may not be properly recognized in types
 import { connect, disconnect, isConnected, request as stacksRequest } from '@stacks/connect'
 import { 
   Cl, 
@@ -41,14 +40,16 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 const extractAbi = (abiOrArtifact: any) => abiOrArtifact?.abi || abiOrArtifact
 const MOCK_USDC_ABI_ARRAY = extractAbi(MOCK_USDC_ABI)
-const SHARE_OFT_ADAPTER_ABI_ARRAY = extractAbi(SHARE_OFT_ADAPTER_ABI)
+const USDC_OFT_ADAPTER_ABI_ARRAY = extractAbi(USDC_OFT_ADAPTER_ABI)
 const OFT_USDC_ABI_ARRAY = extractAbi(OFT_USDC_ABI)
 const PROPERTY_VAULT_GOVERNANCE_ABI_ARRAY = extractAbi(PROPERTY_VAULT_GOVERNANCE_ABI)
 
-// Contract addresses from generated config
+// Contract addresses from generated config (Unified Adapter Architecture)
 const CONTRACTS = {
-  MockUSDC: CONTRACT_ADDRESSES.MockUSDC,
-  ShareOFTAdapter: CONTRACT_ADDRESSES.ShareOFTAdapter,
+  MockUSDCHub: CONTRACT_ADDRESSES.MockUSDCHub,
+  MockUSDCSpoke: CONTRACT_ADDRESSES.MockUSDCSpoke,
+  USDCOFTAdapterHub: CONTRACT_ADDRESSES.USDCOFTAdapterHub,
+  USDCOFTAdapterSpoke: CONTRACT_ADDRESSES.USDCOFTAdapterSpoke,
   OFTUSDC: CONTRACT_ADDRESSES.OFTUSDC,
   PropertyVault: CONTRACT_ADDRESSES.PropertyVault,
 }
@@ -72,7 +73,7 @@ interface StacksDeposit {
   oftusdcAmount?: string
 }
 
-type TabType = 'evm' | 'stacks'
+type TabType = 'hub' | 'spoke' | 'stacks'
 
 export default function BalancePage() {
   const { address: evmAddress, isConnected: isEvmConnected } = useAccount()
@@ -84,7 +85,7 @@ export default function BalancePage() {
   
   // Handle hydration by tracking if we're on the client
   const [isClient, setIsClient] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabType>('evm')
+  const [activeTab, setActiveTab] = useState<TabType>('hub')
   
   // Stacks wallet state
   const [stacksAccount, setStacksAccount] = useState<StacksAccount | null>(null)
@@ -103,11 +104,16 @@ export default function BalancePage() {
   const [depositStep, setDepositStep] = useState<'idle' | 'depositing' | 'success' | 'error'>('idle')
   const [deposits, setDeposits] = useState<StacksDeposit[]>([])
   
-  // EVM state
+  // EVM state (Hub chain)
   const [usdcAmount, setUsdcAmount] = useState('')
   const [oftAmount, setOftAmount] = useState('')
   const [quotingFee, setQuotingFee] = useState(false)
   const [approvalStep, setApprovalStep] = useState<'idle' | 'approving' | 'approved' | 'sending'>('idle')
+  
+  // Spoke chain state
+  const [spokeUsdcAmount, setSpokeUsdcAmount] = useState('')
+  const [spokeApprovalStep, setSpokeApprovalStep] = useState<'idle' | 'approving' | 'approved' | 'sending'>('idle')
+  const [spokeQuotingFee, setSpokeQuotingFee] = useState(false)
   
   // Track approval transaction separately
   const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>()
@@ -133,20 +139,30 @@ export default function BalancePage() {
 
   // Track approval transaction hash when it's created
   useEffect(() => {
-    if (hash && approvalStep === 'approving') {
+    if (hash && (approvalStep === 'approving' || spokeApprovalStep === 'approving')) {
       setApprovalHash(hash)
     }
-  }, [hash, approvalStep])
+  }, [hash, approvalStep, spokeApprovalStep])
 
-  // Auto-trigger cross-chain send after approval is confirmed
+  // Auto-trigger adapter send after approval is confirmed (Hub chain)
   useEffect(() => {
     if (isApprovalConfirmed && approvalStep === 'approving') {
       setApprovalStep('approved')
       setTimeout(() => {
-        sendUSDCCrossChain()
+        sendUSDCViaAdapter()
       }, 100)
     }
   }, [isApprovalConfirmed, approvalStep])
+
+  // Auto-trigger cross-chain send after spoke approval is confirmed
+  useEffect(() => {
+    if (isApprovalConfirmed && spokeApprovalStep === 'approving') {
+      setSpokeApprovalStep('approved')
+      setTimeout(() => {
+        sendSpokeUSDCCrossChain()
+      }, 100)
+    }
+  }, [isApprovalConfirmed, spokeApprovalStep])
 
   // Reset approval step when transaction is completed or there's an error
   useEffect(() => {
@@ -154,15 +170,20 @@ export default function BalancePage() {
       setApprovalStep('idle')
       setApprovalHash(undefined)
     }
-    if (error) {
-      setApprovalStep('idle')
+    if (isConfirmed && spokeApprovalStep === 'sending') {
+      setSpokeApprovalStep('idle')
       setApprovalHash(undefined)
     }
-  }, [isConfirmed, error, approvalStep])
+    if (error) {
+      setApprovalStep('idle')
+      setSpokeApprovalStep('idle')
+      setApprovalHash(undefined)
+    }
+  }, [isConfirmed, error, approvalStep, spokeApprovalStep])
 
-  // Read user balances
+  // Read user balances (Hub chain)
   const { data: usdcBalance } = useReadContract({
-    address: CONTRACTS.MockUSDC as `0x${string}`,
+    address: CONTRACTS.MockUSDCHub as `0x${string}`,
     abi: MOCK_USDC_ABI_ARRAY,
     functionName: 'balanceOf',
     args: evmAddress ? [evmAddress] : undefined,
@@ -182,12 +203,28 @@ export default function BalancePage() {
     args: evmAddress ? [evmAddress] : undefined,
   })
 
-  // Read allowances
+  // Read user balances (Spoke chain)
+  const { data: spokeUsdcBalance } = useReadContract({
+    address: CONTRACTS.MockUSDCSpoke as `0x${string}`,
+    abi: MOCK_USDC_ABI_ARRAY,
+    functionName: 'balanceOf',
+    args: evmAddress ? [evmAddress] : undefined,
+  })
+
+  // Read allowances for USDCOFTAdapterHub
   const { data: usdcAllowance } = useReadContract({
-    address: CONTRACTS.MockUSDC as `0x${string}`,
+    address: CONTRACTS.MockUSDCHub as `0x${string}`,
     abi: MOCK_USDC_ABI_ARRAY,
     functionName: 'allowance',
-    args: evmAddress ? [evmAddress, CONTRACTS.ShareOFTAdapter as `0x${string}`] : undefined,
+    args: evmAddress ? [evmAddress, CONTRACTS.USDCOFTAdapterHub as `0x${string}`] : undefined,
+  })
+
+  // Read allowances for USDCOFTAdapterSpoke
+  const { data: spokeUsdcAllowance } = useReadContract({
+    address: CONTRACTS.MockUSDCSpoke as `0x${string}`,
+    abi: MOCK_USDC_ABI_ARRAY,
+    functionName: 'allowance',
+    args: evmAddress ? [evmAddress, CONTRACTS.USDCOFTAdapterSpoke as `0x${string}`] : undefined,
   })
 
   // ===== STACKS FUNCTIONS =====
@@ -599,7 +636,7 @@ export default function BalancePage() {
 
   // ===== EVM FUNCTIONS =====
 
-  // Combined function: Approve USDC then send cross-chain
+  // Combined function: Approve USDC then send via adapter (same-chain wrapping)
   const approveAndSendUSDC = async () => {
     if (!usdcAmount || !evmAddress || !publicClient) return
     
@@ -608,22 +645,22 @@ export default function BalancePage() {
     const currentAllowance = usdcAllowance as bigint || BigInt(0)
     if (currentAllowance >= amount) {
       setApprovalStep('sending')
-      await sendUSDCCrossChain()
+      await sendUSDCViaAdapter()
       return
     }
     
     setApprovalStep('approving')
     writeContract({
-      address: CONTRACTS.MockUSDC as `0x${string}`,
+      address: CONTRACTS.MockUSDCHub as `0x${string}`,
       abi: MOCK_USDC_ABI_ARRAY,
       functionName: 'approve',
-      args: [CONTRACTS.ShareOFTAdapter as `0x${string}`, amount],
+      args: [CONTRACTS.USDCOFTAdapterHub as `0x${string}`, amount],
       gas: BigInt(100000),
     })
   }
 
-  // Send USDC cross-chain via OFTAdapter to get OFTUSDC
-  const sendUSDCCrossChain = async () => {
+  // Send USDC via USDCOFTAdapterHub to get OFTUSDC (same-chain wrapping)
+  const sendUSDCViaAdapter = async () => {
     if (!usdcAmount || !evmAddress || !publicClient) return
     
     try {
@@ -637,7 +674,7 @@ export default function BalancePage() {
         .toString()
       
       const sendParamTuple = {
-        dstEid: LAYERZERO_CONFIG.eidB,
+        dstEid: LAYERZERO_CONFIG.hubEID, // Same chain (hub to hub)
         to: pad(evmAddress, { size: 32 }),
         amountLD: amount,
         minAmountLD: amount,
@@ -649,8 +686,8 @@ export default function BalancePage() {
       let nativeFee: bigint
       try {
         const quoteResult = await publicClient.readContract({
-          address: CONTRACTS.ShareOFTAdapter as `0x${string}`,
-          abi: SHARE_OFT_ADAPTER_ABI_ARRAY,
+          address: CONTRACTS.USDCOFTAdapterHub as `0x${string}`,
+          abi: USDC_OFT_ADAPTER_ABI_ARRAY,
           functionName: 'quoteSend',
           args: [sendParamTuple, false],
         })
@@ -679,8 +716,8 @@ export default function BalancePage() {
       }
       
       writeContract({
-        address: CONTRACTS.ShareOFTAdapter as `0x${string}`,
-        abi: SHARE_OFT_ADAPTER_ABI_ARRAY,
+        address: CONTRACTS.USDCOFTAdapterHub as `0x${string}`,
+        abi: USDC_OFT_ADAPTER_ABI_ARRAY,
         functionName: 'send',
         args: [sendParamTuple, feeTuple, evmAddress],
         value: nativeFee,
@@ -689,18 +726,35 @@ export default function BalancePage() {
       
       console.log('writeContract called successfully')
     } catch (err) {
-      console.error('Error sending cross-chain:', err)
+      console.error('Error sending via adapter:', err)
       setQuotingFee(false)
     }
   }
 
-  // Redeem OFTUSDC back to USDC cross-chain
+  // Unwrap OFTUSDC back to USDC (same-chain unwrapping via adapter)
   const redeemOFTUSDCToUSDC = async () => {
-    if (!oftAmount || !evmAddress || !publicClient) return
+    if (!oftAmount || !evmAddress || !publicClient) {
+      console.error('Missing required parameters:', { oftAmount, evmAddress: !!evmAddress, publicClient: !!publicClient })
+      return
+    }
     
     try {
+      console.log('🔄 Starting OFTUSDC unwrap process...')
+      console.log('  Amount:', oftAmount, 'OFTUSDC')
+      console.log('  User:', evmAddress)
+      console.log('  Hub EID:', LAYERZERO_CONFIG.hubEID)
+      
       setQuotingFee(true)
       const amount = parseUnits(oftAmount, TOKEN_DECIMALS.OFTUSDC)
+      console.log('  Parsed amount (18 decimals):', amount.toString())
+      
+      // Check if user has enough balance
+      const currentBalance = oftBalance as bigint || BigInt(0)
+      if (amount > currentBalance) {
+        alert(`Insufficient OFTUSDC balance. You have ${formatUnits(currentBalance, TOKEN_DECIMALS.OFTUSDC)} but trying to unwrap ${oftAmount}`)
+        setQuotingFee(false)
+        return
+      }
       
       const options = Options.newOptions()
         .addExecutorLzReceiveOption(200000, 0)
@@ -708,7 +762,7 @@ export default function BalancePage() {
         .toString()
       
       const sendParamTuple = {
-        dstEid: LAYERZERO_CONFIG.eidA,
+        dstEid: LAYERZERO_CONFIG.hubEID, // Same chain (hub to hub) to unwrap
         to: pad(evmAddress, { size: 32 }),
         amountLD: amount,
         minAmountLD: amount,
@@ -717,8 +771,15 @@ export default function BalancePage() {
         oftCmd: '0x' as `0x${string}`,
       }
       
+      console.log('  Send params:', {
+        dstEid: sendParamTuple.dstEid,
+        to: sendParamTuple.to,
+        amountLD: sendParamTuple.amountLD.toString()
+      })
+      
       let nativeFee: bigint
       try {
+        console.log('  Quoting LayerZero fee...')
         const quoteResult = await publicClient.readContract({
           address: CONTRACTS.OFTUSDC as `0x${string}`,
           abi: OFT_USDC_ABI_ARRAY,
@@ -726,7 +787,7 @@ export default function BalancePage() {
           args: [sendParamTuple, false],
         })
         
-        console.log('Quote result for redeem:', quoteResult)
+        console.log('  Quote result:', quoteResult)
         
         if (typeof quoteResult === 'object' && quoteResult !== null && 'nativeFee' in quoteResult) {
           nativeFee = (quoteResult as { nativeFee: bigint }).nativeFee
@@ -736,9 +797,9 @@ export default function BalancePage() {
           nativeFee = quoteResult as bigint
         }
         
-        console.log('Quoted native fee for redeem:', nativeFee.toString())
+        console.log('  ✅ Quoted native fee:', nativeFee.toString(), 'wei')
       } catch (quoteError) {
-        console.warn('quoteSend failed for redeem, using fallback fee:', quoteError)
+        console.warn('  ⚠️ quoteSend failed, using fallback fee:', quoteError)
         nativeFee = BigInt(1000000000000000)
       }
       
@@ -749,6 +810,7 @@ export default function BalancePage() {
         lzTokenFee: BigInt(0),
       }
       
+      console.log('  📤 Sending unwrap transaction...')
       writeContract({
         address: CONTRACTS.OFTUSDC as `0x${string}`,
         abi: OFT_USDC_ABI_ARRAY,
@@ -757,9 +819,125 @@ export default function BalancePage() {
         value: nativeFee,
         gas: BigInt(10000000),
       })
+      
+      console.log('  ✅ Transaction sent! Waiting for confirmation...')
     } catch (err) {
-      console.error('Error redeeming cross-chain:', err)
+      console.error('❌ Error unwrapping OFTUSDC via adapter:', err)
       setQuotingFee(false)
+      alert(`Error unwrapping OFTUSDC: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+
+  // ===== SPOKE CHAIN FUNCTIONS =====
+
+  // Combined function: Approve spoke USDC then send cross-chain to hub
+  const approveAndSendSpokeUSDC = async () => {
+    if (!spokeUsdcAmount || !evmAddress || !publicClient) return
+    
+    const amount = parseUnits(spokeUsdcAmount, TOKEN_DECIMALS.USDC)
+    
+    const currentAllowance = spokeUsdcAllowance as bigint || BigInt(0)
+    if (currentAllowance >= amount) {
+      setSpokeApprovalStep('sending')
+      await sendSpokeUSDCCrossChain()
+      return
+    }
+    
+    setSpokeApprovalStep('approving')
+    writeContract({
+      address: CONTRACTS.MockUSDCSpoke as `0x${string}`,
+      abi: MOCK_USDC_ABI_ARRAY,
+      functionName: 'approve',
+      args: [CONTRACTS.USDCOFTAdapterSpoke as `0x${string}`, amount],
+      gas: BigInt(100000),
+    })
+  }
+
+  // Send USDC from spoke chain to hub chain via USDCOFTAdapterSpoke
+  const sendSpokeUSDCCrossChain = async () => {
+    if (!spokeUsdcAmount || !evmAddress || !publicClient) return
+    
+    try {
+      console.log('🌉 Starting cross-chain USDC bridge from spoke to hub...')
+      console.log('  Amount:', spokeUsdcAmount, 'USDC')
+      console.log('  User:', evmAddress)
+      console.log('  From: Spoke Chain (EID', LAYERZERO_CONFIG.spokeEID, ')')
+      console.log('  To: Hub Chain (EID', LAYERZERO_CONFIG.hubEID, ')')
+      
+      setSpokeApprovalStep('sending')
+      setSpokeQuotingFee(true)
+      const amount = parseUnits(spokeUsdcAmount, TOKEN_DECIMALS.USDC)
+      console.log('  Parsed amount (6 decimals):', amount.toString())
+      
+      const options = Options.newOptions()
+        .addExecutorLzReceiveOption(200000, 0)
+        .toHex()
+        .toString()
+      
+      const sendParamTuple = {
+        dstEid: LAYERZERO_CONFIG.hubEID, // Cross-chain to hub
+        to: pad(evmAddress, { size: 32 }),
+        amountLD: amount,
+        minAmountLD: amount,
+        extraOptions: options as `0x${string}`,
+        composeMsg: '0x' as `0x${string}`,
+        oftCmd: '0x' as `0x${string}`,
+      }
+      
+      console.log('  Send params:', {
+        dstEid: sendParamTuple.dstEid,
+        to: sendParamTuple.to,
+        amountLD: sendParamTuple.amountLD.toString()
+      })
+      
+      let nativeFee: bigint
+      try {
+        console.log('  Quoting LayerZero fee...')
+        const quoteResult = await publicClient.readContract({
+          address: CONTRACTS.USDCOFTAdapterSpoke as `0x${string}`,
+          abi: USDC_OFT_ADAPTER_ABI_ARRAY,
+          functionName: 'quoteSend',
+          args: [sendParamTuple, false],
+        })
+        
+        console.log('  Quote result:', quoteResult)
+        
+        if (typeof quoteResult === 'object' && quoteResult !== null && 'nativeFee' in quoteResult) {
+          nativeFee = (quoteResult as { nativeFee: bigint }).nativeFee
+        } else if (Array.isArray(quoteResult)) {
+          nativeFee = quoteResult[0] as bigint
+        } else {
+          nativeFee = quoteResult as bigint
+        }
+        
+        console.log('  ✅ Quoted native fee:', nativeFee.toString(), 'wei')
+      } catch (quoteError) {
+        console.warn('  ⚠️ quoteSend failed, using fallback fee:', quoteError)
+        nativeFee = BigInt(1000000000000000)
+      }
+      
+      setSpokeQuotingFee(false)
+      
+      const feeTuple = {
+        nativeFee: nativeFee,
+        lzTokenFee: BigInt(0),
+      }
+      
+      console.log('  📤 Sending cross-chain bridge transaction...')
+      writeContract({
+        address: CONTRACTS.USDCOFTAdapterSpoke as `0x${string}`,
+        abi: USDC_OFT_ADAPTER_ABI_ARRAY,
+        functionName: 'send',
+        args: [sendParamTuple, feeTuple, evmAddress],
+        value: nativeFee,
+        gas: BigInt(10000000),
+      })
+      
+      console.log('  ✅ Transaction sent! USDC will arrive as OFTUSDC on hub chain...')
+    } catch (err) {
+      console.error('❌ Error bridging USDC cross-chain:', err)
+      setSpokeQuotingFee(false)
+      alert(`Error bridging USDC: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
 
@@ -830,40 +1008,54 @@ export default function BalancePage() {
         </div>
 
         {/* Tab Switcher */}
-        <div className="bg-card rounded-lg border p-2 mb-8 flex gap-2">
+        <div className="bg-card rounded-lg border p-2 mb-8 grid grid-cols-3 gap-2">
           <button
-            onClick={() => setActiveTab('evm')}
-            className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
-              activeTab === 'evm'
+            onClick={() => setActiveTab('hub')}
+            className={`py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+              activeTab === 'hub'
                 ? 'bg-primary text-primary-foreground shadow-md'
                 : 'bg-transparent text-muted-foreground hover:bg-accent'
             }`}
           >
             <Zap className="h-5 w-5" />
-            EVM Cross-Chain
+            <span className="hidden sm:inline">Hub Chain</span>
+            <span className="sm:hidden">Hub</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('spoke')}
+            className={`py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+              activeTab === 'spoke'
+                ? 'bg-primary text-primary-foreground shadow-md'
+                : 'bg-transparent text-muted-foreground hover:bg-accent'
+            }`}
+          >
+            <Globe className="h-5 w-5" />
+            <span className="hidden sm:inline">Spoke Chain</span>
+            <span className="sm:hidden">Spoke</span>
           </button>
           <button
             onClick={() => setActiveTab('stacks')}
-            className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+            className={`py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
               activeTab === 'stacks'
                 ? 'bg-primary text-primary-foreground shadow-md'
                 : 'bg-transparent text-muted-foreground hover:bg-accent'
             }`}
           >
             <Bitcoin className="h-5 w-5" />
-            Stacks Integration
+            <span className="hidden sm:inline">Stacks</span>
+            <span className="sm:hidden">Stacks</span>
           </button>
         </div>
 
-        {/* EVM Content */}
-        {activeTab === 'evm' && (
+        {/* Hub Chain Content */}
+        {activeTab === 'hub' && (
           <>
             {!isEvmConnected ? (
               <div className="flex items-center justify-center py-12">
                 <div className="text-center">
                   <Wallet className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
                   <h2 className="text-2xl font-bold text-foreground mb-4">Connect Your EVM Wallet</h2>
-                  <p className="text-muted-foreground mb-8">Please connect your wallet to continue with EVM operations</p>
+                  <p className="text-muted-foreground mb-8">Please connect your wallet to continue with hub chain operations</p>
                 </div>
               </div>
             ) : (
@@ -900,12 +1092,21 @@ export default function BalancePage() {
                 <div className="bg-card rounded-lg border p-6 mb-8">
                   <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
                     <ArrowRight className="h-6 w-6 text-primary" />
-                    Step 1: Approve & Send USDC Cross-Chain to Get OFTUSDC
+                    Step 1: Convert USDC to OFTUSDC (Hub Chain)
                   </h2>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-start gap-2">
+                      <Info className="h-4 w-4 text-blue-600 mt-0.5" />
+                      <div className="text-sm text-blue-800">
+                        <p className="font-medium">Unified Adapter Architecture</p>
+                        <p>Your USDC will be locked in the adapter and you'll receive OFTUSDC (18 decimals) on the same chain. Small LayerZero fee applies for same-chain wrapping.</p>
+                      </div>
+                    </div>
+                  </div>
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-2">
-                        Amount (USDC)
+                        Amount (USDC - 6 decimals)
                       </label>
                       <input
                         type="number"
@@ -918,7 +1119,7 @@ export default function BalancePage() {
                       />
                       {usdcAmount && (
                         <p className="text-sm text-muted-foreground mt-1">
-                          You will receive approximately {usdcAmount} OFTUSDC (scaled to 18 decimals)
+                          You will receive approximately {usdcAmount} OFTUSDC (18 decimals)
                         </p>
                       )}
                     </div>
@@ -929,10 +1130,10 @@ export default function BalancePage() {
                         className="px-6 py-3 bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 transition-all duration-200 font-semibold"
                       >
                         {approvalStep === 'approving' && isPending ? 'Approving USDC...' :
-                         approvalStep === 'approved' && (quotingFee || isPending) ? 'Sending Cross-Chain...' :
+                         approvalStep === 'approved' && (quotingFee || isPending) ? 'Converting via Adapter...' :
                          quotingFee ? 'Quoting Fee...' :
                          isPending ? 'Processing...' :
-                         'Approve & Send USDC Cross-Chain'}
+                         'Approve & Convert USDC to OFTUSDC'}
                       </button>
                     </div>
                     {/* Status indicator */}
@@ -943,22 +1144,22 @@ export default function BalancePage() {
                             <>
                               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
                               <span className="text-sm text-blue-800">
-                                {isPending ? 'Step 1: Approving USDC... Please confirm the transaction in your wallet.' :
+                                {isPending ? 'Step 1: Approving USDC for adapter... Please confirm in your wallet.' :
                                  isApprovalConfirming ? 'Step 1: Waiting for approval confirmation on-chain...' :
-                                 'Step 1: Approving USDC...'}
+                                 'Step 1: Approving USDC for adapter...'}
                               </span>
                             </>
                           )}
                           {approvalStep === 'approved' && (
                             <>
                               <CheckCircle className="h-4 w-4 text-green-600" />
-                              <span className="text-sm text-green-800">Step 1 Complete: USDC approved! Now sending cross-chain...</span>
+                              <span className="text-sm text-green-800">Step 1 Complete: USDC approved! Now converting via adapter...</span>
                             </>
                           )}
                           {approvalStep === 'sending' && (
                             <>
                               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                              <span className="text-sm text-blue-800">Step 2: Sending USDC cross-chain... Please confirm the transaction in your wallet.</span>
+                              <span className="text-sm text-blue-800">Step 2: Converting USDC to OFTUSDC via adapter... Please confirm in your wallet.</span>
                             </>
                           )}
                         </div>
@@ -1007,44 +1208,64 @@ export default function BalancePage() {
                   </div>
                 </div>
 
-                {/* Step 2: Redeem OFTUSDC back to USDC */}
+                {/* Step 2: Unwrap OFTUSDC back to USDC */}
                 <div className="bg-card rounded-lg border p-6 mb-8">
                   <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
                     <ArrowRight className="h-6 w-6 text-primary" />
-                    Step 2: Redeem OFTUSDC back to USDC
+                    Step 2: Unwrap OFTUSDC back to USDC (Hub Chain)
                   </h2>
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
-                    <p className="text-sm text-orange-800">
-                      <strong>Redeem Info:</strong> OFTUSDC (18 decimals) → USDC (6 decimals) via LayerZero cross-chain transfer. 
-                      Your OFTUSDC will be automatically scaled back to 6 decimals when converted to USDC.
-                    </p>
+                    <div className="flex items-start gap-2">
+                      <Info className="h-4 w-4 text-orange-600 mt-0.5" />
+                      <div className="text-sm text-orange-800">
+                        <p className="font-medium">How Unwrapping Works</p>
+                        <p className="mb-2">Send your OFTUSDC (18 decimals) back through the adapter on the same chain. The adapter will burn the OFTUSDC and unlock your original USDC (6 decimals). Small LayerZero fee applies.</p>
+                        <p className="font-medium text-xs">Note: If you invested in a vault, you need to redeem your vault shares first to get OFTUSDC, then come here to unwrap it to USDC.</p>
+                      </div>
+                    </div>
                   </div>
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-2">
-                        OFTUSDC Amount to Redeem
+                        OFTUSDC Amount to Unwrap
                       </label>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm text-muted-foreground">
+                          Available: {oftBalance ? formatUnits(oftBalance as bigint, TOKEN_DECIMALS.OFTUSDC) : '0'} OFTUSDC
+                        </span>
+                        {(() => {
+                          const balance = oftBalance as bigint | undefined
+                          return balance && balance > 0 ? (
+                            <button
+                              onClick={() => setOftAmount(formatUnits(balance, TOKEN_DECIMALS.OFTUSDC))}
+                              className="text-xs px-2 py-1 bg-orange-100 text-orange-800 rounded hover:bg-orange-200 transition-colors"
+                            >
+                              Max
+                            </button>
+                          ) : null
+                        })()}
+                      </div>
                       <input
                         type="number"
                         value={oftAmount}
                         onChange={(e) => setOftAmount(e.target.value)}
                         className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-background text-foreground"
-                        placeholder="Enter OFTUSDC amount to redeem"
+                        placeholder="Enter OFTUSDC amount to unwrap"
                         step="0.000000000000000001"
                         min="0"
                       />
                       {oftAmount && (
                         <p className="text-sm text-muted-foreground mt-1">
-                          You will receive approximately {oftAmount} USDC (scaled back to 6 decimals)
+                          You will receive approximately {oftAmount} USDC (scaled to 6 decimals)
                         </p>
                       )}
                     </div>
                     <button
                       onClick={redeemOFTUSDCToUSDC}
-                      disabled={isPending || quotingFee || !oftAmount}
-                      className="px-4 py-2 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors"
+                      disabled={isPending || quotingFee || !oftAmount || parseFloat(oftAmount) <= 0}
+                      className="w-full px-6 py-3 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors font-semibold"
                     >
-                      {quotingFee ? 'Quoting Fee...' : isPending ? 'Redeeming...' : 'Redeem OFTUSDC to USDC'}
+                      {quotingFee ? 'Quoting Fee...' : isPending ? 'Unwrapping...' : 'Unwrap OFTUSDC to USDC'}
                     </button>
                   </div>
                 </div>
@@ -1083,16 +1304,196 @@ export default function BalancePage() {
                 <div className="bg-card rounded-lg border p-6">
                   <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
                     <Zap className="h-6 w-6 text-primary" />
-                    Cross-Chain Flow
+                    Unified Adapter Flow (Hub Chain)
                   </h2>
-                  <div className="flex items-center justify-center space-x-4 text-sm flex-wrap gap-y-4">
-                    <div className="bg-accent px-4 py-2 rounded-lg text-foreground">USDC</div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                    <div className="bg-accent px-4 py-2 rounded-lg text-foreground">Cross-Chain Transfer</div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                    <div className="bg-accent px-4 py-2 rounded-lg text-foreground">OFTUSDC</div>
-                    <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                    <div className="bg-primary px-4 py-2 rounded-lg text-primary-foreground font-semibold">Invest in Properties</div>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center space-x-4 text-sm flex-wrap gap-y-4">
+                      <div className="bg-accent px-4 py-2 rounded-lg text-foreground font-semibold">USDC (6 dec)</div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <div className="bg-blue-100 px-4 py-2 rounded-lg text-blue-800 font-medium">USDCOFTAdapter.send(HUB_EID)</div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <div className="bg-accent px-4 py-2 rounded-lg text-foreground font-semibold">OFTUSDC (18 dec)</div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <div className="bg-primary px-4 py-2 rounded-lg text-primary-foreground font-semibold">Invest in Properties</div>
+                    </div>
+                  </div>
+                </div>
+              </>
+            )}
+          </>
+        )}
+
+        {/* Spoke Chain Content */}
+        {activeTab === 'spoke' && (
+          <>
+            {!isEvmConnected ? (
+              <div className="flex items-center justify-center py-12">
+                <div className="text-center">
+                  <Wallet className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
+                  <h2 className="text-2xl font-bold text-foreground mb-4">Connect Your EVM Wallet</h2>
+                  <p className="text-muted-foreground mb-8">Please connect your wallet to continue with spoke chain operations</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* User Balances */}
+                <div className="bg-card rounded-lg border p-6 mb-8">
+                  <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
+                    <DollarSign className="h-6 w-6 text-primary" />
+                    Your Spoke Chain Balances
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="bg-accent p-4 rounded-lg">
+                      <h3 className="font-semibold text-foreground">Spoke MockUSDC</h3>
+                      <p className="text-2xl font-bold text-primary">
+                        {spokeUsdcBalance ? formatUnits(spokeUsdcBalance as bigint, TOKEN_DECIMALS.USDC) : '0'} USDC
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">On Spoke Chain (Arbitrum/Optimism)</p>
+                    </div>
+                    <div className="bg-accent p-4 rounded-lg">
+                      <h3 className="font-semibold text-foreground">Hub OFTUSDC</h3>
+                      <p className="text-2xl font-bold text-green-600">
+                        {oftBalance ? formatUnits(oftBalance as bigint, TOKEN_DECIMALS.OFTUSDC) : '0'} OFTUSDC
+                      </p>
+                      <p className="text-xs text-muted-foreground mt-1">After bridging to hub</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Bridge USDC to Hub */}
+                <div className="bg-card rounded-lg border p-6 mb-8">
+                  <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
+                    <Globe className="h-6 w-6 text-primary" />
+                    Bridge USDC from Spoke to Hub
+                  </h2>
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-start gap-2">
+                      <Info className="h-4 w-4 text-blue-600 mt-0.5" />
+                      <div className="text-sm text-blue-800">
+                        <p className="font-medium">Cross-Chain Bridging</p>
+                        <p>Your USDC on spoke chain (Arbitrum/Optimism) will be locked in the adapter and bridged to the hub chain. You'll receive OFTUSDC (18 decimals) on the hub chain. LayerZero fee applies for cross-chain transfer.</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-2">
+                        Amount (USDC - 6 decimals)
+                      </label>
+                      <input
+                        type="number"
+                        value={spokeUsdcAmount}
+                        onChange={(e) => setSpokeUsdcAmount(e.target.value)}
+                        className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-background text-foreground"
+                        placeholder="Enter USDC amount to bridge"
+                        step="0.000001"
+                        min="0"
+                      />
+                      {spokeUsdcAmount && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          You will receive approximately {spokeUsdcAmount} OFTUSDC (18 decimals) on hub chain
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex gap-4">
+                      <button
+                        onClick={approveAndSendSpokeUSDC}
+                        disabled={isPending || isApprovalConfirming || spokeQuotingFee || !spokeUsdcAmount}
+                        className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-all duration-200 font-semibold"
+                      >
+                        {spokeApprovalStep === 'approving' && isPending ? 'Approving USDC...' :
+                         spokeApprovalStep === 'approved' && (spokeQuotingFee || isPending) ? 'Bridging to Hub...' :
+                         spokeQuotingFee ? 'Quoting Fee...' :
+                         isPending ? 'Processing...' :
+                         'Approve & Bridge USDC to Hub'}
+                      </button>
+                    </div>
+                    {/* Status indicator */}
+                    {spokeApprovalStep !== 'idle' && (
+                      <div className="mt-4 p-3 bg-blue-50 border border-blue-200 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          {spokeApprovalStep === 'approving' && (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                              <span className="text-sm text-blue-800">
+                                {isPending ? 'Step 1: Approving USDC for adapter... Please confirm in your wallet.' :
+                                 isApprovalConfirming ? 'Step 1: Waiting for approval confirmation on-chain...' :
+                                 'Step 1: Approving USDC for adapter...'}
+                              </span>
+                            </>
+                          )}
+                          {spokeApprovalStep === 'approved' && (
+                            <>
+                              <CheckCircle className="h-4 w-4 text-green-600" />
+                              <span className="text-sm text-green-800">Step 1 Complete: USDC approved! Now bridging cross-chain...</span>
+                            </>
+                          )}
+                          {spokeApprovalStep === 'sending' && (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
+                              <span className="text-sm text-blue-800">Step 2: Bridging USDC to hub chain... Please confirm in your wallet.</span>
+                            </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {spokeUsdcAllowance ? (
+                      <p className="text-sm text-muted-foreground">
+                        Spoke USDC Allowance: {formatUnits(spokeUsdcAllowance as bigint, TOKEN_DECIMALS.USDC)} USDC
+                      </p>
+                    ) : null}
+                  </div>
+                </div>
+
+                {/* Transaction Status */}
+                {(isPending || isConfirming) && (
+                  <div className="bg-accent border border-border rounded-lg p-4 mb-8">
+                    <div className="flex items-center">
+                      <Loader2 className="animate-spin h-4 w-4 text-primary mr-3" />
+                      <span className="text-foreground">
+                        {isPending ? 'Transaction pending...' : 'Waiting for confirmation...'}
+                      </span>
+                    </div>
+                  </div>
+                )}
+
+                {isConfirmed && (
+                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-8">
+                    <div className="flex items-center">
+                      <CheckCircle className="h-4 w-4 text-green-600 mr-3" />
+                      <span className="text-green-800">Cross-chain bridge completed!</span>
+                    </div>
+                  </div>
+                )}
+
+                {error && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
+                    <div className="flex items-center">
+                      <AlertCircle className="h-4 w-4 text-red-600 mr-3" />
+                      <span className="text-red-800">Error: {error.message}</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* Flow Diagram */}
+                <div className="bg-card rounded-lg border p-6">
+                  <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
+                    <Globe className="h-6 w-6 text-primary" />
+                    Cross-Chain Bridge Flow (Spoke → Hub)
+                  </h2>
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-center space-x-4 text-sm flex-wrap gap-y-4">
+                      <div className="bg-purple-100 px-4 py-2 rounded-lg text-purple-800 font-semibold">Spoke USDC (6 dec)</div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <div className="bg-blue-100 px-4 py-2 rounded-lg text-blue-800 font-medium">USDCOFTAdapter.send(HUB_EID)</div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <div className="bg-orange-100 px-4 py-2 rounded-lg text-orange-800 font-medium">LayerZero Bridge</div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <div className="bg-green-100 px-4 py-2 rounded-lg text-green-800 font-semibold">Hub OFTUSDC (18 dec)</div>
+                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                      <div className="bg-primary px-4 py-2 rounded-lg text-primary-foreground font-semibold">Invest in Properties</div>
+                    </div>
                   </div>
                 </div>
               </>

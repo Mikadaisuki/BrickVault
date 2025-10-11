@@ -151,10 +151,37 @@ describe('Complete Property Workflow Test', function () {
     await stacksCrossChainManager.waitForDeployment();
     console.log('✅ StacksCrossChainManager deployed:', await stacksCrossChainManager.getAddress());
 
-    // 12. Authorize StacksCrossChainManager as minter in OFTUSDC
-    console.log('\n📋 Step 12: Authorizing StacksCrossChainManager as minter...');
-    await oftUSDC.connect(platformOwner).addAuthorizedMinter(await stacksCrossChainManager.getAddress());
-    console.log('✅ StacksCrossChainManager authorized as OFTUSDC minter');
+    // 12. Fund StacksCrossChainManager liquidity pool with backed OFTUSDC
+    console.log('\n📋 Step 12: Funding StacksCrossChainManager liquidity pool...');
+    
+    // First, convert USDC to OFTUSDC via adapter (this locks USDC and creates backed OFTUSDC)
+    const poolFundingAmount = ethers.parseUnits('200000', USDC_DECIMALS); // 200K USDC for pool (enough for all test deposits)
+    await mockUSDC.connect(platformOwner).mint(platformOwner.address, poolFundingAmount);
+    await mockUSDC.connect(platformOwner).approve(await oftAdapter.getAddress(), poolFundingAmount);
+    
+    const poolOptions = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
+    const poolSendParam = [
+      2, // destination eid
+      ethers.zeroPadValue(platformOwner.address, 32),
+      poolFundingAmount,
+      poolFundingAmount,
+      poolOptions,
+      '0x',
+      '0x'
+    ];
+    const [poolNativeFee] = await oftAdapter.quoteSend(poolSendParam, false);
+    await oftAdapter.connect(platformOwner).send(poolSendParam, [poolNativeFee, 0n], platformOwner.address, { value: poolNativeFee });
+    
+    const poolFundingAmountOFT = poolFundingAmount * BigInt(10 ** 12); // Scale to 18 decimals
+    console.log('✅ Converted USDC to OFTUSDC via adapter:', ethers.formatUnits(poolFundingAmountOFT, 18));
+    
+    // Now fund the liquidity pool with this backed OFTUSDC
+    await oftUSDC.connect(platformOwner).approve(await stacksCrossChainManager.getAddress(), poolFundingAmountOFT);
+    await stacksCrossChainManager.connect(platformOwner).fundLiquidityPool(poolFundingAmountOFT);
+    
+    const poolBalance = await stacksCrossChainManager.getPoolBalance();
+    console.log('✅ Liquidity pool funded with backed OFTUSDC:', ethers.formatUnits(poolBalance, 18));
+    console.log('   📝 All pool OFTUSDC is backed by locked USDC in adapter');
   });
 
   it('🎯 Complete Property Lifecycle: Funding → Purchase → Management → Income Distribution', async function () {
@@ -1583,9 +1610,9 @@ describe('Complete Property Workflow Test', function () {
     console.log('='.repeat(80));
   });
 
-  it('🔗 Test Stacks Cross-Chain sBTC Deposit → OFTUSDC Minting Flow', async function () {
+  it('🔗 Test Stacks Cross-Chain sBTC Deposit → OFTUSDC from Liquidity Pool Flow', async function () {
     console.log('\n' + '='.repeat(80));
-    console.log('🔗 STACKS CROSS-CHAIN sBTC DEPOSIT → OFTUSDC MINTING TEST');
+    console.log('🔗 STACKS CROSS-CHAIN sBTC DEPOSIT → OFTUSDC FROM POOL TEST');
     console.log('='.repeat(80));
 
     // ============================================================================
@@ -1674,9 +1701,9 @@ describe('Complete Property Workflow Test', function () {
     console.log('✅ Second deposit processed - Event ID:', eventId2, 'Message ID:', messageId2);
 
     // ============================================================================
-    // PHASE 4: VERIFY OFTUSDC MINTING AND AUTO-REGISTRATION
+    // PHASE 4: VERIFY OFTUSDC FROM POOL AND AUTO-REGISTRATION
     // ============================================================================
-    console.log('\n📍 PHASE 4: VERIFY OFTUSDC MINTING AND AUTO-REGISTRATION');
+    console.log('\n📍 PHASE 4: VERIFY OFTUSDC TRANSFER FROM POOL AND AUTO-REGISTRATION');
     console.log('-'.repeat(80));
 
     // Verify auto-registration happened
@@ -1724,24 +1751,24 @@ describe('Complete Property Workflow Test', function () {
     
     console.log('👤 Stacks User 1 Info:');
     console.log('   - sBTC Deposited:', ethers.formatUnits(userInfo1.sbtcDeposited, 8));
-    console.log('   - OFTUSDC Minted:', ethers.formatUnits(userInfo1.oftusdcMinted, 18));
+    console.log('   - OFTUSDC Received (from pool):', ethers.formatUnits(userInfo1.oftusdcReceived, 18));
     console.log('   - Has Deposited:', userInfo1.hasDeposited);
     console.log('   - EVM Custodian:', userInfo1.evmCustodianAddress);
     
     console.log('👤 Stacks User 2 Info:');
     console.log('   - sBTC Deposited:', ethers.formatUnits(userInfo2.sbtcDeposited, 8));
-    console.log('   - OFTUSDC Minted:', ethers.formatUnits(userInfo2.oftusdcMinted, 18));
+    console.log('   - OFTUSDC Received (from pool):', ethers.formatUnits(userInfo2.oftusdcReceived, 18));
     console.log('   - Has Deposited:', userInfo2.hasDeposited);
     console.log('   - EVM Custodian:', userInfo2.evmCustodianAddress);
 
     // Verify user info
     expect(userInfo1.sbtcDeposited).to.equal(sbtcAmount1);
-    expect(userInfo1.oftusdcMinted).to.equal(expectedOftusdc1);
+    expect(userInfo1.oftusdcReceived).to.equal(expectedOftusdc1);
     expect(userInfo1.hasDeposited).to.be.true;
     expect(userInfo1.evmCustodianAddress).to.equal(evmCustodian1);
     
     expect(userInfo2.sbtcDeposited).to.equal(sbtcAmount2);
-    expect(userInfo2.oftusdcMinted).to.equal(expectedOftusdc2);
+    expect(userInfo2.oftusdcReceived).to.equal(expectedOftusdc2);
     expect(userInfo2.hasDeposited).to.be.true;
     expect(userInfo2.evmCustodianAddress).to.equal(evmCustodian2);
     console.log('✅ Stacks user info verified');
@@ -1826,13 +1853,15 @@ describe('Complete Property Workflow Test', function () {
     console.log('📊 STACKS CROSS-CHAIN FLOW SUMMARY');
     console.log('='.repeat(80));
 
-    console.log('\n🔗 Cross-Chain Flow:');
-    console.log('   1. ✅ Users register on Stacks (validated on Stacks side)');
-    console.log('   2. ✅ Users deposit sBTC on Stacks chain');
-    console.log('   3. ✅ Relayer detects deposits and sends cross-chain messages');
-    console.log('   4. ✅ StacksCrossChainManager auto-registers and mints OFTUSDC');
-    console.log('   5. ✅ Users can freely invest OFTUSDC in any property');
-    console.log('   6. ✅ No withdrawal back to sBTC (platform balance model)');
+    console.log('\n🔗 Cross-Chain Flow (Liquidity Pool Model):');
+    console.log('   1. ✅ Protocol funds pool with backed OFTUSDC (from adapter)');
+    console.log('   2. ✅ Users register on Stacks (validated on Stacks side)');
+    console.log('   3. ✅ Users deposit sBTC on Stacks chain');
+    console.log('   4. ✅ Relayer detects deposits and sends cross-chain messages');
+    console.log('   5. ✅ StacksCrossChainManager auto-registers and transfers OFTUSDC from pool');
+    console.log('   6. ✅ All OFTUSDC is backed by locked USDC (no unbacked minting)');
+    console.log('   7. ✅ Users can freely invest OFTUSDC in any property');
+    console.log('   8. ✅ Users can even unwrap OFTUSDC to USDC (fully backed)');
 
     console.log('\n💰 Financial Summary:');
     console.log('   - sBTC Price:', ethers.formatUnits(sbtcPriceUsd, 8), 'USD');
@@ -1846,7 +1875,8 @@ describe('Complete Property Workflow Test', function () {
     console.log('   - User 2 can invest:', ethers.formatUnits(receivedOftusdc2, 18), 'OFTUSDC in any property');
     console.log('   - Both users have platform balance for free investment');
 
-    console.log('\n✅ STACKS CROSS-CHAIN sBTC DEPOSIT → OFTUSDC MINTING TEST PASSED! 🎉');
+    console.log('\n✅ STACKS CROSS-CHAIN sBTC DEPOSIT → OFTUSDC FROM POOL TEST PASSED! 🎉');
+    console.log('   💡 All OFTUSDC is backed by locked USDC - no unbacked minting!');
     console.log('='.repeat(80));
   });
 

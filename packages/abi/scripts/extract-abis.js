@@ -12,6 +12,7 @@ const contracts = [
   'PropertyToken',
   'VaultFactory',
   'OFTUSDC',
+  'USDCOFTAdapter',
   'ShareOFT',
   'ShareOFTAdapter',
   'VaultBase',

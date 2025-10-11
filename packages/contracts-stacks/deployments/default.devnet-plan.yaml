@@ -49,7 +49,7 @@ plan:
         - contract-publish:
             contract-name: brick-vault-gateway
             expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 60470
+            cost: 108250
             path: contracts/brick-vault-gateway.clar
             anchor-block-only: true
             clarity-version: 3

@@ -9,9 +9,10 @@ import './OFTUSDC.sol';
 /**
  * @title StacksCrossChainManager
  * @dev Manages cross-chain operations between Stacks (sBTC) and EVM (OFTUSDC) for property vaults
- * @notice Handles cross-chain messaging and OFTUSDC minting for Stacks users
+ * @notice Handles cross-chain messaging and OFTUSDC liquidity pool for Stacks users
+ * @notice Uses a liquidity pool of backed OFTUSDC instead of minting unbacked tokens
  * @notice sBTC is native to Stacks chain, not an ERC20 token on EVM
- * @notice Users deposit sBTC and receive OFTUSDC to freely invest in any property
+ * @notice Users deposit sBTC and receive OFTUSDC from pool to freely invest in any property
  */
 contract StacksCrossChainManager is Ownable {
     using SafeERC20 for IERC20;
@@ -21,11 +22,14 @@ contract StacksCrossChainManager is Ownable {
     event CrossChainMessageProcessed(bytes32 indexed messageId, uint8 messageType);
     event StacksStageChange(uint32 indexed propertyId, uint8 newStage);
     event StacksAddressRegistered(string indexed stacksAddress, address indexed evmAddress, address indexed registrant);
+    event LiquidityPoolFunded(address indexed funder, uint256 amount);
+    event LiquidityPoolWithdrawn(address indexed recipient, uint256 amount);
+    event StacksWithdrawal(address indexed user, uint256 oftusdcAmount, uint256 sbtcAmount, string stacksAddress);
 
     // Structs
     struct StacksUserInfo {
         uint256 sbtcDeposited;      // Amount of sBTC deposited by user (on Stacks)
-        uint256 oftusdcMinted;      // Amount of OFTUSDC minted to user
+        uint256 oftusdcReceived;    // Amount of OFTUSDC received from pool
         bool hasDeposited;          // Whether user has made a deposit
         uint256 depositTimestamp;   // When the deposit was made
         bytes32 stacksTxHash;       // Stacks transaction hash for the deposit
@@ -52,6 +56,10 @@ contract StacksCrossChainManager is Ownable {
 
     // State variables
     OFTUSDC public immutable oftusdcToken;  // OFTUSDC token contract (EVM side)
+    
+    // OFTUSDC Liquidity Pool (backed by locked USDC via adapter)
+    // This pool is used to give OFTUSDC to Stacks users instead of minting unbacked tokens
+    uint256 public liquidityPoolBalance;    // Amount of OFTUSDC available in pool
     
     // Cross-chain messaging
     mapping(bytes32 => CrossChainMessage) public crossChainMessages;
@@ -119,10 +127,45 @@ contract StacksCrossChainManager is Ownable {
     }
     
     /**
-     * @dev Authorize this contract as a minter in OFTUSDC
+     * @dev Fund the OFTUSDC liquidity pool
+     * @notice Only owner can fund the pool by transferring backed OFTUSDC
+     * @param amount Amount of OFTUSDC to add to the pool
      */
-    function authorizeAsMinter() external onlyOwner {
-        oftusdcToken.addAuthorizedMinter(address(this));
+    function fundLiquidityPool(uint256 amount) external onlyOwner {
+        require(amount > 0, 'StacksCrossChainManager: amount must be positive');
+        
+        // Transfer OFTUSDC from sender to this contract
+        IERC20(address(oftusdcToken)).safeTransferFrom(msg.sender, address(this), amount);
+        
+        liquidityPoolBalance += amount;
+        
+        emit LiquidityPoolFunded(msg.sender, amount);
+    }
+    
+    /**
+     * @dev Withdraw OFTUSDC from liquidity pool (only owner)
+     * @notice Used to rebalance pool or recover funds in emergencies
+     * @param amount Amount of OFTUSDC to withdraw
+     * @param recipient Address to receive the OFTUSDC
+     */
+    function withdrawFromLiquidityPool(uint256 amount, address recipient) external onlyOwner {
+        require(amount > 0, 'StacksCrossChainManager: amount must be positive');
+        require(recipient != address(0), 'StacksCrossChainManager: invalid recipient');
+        require(liquidityPoolBalance >= amount, 'StacksCrossChainManager: insufficient pool balance');
+        
+        liquidityPoolBalance -= amount;
+        
+        IERC20(address(oftusdcToken)).safeTransfer(recipient, amount);
+        
+        emit LiquidityPoolWithdrawn(recipient, amount);
+    }
+    
+    /**
+     * @dev Get available liquidity pool balance
+     * @return balance Current OFTUSDC balance in the pool
+     */
+    function getPoolBalance() external view returns (uint256 balance) {
+        return liquidityPoolBalance;
     }
 
     /**
@@ -280,19 +323,23 @@ contract StacksCrossChainManager is Ownable {
         // Calculate USD value at current price
         uint256 usdValue = calculateUsdValue(sbtcAmount);
         require(usdValue > 0, 'StacksCrossChainManager: invalid USD value');
+        
+        // Check pool has sufficient liquidity
+        require(liquidityPoolBalance >= usdValue, 'StacksCrossChainManager: insufficient pool liquidity');
 
         // Update Stacks user info
         StacksUserInfo storage userInfo = stacksUsers[stacksAddress];
         userInfo.sbtcDeposited += sbtcAmount;
-        userInfo.oftusdcMinted += usdValue;
+        userInfo.oftusdcReceived += usdValue;
         userInfo.hasDeposited = true;
         userInfo.depositTimestamp = block.timestamp;
         userInfo.stacksTxHash = stacksTxHash;
         userInfo.stacksAddress = stacksAddress;
         userInfo.evmCustodian = evmCustodian;
 
-        // Mint OFTUSDC to EVM custodian address (not the Stacks user directly)
-        oftusdcToken.mint(evmCustodian, usdValue, "Stacks sBTC deposit");
+        // Transfer OFTUSDC from pool to EVM custodian address
+        liquidityPoolBalance -= usdValue;
+        IERC20(address(oftusdcToken)).safeTransfer(evmCustodian, usdValue);
 
         // Mark message as processed
         crossChainMessages[messageId].processed = true;
@@ -330,7 +377,7 @@ contract StacksCrossChainManager is Ownable {
      * @dev Get Stacks user info
      * @param stacksAddress Stacks address of the user
      * @return sbtcDeposited Amount of sBTC deposited
-     * @return oftusdcMinted Amount of OFTUSDC minted
+     * @return oftusdcReceived Amount of OFTUSDC received from pool
      * @return hasDeposited Whether user has deposited
      * @return depositTimestamp When the deposit was made
      * @return stacksTxHash Stacks transaction hash
@@ -338,15 +385,15 @@ contract StacksCrossChainManager is Ownable {
      */
     function getStacksUserInfo(
         string calldata stacksAddress
-    ) external view returns (uint256 sbtcDeposited, uint256 oftusdcMinted, bool hasDeposited, uint256 depositTimestamp, bytes32 stacksTxHash, address evmCustodianAddress) {
+    ) external view returns (uint256 sbtcDeposited, uint256 oftusdcReceived, bool hasDeposited, uint256 depositTimestamp, bytes32 stacksTxHash, address evmCustodianAddress) {
         StacksUserInfo storage userInfo = stacksUsers[stacksAddress];
-        return (userInfo.sbtcDeposited, userInfo.oftusdcMinted, userInfo.hasDeposited, userInfo.depositTimestamp, userInfo.stacksTxHash, userInfo.evmCustodian);
+        return (userInfo.sbtcDeposited, userInfo.oftusdcReceived, userInfo.hasDeposited, userInfo.depositTimestamp, userInfo.stacksTxHash, userInfo.evmCustodian);
     }
 
     /**
      * @dev Get total Stacks deposits across all users
      * @return totalSbtc Total sBTC deposited by all users
-     * @return totalOftusdc Total OFTUSDC minted to all users
+     * @return totalOftusdc Total OFTUSDC received from pool by all users
      */
     function getTotalStacksDeposits() external pure returns (uint256 totalSbtc, uint256 totalOftusdc) {
         // Note: This would require iterating through all users, which is gas-intensive
@@ -437,3 +484,5 @@ contract StacksCrossChainManager is Ownable {
     }
 
 }
+
+

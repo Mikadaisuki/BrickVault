@@ -1032,8 +1032,8 @@ export default function InvestmentsPage() {
                   </div>
                 </div>
 
-                {/* Rent Income Withdrawal Section (for non-liquidated properties) */}
-                {selectedInvestment.daoStage !== 4 && (
+                {/* Rent Income Withdrawal Section (only for Under Management stage) */}
+                {selectedInvestment.daoStage === 2 && (
                   <div className="bg-accent rounded-lg p-6">
                     <div className="flex items-center justify-between mb-4">
                       <h3 className="text-xl font-semibold flex items-center">

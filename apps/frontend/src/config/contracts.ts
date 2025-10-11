@@ -4,12 +4,14 @@
 export const CONTRACT_ADDRESSES = {
   // Infrastructure
   EnvironmentConfig: process.env.NEXT_PUBLIC_ENVIRONMENT_CONFIG_ADDRESS as `0x${string}`,
-  MockLayerZeroEndpointA: process.env.NEXT_PUBLIC_MOCK_LAYERZERO_ENDPOINT_A_ADDRESS as `0x${string}`,
-  MockLayerZeroEndpointB: process.env.NEXT_PUBLIC_MOCK_LAYERZERO_ENDPOINT_B_ADDRESS as `0x${string}`,
+  HubEndpoint: process.env.NEXT_PUBLIC_HUB_ENDPOINT_ADDRESS as `0x${string}`,
+  SpokeEndpoint: process.env.NEXT_PUBLIC_SPOKE_ENDPOINT_ADDRESS as `0x${string}`,
   
-  // Tokens
-  MockUSDC: process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS as `0x${string}`,
-  ShareOFTAdapter: process.env.NEXT_PUBLIC_SHARE_OFT_ADAPTER_ADDRESS as `0x${string}`,
+  // Tokens (Unified Adapter Architecture)
+  MockUSDCHub: process.env.NEXT_PUBLIC_MOCK_USDC_HUB_ADDRESS as `0x${string}`,
+  MockUSDCSpoke: process.env.NEXT_PUBLIC_MOCK_USDC_SPOKE_ADDRESS as `0x${string}`,
+  USDCOFTAdapterHub: process.env.NEXT_PUBLIC_USDC_OFT_ADAPTER_HUB_ADDRESS as `0x${string}`,
+  USDCOFTAdapterSpoke: process.env.NEXT_PUBLIC_USDC_OFT_ADAPTER_SPOKE_ADDRESS as `0x${string}`,
   OFTUSDC: process.env.NEXT_PUBLIC_OFT_USDC_ADDRESS as `0x${string}`,
   
   // Property Platform
@@ -18,6 +20,9 @@ export const CONTRACT_ADDRESSES = {
   PropertyRegistry: process.env.NEXT_PUBLIC_PROPERTY_REGISTRY_ADDRESS as `0x${string}`,
   PropertyVault: process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS as `0x${string}`,
   PropertyDAO: process.env.NEXT_PUBLIC_PROPERTY_DAO_ADDRESS as `0x${string}`,
+  
+  // Cross-Chain
+  StacksCrossChainManager: process.env.NEXT_PUBLIC_STACKS_CROSS_CHAIN_MANAGER_ADDRESS as `0x${string}`,
 } as const;
 
 export const TOKEN_DECIMALS = {
@@ -33,10 +38,10 @@ export const NETWORK_CONFIG = {
 } as const;
 
 export const LAYERZERO_CONFIG = {
-  eidA: parseInt(process.env.NEXT_PUBLIC_LAYERZERO_EID_A || '1'), // Chain A (USDC + Adapter)
-  eidB: parseInt(process.env.NEXT_PUBLIC_LAYERZERO_EID_B || '2'), // Chain B (OFTUSDC + Vault)
-  endpointA: CONTRACT_ADDRESSES.MockLayerZeroEndpointA,
-  endpointB: CONTRACT_ADDRESSES.MockLayerZeroEndpointB,
+  hubEID: parseInt(process.env.NEXT_PUBLIC_LAYERZERO_HUB_EID || '1'), // Hub chain (Sepolia - PropertyVault)
+  spokeEID: parseInt(process.env.NEXT_PUBLIC_LAYERZERO_SPOKE_EID || '2'), // Spoke chain (Arbitrum/Optimism)
+  hubEndpoint: CONTRACT_ADDRESSES.HubEndpoint,
+  spokeEndpoint: CONTRACT_ADDRESSES.SpokeEndpoint,
 } as const;
 
 export const PROPERTY_CONFIG = {

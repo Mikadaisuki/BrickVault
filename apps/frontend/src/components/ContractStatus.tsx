@@ -3,21 +3,24 @@
 import { useState, useEffect } from 'react'
 import { useAccount, useReadContract } from 'wagmi'
 import { Building2, Layers, Users, DollarSign, Globe, Shield, Activity, Settings } from 'lucide-react'
+import { CONTRACT_ADDRESSES as SHARED_CONTRACT_ADDRESSES } from '../config/contracts'
 
-// Contract addresses from initial deployment
+// Use shared contract addresses from config
 const CONTRACT_ADDRESSES = {
-  EnvironmentConfig: process.env.NEXT_PUBLIC_ENVIRONMENT_CONFIG_ADDRESS || '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
-  MockLayerZeroEndpointA: process.env.NEXT_PUBLIC_MOCK_ENDPOINT_A_ADDRESS || '0x5FbDB2315678afecb367f032d93F642f64180aa3',
-  MockLayerZeroEndpointB: process.env.NEXT_PUBLIC_MOCK_ENDPOINT_B_ADDRESS || '0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512',
-  MockUSDC: process.env.NEXT_PUBLIC_MOCK_USDC_ADDRESS || '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0',
-  ShareOFTAdapter: process.env.NEXT_PUBLIC_SHARE_OFT_ADAPTER_ADDRESS || '0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9',
-  OFTUSDC: process.env.NEXT_PUBLIC_OFT_USDC_ADDRESS || '0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9',
-  VaultFactory: process.env.NEXT_PUBLIC_VAULT_FACTORY_ADDRESS || '0x5FC8d32690cc91D4c39d9d3abcBD16989F875707',
-  PropertyDAOFactory: process.env.NEXT_PUBLIC_PROPERTY_DAO_FACTORY_ADDRESS || '0x0165878A594ca255338adfa4d48449f69242Eb8F',
-  PropertyRegistry: process.env.NEXT_PUBLIC_PROPERTY_REGISTRY_ADDRESS || '0xa513E6E4b8f2a923D98304ec87F64353C4D5C853',
-  PropertyVault: process.env.NEXT_PUBLIC_PROPERTY_VAULT_ADDRESS || '0x2279B7A0a67DB372996a5FaB50D91eAA73d2eBe6',
-  PropertyDAO: process.env.NEXT_PUBLIC_PROPERTY_DAO_ADDRESS || '0x8A791620dd6260079BF849Dc5567aDC3F2FdC318',
-  StacksCrossChainManager: process.env.NEXT_PUBLIC_STACKS_MANAGER_ADDRESS || '0x610178dA211FEF7D417bC0e6FeD39F05609AD788',
+  EnvironmentConfig: SHARED_CONTRACT_ADDRESSES.EnvironmentConfig,
+  HubEndpoint: SHARED_CONTRACT_ADDRESSES.HubEndpoint,
+  SpokeEndpoint: SHARED_CONTRACT_ADDRESSES.SpokeEndpoint,
+  MockUSDCHub: SHARED_CONTRACT_ADDRESSES.MockUSDCHub,
+  MockUSDCSpoke: SHARED_CONTRACT_ADDRESSES.MockUSDCSpoke,
+  USDCOFTAdapterHub: SHARED_CONTRACT_ADDRESSES.USDCOFTAdapterHub,
+  USDCOFTAdapterSpoke: SHARED_CONTRACT_ADDRESSES.USDCOFTAdapterSpoke,
+  OFTUSDC: SHARED_CONTRACT_ADDRESSES.OFTUSDC,
+  VaultFactory: SHARED_CONTRACT_ADDRESSES.VaultFactory,
+  PropertyDAOFactory: SHARED_CONTRACT_ADDRESSES.PropertyDAOFactory,
+  PropertyRegistry: SHARED_CONTRACT_ADDRESSES.PropertyRegistry,
+  PropertyVault: SHARED_CONTRACT_ADDRESSES.PropertyVault,
+  PropertyDAO: SHARED_CONTRACT_ADDRESSES.PropertyDAO,
+  StacksCrossChainManager: SHARED_CONTRACT_ADDRESSES.StacksCrossChainManager,
 }
 
 // Simple ABI for checking contract existence
@@ -50,7 +53,7 @@ export function ContractStatus() {
     setMounted(true)
   }, [])
 
-  // Contract definitions with icons and categories
+  // Contract definitions with icons and categories (Unified Adapter Architecture)
   const contractDefinitions = [
     {
       name: 'EnvironmentConfig',
@@ -59,26 +62,38 @@ export function ContractStatus() {
       category: 'Infrastructure'
     },
     {
-      name: 'MockLayerZeroEndpointA',
-      address: CONTRACT_ADDRESSES.MockLayerZeroEndpointA,
+      name: 'Hub Endpoint',
+      address: CONTRACT_ADDRESSES.HubEndpoint,
       icon: <Layers className="h-5 w-5" />,
       category: 'Infrastructure'
     },
     {
-      name: 'MockLayerZeroEndpointB',
-      address: CONTRACT_ADDRESSES.MockLayerZeroEndpointB,
+      name: 'Spoke Endpoint',
+      address: CONTRACT_ADDRESSES.SpokeEndpoint,
       icon: <Layers className="h-5 w-5" />,
       category: 'Infrastructure'
     },
     {
-      name: 'MockUSDC',
-      address: CONTRACT_ADDRESSES.MockUSDC,
+      name: 'MockUSDC (Hub)',
+      address: CONTRACT_ADDRESSES.MockUSDCHub,
       icon: <DollarSign className="h-5 w-5" />,
       category: 'Token Layer'
     },
     {
-      name: 'ShareOFTAdapter',
-      address: CONTRACT_ADDRESSES.ShareOFTAdapter,
+      name: 'MockUSDC (Spoke)',
+      address: CONTRACT_ADDRESSES.MockUSDCSpoke,
+      icon: <DollarSign className="h-5 w-5" />,
+      category: 'Token Layer'
+    },
+    {
+      name: 'USDCOFTAdapter (Hub)',
+      address: CONTRACT_ADDRESSES.USDCOFTAdapterHub,
+      icon: <Layers className="h-5 w-5" />,
+      category: 'Token Layer'
+    },
+    {
+      name: 'USDCOFTAdapter (Spoke)',
+      address: CONTRACT_ADDRESSES.USDCOFTAdapterSpoke,
       icon: <Layers className="h-5 w-5" />,
       category: 'Token Layer'
     },
