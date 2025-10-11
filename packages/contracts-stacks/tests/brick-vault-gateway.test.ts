@@ -160,6 +160,14 @@ describe("BrickVault Gateway Contract Tests", () => {
     };
 
     beforeEach(() => {
+      // Set sufficient pool amount
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(1000000000000)], // 1,000,000 USD
+        deployer
+      );
+      
       // Register Stacks address with initial EVM custodian
       const mockEvmAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1';
       simnet.callPublicFn(
@@ -290,7 +298,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       const { result } = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(2000000)], // 2 sBTC
+        [Cl.uint(200000000)], // 2 sBTC (8 decimals)
         address1
       );
       
@@ -306,6 +314,14 @@ describe("BrickVault Gateway Contract Tests", () => {
     };
 
     beforeEach(() => {
+      // Set sufficient pool amount
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(1000000000000)], // 1,000,000 USD
+        deployer
+      );
+      
       // Register Stacks address to EVM custodian
       const mockEvmAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1';
       simnet.callPublicFn(
@@ -320,7 +336,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       const { result } = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(2000000)], // 2 sBTC
+        [Cl.uint(200000000)], // 2 sBTC (8 decimals)
         address1
       );
       
@@ -332,7 +348,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       const { result } = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(500000)], // 0.5 sBTC (below 1 sBTC minimum)
+        [Cl.uint(50000000)], // 0.5 sBTC (8 decimals - below 1 sBTC minimum)
         address1
       );
       
@@ -353,7 +369,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       const { result } = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(2000000)],
+        [Cl.uint(200000000)], // 2 sBTC (8 decimals)
         address1
       );
       
@@ -367,7 +383,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(2000000)],
+        [Cl.uint(200000000)], // 2 sBTC (8 decimals)
         address1
       );
 
@@ -380,7 +396,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       );
       
       expect(result).toBeDefined();
-      expect(result.value.value).toBe(2000000n);
+      expect(result.value.value).toBe(200000000n);
     });
 
     it("should track global total correctly", () => {
@@ -397,14 +413,14 @@ describe("BrickVault Gateway Contract Tests", () => {
       simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(2000000)],
+        [Cl.uint(200000000)], // 2 sBTC (8 decimals)
         address1
       );
 
       simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(1500000)],
+        [Cl.uint(150000000)], // 1.5 sBTC (8 decimals)
         address2
       );
 
@@ -417,7 +433,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       );
       
       expect(result).toBeDefined();
-      expect(result.value.value).toBe(3500000n); // 2 + 1.5 = 3.5 sBTC
+      expect(result.value.value).toBe(350000000n); // 2 + 1.5 = 3.5 sBTC
     });
 
     it("should not allow deposit without registration", () => {
@@ -425,7 +441,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       const { result } = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(2000000)],
+        [Cl.uint(200000000)], // 2 sBTC (8 decimals)
         address3 // Not registered
       );
       
@@ -442,6 +458,14 @@ describe("BrickVault Gateway Contract Tests", () => {
     };
 
     beforeEach(() => {
+      // Set sufficient pool amount
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(1000000000000)], // 1,000,000 USD
+        deployer
+      );
+      
       // Register Stacks address to EVM custodian
       const mockEvmAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1';
       simnet.callPublicFn(
@@ -465,7 +489,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       const { result } = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(2000000)], // 2 sBTC
+        [Cl.uint(200000000)], // 2 sBTC (8 decimals)
         address1
       );
       
@@ -487,17 +511,19 @@ describe("BrickVault Gateway Contract Tests", () => {
     });
 
     it("should fail sBTC transfer if user has insufficient balance", () => {
-      // Try to deposit more sBTC than user has (user has ~1 sBTC, try to deposit 2 sBTC)
+      // Try to deposit more sBTC than user has
+      // This will hit ERR-INSUFFICIENT-POOL first (2000 sBTC = way more than pool has)
       const { result } = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(2000000000)], // 2 sBTC - more than user has
+        [Cl.uint(200000000000)], // 2000 sBTC (8 decimals) - more than user has
         address1
       );
       
       expect(result).toBeDefined();
       expect(result.value.type).toBe('err');
-      expect(result.value.value.value).toBe(110n); // ERR-TRANSFER-FAILED
+      // Will get ERR-INSUFFICIENT-POOL (111) before checking user balance
+      expect(result.value.value.value).toBe(111n); // ERR-INSUFFICIENT-POOL
     });
   });
 
@@ -509,6 +535,14 @@ describe("BrickVault Gateway Contract Tests", () => {
     };
 
     beforeEach(() => {
+      // Set sufficient pool amount
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(1000000000000)], // 1,000,000 USD
+        deployer
+      );
+      
       // Register Stacks address and make a deposit
       const mockEvmAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1';
       simnet.callPublicFn(
@@ -524,7 +558,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(2000000)], // 2 sBTC
+        [Cl.uint(200000000)], // 2 sBTC (8 decimals)
         address1
       );
 
@@ -561,6 +595,14 @@ describe("BrickVault Gateway Contract Tests", () => {
     };
 
     beforeEach(() => {
+      // Set sufficient pool amount
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(1000000000000)], // 1,000,000 USD
+        deployer
+      );
+      
       // Register Stacks address to EVM custodian
       const mockEvmAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1';
       simnet.callPublicFn(
@@ -572,7 +614,7 @@ describe("BrickVault Gateway Contract Tests", () => {
     });
 
     it("should provide relayer access to sBTC deposit data", () => {
-      const depositAmount = 2500000; // 2.5 sBTC
+      const depositAmount = 250000000; // 2.5 sBTC (8 decimals)
       
       // Make deposit and capture transaction data
       const { result, events } = simnet.callPublicFn(
@@ -589,7 +631,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       // Test that relayer can access sBTC amount from ft_transfer_event
       const transferEvent = events.find((e: { event: string }) => e.event === 'ft_transfer_event');
       expect(transferEvent).toBeDefined();
-      expect(transferEvent.data.amount).toBe('2500000');
+      expect(transferEvent.data.amount).toBe('250000000');
       expect(transferEvent.data.sender).toBe(address1);
     });
 
@@ -598,7 +640,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       const deposit1 = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(1000000)], // 1 sBTC
+        [Cl.uint(100000000)], // 1 sBTC (8 decimals)
         address1
       );
       
@@ -606,7 +648,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       const deposit2 = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(1000000)], // 1 sBTC (same amount)
+        [Cl.uint(100000000)], // 1 sBTC (8 decimals, same amount)
         address1
       );
       
@@ -647,7 +689,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(1000000)],
+        [Cl.uint(100000000)], // 1 sBTC (8 decimals)
         address1
       );
 
@@ -667,7 +709,7 @@ describe("BrickVault Gateway Contract Tests", () => {
     });
 
     it("should provide transaction data structure for relayer", () => {
-      const depositAmount = 1750000; // 1.75 sBTC
+      const depositAmount = 175000000; // 1.75 sBTC (8 decimals)
       
       const transactionResult = simnet.callPublicFn(
         "brick-vault-gateway",
@@ -683,12 +725,12 @@ describe("BrickVault Gateway Contract Tests", () => {
       // Test that relayer can extract key data from ft_transfer_event
       const transferEvent = transactionResult.events.find((e: { event: string }) => e.event === 'ft_transfer_event');
       expect(transferEvent).toBeDefined();
-      expect(transferEvent.data.amount).toBe('1750000');
+      expect(transferEvent.data.amount).toBe('175000000');
       expect(transferEvent.data.sender).toBe(address1);
     });
 
     it("should filter events by contract address", () => {
-      const depositAmount = 3000000; // 3 sBTC
+      const depositAmount = 300000000; // 3 sBTC (8 decimals)
       
       // Make deposit
       const transactionResult = simnet.callPublicFn(
@@ -709,13 +751,127 @@ describe("BrickVault Gateway Contract Tests", () => {
       
       const transferEvent = gatewayEvents.find((e: { event: string }) => e.event === 'ft_transfer_event');
       expect(transferEvent).toBeDefined();
-      expect(transferEvent.data.amount).toBe('3000000');
+      expect(transferEvent.data.amount).toBe('300000000');
       expect(transferEvent.data.sender).toBe(address1);
     });
 
   });
 
-  describe("Event Emission Tests", () => {
+  describe("Pool Management Tests", () => {
+    it("should return initial sBTC price (95000 USD in 8 decimals)", () => {
+      const { result } = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-sbtc-price-usd",
+        [],
+        address1
+      );
+      
+      console.log('get-sbtc-price-usd result:', result)
+      
+      expect(result).toBeDefined();
+      expect(result.type).toBe('ok');
+      expect(result.value.type).toBe('uint');
+      expect(result.value.value).toBe(9500000000000n); // $95,000 in 8 decimals
+    });
+
+    it("should return initial pool amount (0 USD)", () => {
+      const { result } = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-pool-amount-usd",
+        [],
+        address1
+      );
+      
+      console.log('get-pool-amount-usd result:', result)
+      
+      expect(result).toBeDefined();
+      expect(result.type).toBe('ok');
+      expect(result.value.type).toBe('uint');
+      expect(result.value.value).toBe(0n);
+    });
+
+    it("should allow owner to set pool amount", () => {
+      const poolAmount = 100000000000n; // 100K USD with 6 decimals (100,000 * 1,000,000)
+      
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(poolAmount)],
+        deployer
+      );
+      
+      expect(result).toBeDefined();
+      expect(result.type).toBe('ok');
+      expect(result.value.type).toBe('true');
+
+      // Verify pool amount was set
+      const { result: getResult } = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-pool-amount-usd",
+        [],
+        address1
+      );
+      
+      expect(getResult.value.value).toBe(poolAmount);
+    });
+
+    it("should not allow non-owner to set pool amount", () => {
+      const poolAmount = 100000000000n;
+      
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(poolAmount)],
+        address1 // Not owner
+      );
+      
+      expect(result).toBeDefined();
+      expect(result.value.type).toBe('err');
+      expect(result.value.value.value).toBe(101n); // ERR-NOT-OWNER
+    });
+
+    it("should allow owner to update sBTC price", () => {
+      const newPrice = 10000000000000n; // $100,000 in 8 decimals
+      
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-sbtc-price-usd",
+        [Cl.uint(newPrice)],
+        deployer
+      );
+      
+      expect(result).toBeDefined();
+      expect(result.type).toBe('ok');
+      expect(result.value.type).toBe('true');
+
+      // Verify price was updated
+      const { result: getResult } = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-sbtc-price-usd",
+        [],
+        address1
+      );
+      
+      expect(getResult.value.value).toBe(newPrice);
+    });
+
+    it("should not allow non-owner to update sBTC price", () => {
+      const newPrice = 10000000000000n; // $100,000 in 8 decimals
+      
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-sbtc-price-usd",
+        [Cl.uint(newPrice)],
+        address1 // Not owner
+      );
+      
+      expect(result).toBeDefined();
+      expect(result.value.type).toBe('err');
+      expect(result.value.value.value).toBe(101n); // ERR-NOT-OWNER
+    });
+  });
+
+  describe("Pool Validation on Deposit Tests", () => {
     const evmAddressToBuffer = (evmAddress: string) => {
       const hex = evmAddress.startsWith('0x') ? evmAddress.slice(2) : evmAddress;
       return Cl.buffer(Buffer.from(hex.padStart(40, '0'), 'hex'));
@@ -732,12 +888,119 @@ describe("BrickVault Gateway Contract Tests", () => {
       );
     });
 
+    it("should fail deposit when pool amount is insufficient", () => {
+      // Set pool amount to 1000 USD (1000 * 1,000,000 = 1,000,000,000)
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(1000000000)], // 1000 USD
+        deployer
+      );
+
+      // Try to deposit 1 sBTC (worth 95,000 USD at current price)
+      // This should fail because pool only has 1000 USD
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "deposit-sbtc",
+        [Cl.uint(100000000)], // 1 sBTC (8 decimals)
+        address1
+      );
+      
+      console.log('Deposit result when pool insufficient:', result)
+      
+      expect(result).toBeDefined();
+      expect(result.value.type).toBe('err');
+      expect(result.value.value.value).toBe(111n); // ERR-INSUFFICIENT-POOL
+    });
+
+    it("should succeed deposit when pool amount is sufficient", () => {
+      // Set pool amount to 100,000 USD (100,000 * 1,000,000 = 100,000,000,000)
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(100000000000)], // 100,000 USD
+        deployer
+      );
+
+      // Deposit 1 sBTC (worth 95,000 USD at current price)
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "deposit-sbtc",
+        [Cl.uint(100000000)], // 1 sBTC (8 decimals)
+        address1
+      );
+      
+      console.log('Deposit result when pool sufficient:', result)
+      
+      expect(result).toBeDefined();
+      expect(result.type).toBe('ok');
+      expect(result.value.type).toBe('true');
+    });
+
+    it("should reduce pool amount after successful deposit", () => {
+      // Set pool amount to 100,000 USD
+      const initialPool = 100000000000n; // 100,000 * 1,000,000
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(initialPool)],
+        deployer
+      );
+
+      // Deposit 1 sBTC (worth 95,000 USD)
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "deposit-sbtc",
+        [Cl.uint(100000000)], // 1 sBTC (8 decimals)
+        address1
+      );
+
+      // Check pool amount was reduced
+      const { result } = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-pool-amount-usd",
+        [],
+        address1
+      );
+      
+      // Pool should be reduced by 95,000 USD (95,000 * 1,000,000 = 95,000,000,000)
+      // Expected: 100,000 - 95,000 = 5,000 USD = 5,000,000,000
+      const expectedPool = initialPool - 95000000000n;
+      expect(result.value.value).toBe(expectedPool);
+    });
+  });
+
+  describe("Event Emission Tests", () => {
+    const evmAddressToBuffer = (evmAddress: string) => {
+      const hex = evmAddress.startsWith('0x') ? evmAddress.slice(2) : evmAddress;
+      return Cl.buffer(Buffer.from(hex.padStart(40, '0'), 'hex'));
+    };
+
+    beforeEach(() => {
+      // Set sufficient pool amount
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(1000000000000)], // 1,000,000 USD
+        deployer
+      );
+      
+      // Register Stacks address to EVM custodian
+      const mockEvmAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1';
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "register-stacks-address",
+        [evmAddressToBuffer(mockEvmAddress)],
+        address1
+      );
+    });
+
     it("should emit deposit event with correct format", () => {
       // Make deposit and check events
       const { events } = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(2000000)],
+        [Cl.uint(200000000)], // 2 sBTC (8 decimals)
         address1
       );
 

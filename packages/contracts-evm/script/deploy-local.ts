@@ -1,4 +1,5 @@
 import { ethers } from 'hardhat';
+import { Options } from '@layerzerolabs/lz-v2-utilities';
 
 async function main() {
   console.log('🚀 Starting BrickVault Property Investment Platform Deployment...\n');
@@ -247,11 +248,14 @@ async function main() {
   // 10.2 Fund the StacksCrossChainManager liquidity pool
   console.log('\n🔟.2️⃣ Funding StacksCrossChainManager liquidity pool...');
   // First, hub user wraps USDC to OFTUSDC via adapter
-  const poolFundAmount = ethers.parseUnits('50000', 6); // 50K USDC
-  const poolFundAmountOFT = ethers.parseUnits('50000', 18); // 50K OFTUSDC (18 decimals)
+  const poolFundAmount = ethers.parseUnits('100000', 6); // 100K USDC
+  const poolFundAmountOFT = ethers.parseUnits('100000', 18); // 100K OFTUSDC (18 decimals)
   
   // Approve adapter to spend USDC
   await mockUSDCHub.connect(deployer).approve(await usdcOFTAdapterHub.getAddress(), poolFundAmount);
+  
+  // Encode proper LayerZero V2 options using the official utility
+  const options = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
   
   // Convert USDC to OFTUSDC via adapter (same-chain wrapping on hub)
   const sendParam = {
@@ -259,19 +263,19 @@ async function main() {
     to: ethers.zeroPadValue(deployer.address, 32),
     amountLD: poolFundAmount,
     minAmountLD: poolFundAmount,
-    extraOptions: '0x',
+    extraOptions: options,
     composeMsg: '0x',
     oftCmd: '0x'
   };
   
   const [nativeFee] = await usdcOFTAdapterHub.quoteSend(sendParam, false);
   await usdcOFTAdapterHub.connect(deployer).send(sendParam, { nativeFee, lzTokenFee: 0 }, deployer.address, { value: nativeFee });
-  console.log('✅ Converted 50K USDC → OFTUSDC via adapter');
+  console.log('✅ Converted 100K USDC → OFTUSDC via adapter');
   
   // Fund the liquidity pool
   await oftUSDC.connect(deployer).approve(await stacksManager.getAddress(), poolFundAmountOFT);
   await stacksManager.connect(deployer).fundLiquidityPool(poolFundAmountOFT);
-  console.log('✅ Funded liquidity pool with 50K OFTUSDC (backed by locked USDC)');
+  console.log('✅ Funded liquidity pool with 100K OFTUSDC (backed by locked USDC)');
   
   const poolBalance = await stacksManager.getPoolBalance();
   console.log('✅ Pool balance:', ethers.formatUnits(poolBalance, 18), 'OFTUSDC');

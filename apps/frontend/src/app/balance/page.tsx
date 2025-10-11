@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, usePublicClient } from 'wagmi'
 import { parseUnits, formatUnits, pad } from 'viem'
-import { MOCK_USDC_ABI, OFT_USDC_ABI, USDC_OFT_ADAPTER_ABI, PROPERTY_VAULT_GOVERNANCE_ABI } from '@brickvault/abi'
+import { MOCK_USDC_ABI, OFT_USDC_ABI, USDC_OFT_ADAPTER_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, STACKS_CROSS_CHAIN_MANAGER_ABI } from '@brickvault/abi'
 import { Options } from '@layerzerolabs/lz-v2-utilities'
 import { CONTRACT_ADDRESSES, TOKEN_DECIMALS, LAYERZERO_CONFIG } from '../../config/contracts'
 import { Header } from '@/components/Header'
@@ -91,6 +91,26 @@ export default function BalancePage() {
   const [stacksAccount, setStacksAccount] = useState<StacksAccount | null>(null)
   const [stacksConnected, setStacksConnected] = useState(false)
   
+  // Load Stacks account from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedAccount = localStorage.getItem('stacksAccount')
+      if (savedAccount) {
+        try {
+          const account = JSON.parse(savedAccount)
+          setStacksAccount(account)
+          setStacksConnected(true)
+          
+          // Check registration status
+          checkRegistrationStatus(account.address).catch(console.error)
+        } catch (error) {
+          console.error('Failed to parse saved Stacks account:', error)
+          localStorage.removeItem('stacksAccount')
+        }
+      }
+    }
+  }, [])
+  
   // Registration state
   const [evmCustodianAddress, setEvmCustodianAddress] = useState('')
   const [isRegistering, setIsRegistering] = useState(false)
@@ -122,9 +142,9 @@ export default function BalancePage() {
   })
   
   // Configuration for local devnet
+  // NOTE: Contract uses 6 decimals for sBTC (min-deposit-amount is u1000000)
   const [mockMinDeposit] = useState('1') // 1 sBTC minimum
   const [mockTotalLocked] = useState('15.7') // Mock total value locked
-  const SBTC_PRICE_USD = 95000 // $95,000 per sBTC
 
   useEffect(() => {
     setIsClient(true)
@@ -227,6 +247,17 @@ export default function BalancePage() {
     args: evmAddress ? [evmAddress, CONTRACTS.USDCOFTAdapterSpoke as `0x${string}`] : undefined,
   })
 
+  // Read sBTC price from StacksCrossChainManager
+  const { data: sbtcPriceData } = useReadContract({
+    address: CONTRACT_ADDRESSES.StacksCrossChainManager as `0x${string}`,
+    abi: extractAbi(STACKS_CROSS_CHAIN_MANAGER_ABI),
+    functionName: 'getSbtcPrice',
+  })
+
+  // Convert sBTC price from contract (8 decimals) to number
+  // getSbtcPrice returns tuple: (price, isValid)
+  const SBTC_PRICE_USD = sbtcPriceData ? parseFloat(formatUnits((sbtcPriceData as [bigint, boolean])[0], 8)) : 95000
+
   // ===== STACKS FUNCTIONS =====
 
   // Helper function to update account state with balances
@@ -240,15 +271,22 @@ export default function BalancePage() {
       fetchSbtcBalance(stxAddress)
     ])
     
-    setStacksAccount({
+    const accountData = {
       address: stxAddress,
       balance: stxBalance,
       sbtcBalance: sbtcBalance,
       isConnected: true,
       btcAddress: btcAddress || '',
       publicKey: publicKey
-    })
+    }
+    
+    setStacksAccount(accountData)
     setStacksConnected(true)
+    
+    // Save to localStorage for cross-page persistence
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('stacksAccount', JSON.stringify(accountData))
+    }
     
     console.log('✅ Connected to Stacks wallet:', stxAddress)
     console.log('📊 STX Balance:', stxBalance)
@@ -303,6 +341,12 @@ export default function BalancePage() {
     setStacksAccount(null)
     setStacksConnected(false)
     setRegistrationStep('idle')
+    
+    // Remove from localStorage
+    if (typeof window !== 'undefined') {
+      localStorage.removeItem('stacksAccount')
+    }
+    
     console.log('User disconnected')
   }
 
@@ -580,15 +624,10 @@ export default function BalancePage() {
     try {
       const amountMicro = Math.floor(amount * 100000000)
       const arg = uintCV(amountMicro);
-
-      console.log('Deposit amount:', amount, 'sBTC')
-      console.log('Deposit amount micro:', amountMicro, '(8 decimals)')
       
       const postCondition = Pc.principal(stacksAccount.address)
         .willSendLte(amountMicro)
         .ft('ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-token', 'sbtc-token');
-      
-      console.log('Post-condition created:', postCondition)
       
       // @ts-ignore - v8+ API may not have complete type definitions yet
       const response = await stacksRequest('stx_callContract', {
@@ -598,13 +637,10 @@ export default function BalancePage() {
         postConditions: [postCondition],
         network: 'devnet'
       })
-      console.log('Deposit response:', response)
 
       if (!response.txid) {
         throw new Error('No transaction ID returned from deposit')
       }
-
-      console.log('Deposit transaction ID:', response.txid)
       
       const depositId = Date.now().toString()
       const expectedOFTUSDC = (parseFloat(depositAmount) * SBTC_PRICE_USD).toLocaleString()
@@ -630,7 +666,7 @@ export default function BalancePage() {
     } catch (error) {
       console.error('Deposit failed:', error)
       setDepositStep('error')
-      alert('Deposit failed. Please try again.')
+      alert(`Deposit failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
   }
 
@@ -1867,7 +1903,7 @@ export default function BalancePage() {
                     />
                     {depositAmount && (
                       <p className="text-sm text-muted-foreground mt-1">
-                        You will receive approximately {(parseFloat(depositAmount) * SBTC_PRICE_USD).toLocaleString()} OFTUSDC (at ${SBTC_PRICE_USD.toLocaleString()}/sBTC)
+                        You will receive approximately {(parseFloat(depositAmount) * SBTC_PRICE_USD).toLocaleString()} OFTUSDC (at ${SBTC_PRICE_USD.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}/sBTC)
                       </p>
                     )}
                   </div>

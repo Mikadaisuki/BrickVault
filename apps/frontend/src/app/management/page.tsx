@@ -3,10 +3,20 @@
 import { useState, useEffect } from 'react'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from 'wagmi'
 import { Building2, Users, Settings, Plus, Pause, Play, DollarSign, AlertTriangle, Eye, MapPin, Calendar, CheckCircle, FileText, TrendingUp, X, Clock, Vote, Loader2, ExternalLink, Copy, CheckCircle2, Coins, RefreshCw } from 'lucide-react'
-import { PROPERTY_REGISTRY_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, PROPERTY_DAO_ABI, PROPERTY_DAO_FACTORY_ABI } from '@brickvault/abi'
+import { PROPERTY_REGISTRY_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, PROPERTY_DAO_ABI, PROPERTY_DAO_FACTORY_ABI, STACKS_CROSS_CHAIN_MANAGER_ABI } from '@brickvault/abi'
 import { CONTRACT_ADDRESSES } from '../../config/contracts'
 import { Header } from '@/components/Header'
 import { formatUnits, parseUnits } from 'viem'
+
+// Stacks account interface
+interface StacksAccount {
+  address: string
+  balance: string
+  sbtcBalance: string
+  isConnected: boolean
+  publicKey?: string
+  btcAddress?: string
+}
 
 interface PropertyData {
   id: number
@@ -58,6 +68,45 @@ export default function ManagementPage() {
   const [properties, setProperties] = useState<PropertyData[]>([])
   const [fetchingProperties, setFetchingProperties] = useState(false)
   const [propertiesError, setPropertiesError] = useState<string | null>(null)
+  
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'properties' | 'pool'>('properties')
+  
+  // Stacks pool data
+  const [stacksPoolAmount, setStacksPoolAmount] = useState<string>('0')
+  const [stacksSbtcPrice, setStacksSbtcPrice] = useState<string>('0')
+  const [loadingStacksData, setLoadingStacksData] = useState(false)
+  const [stacksAccount, setStacksAccount] = useState<StacksAccount | null>(null)
+  
+  // Load Stacks account from localStorage on mount
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const savedAccount = localStorage.getItem('stacksAccount')
+      if (savedAccount) {
+        try {
+          const account = JSON.parse(savedAccount)
+          setStacksAccount(account)
+        } catch (error) {
+          console.error('Failed to parse saved Stacks account:', error)
+          localStorage.removeItem('stacksAccount')
+        }
+      }
+    }
+  }, [])
+  
+  // EVM Pool management state (inline forms)
+  const [fundPoolAmount, setFundPoolAmount] = useState('')
+  const [isFundingPool, setIsFundingPool] = useState(false)
+  const [withdrawPoolAmount, setWithdrawPoolAmount] = useState('')
+  const [isWithdrawingPool, setIsWithdrawingPool] = useState(false)
+  const [evmSbtcPrice, setEvmSbtcPrice] = useState('')
+  const [isUpdatingEvmPrice, setIsUpdatingEvmPrice] = useState(false)
+  
+  // Stacks Pool management state (inline forms)
+  const [stacksPoolAmountInput, setStacksPoolAmountInput] = useState('')
+  const [isSettingStacksPool, setIsSettingStacksPool] = useState(false)
+  const [stacksSbtcPriceInput, setStacksSbtcPriceInput] = useState('')
+  const [isUpdatingStacksPrice, setIsUpdatingStacksPrice] = useState(false)
   
   // Property detail modal state
   const [selectedProperty, setSelectedProperty] = useState<PropertyData | null>(null)
@@ -140,6 +189,7 @@ export default function ManagementPage() {
 
   const registryAddress = CONTRACT_ADDRESSES.PropertyRegistry
   const propertyDAOAddress = CONTRACT_ADDRESSES.PropertyDAO
+  const stacksManagerAddress = CONTRACT_ADDRESSES.StacksCrossChainManager
   const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract()
   const publicClient = usePublicClient()
   
@@ -175,6 +225,29 @@ export default function ManagementPage() {
       enabled: !!registryAddress && isConnected && chainId === 31337,
     },
   })
+
+  // Get pool balance from StacksCrossChainManager
+  const { data: poolBalance, refetch: refetchPoolBalance } = useReadContract({
+    address: stacksManagerAddress as `0x${string}`,
+    abi: STACKS_CROSS_CHAIN_MANAGER_ABI,
+    functionName: 'getPoolBalance',
+    query: {
+      enabled: !!stacksManagerAddress && isConnected && chainId === 31337,
+    },
+  })
+
+  // Get sBTC price from StacksCrossChainManager
+  const { data: sbtcPriceData, refetch: refetchSbtcPrice } = useReadContract({
+    address: stacksManagerAddress as `0x${string}`,
+    abi: STACKS_CROSS_CHAIN_MANAGER_ABI,
+    functionName: 'getSbtcPrice',
+    query: {
+      enabled: !!stacksManagerAddress && isConnected && chainId === 31337,
+    },
+  })
+
+  // Extract price from tuple (price, isValid)
+  const sbtcPrice = sbtcPriceData ? (sbtcPriceData as [bigint, boolean])[0] : BigInt(0)
 
 
   // Fetch all properties using contract calls
@@ -377,6 +450,112 @@ export default function ManagementPage() {
       setPropertiesError('Failed to refresh properties')
     }
   }
+
+  // Fetch Stacks contract pool data
+  const fetchStacksPoolData = async () => {
+    setLoadingStacksData(true)
+    try {
+      const { deserializeCV } = await import('@stacks/transactions')
+      
+      // Fetch pool amount
+      const poolResponse = await fetch(
+        'http://localhost:3999/v2/contracts/call-read/ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM/brick-vault-gateway/get-pool-amount-usd',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sender: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+            arguments: []
+          })
+        }
+      )
+      
+      if (poolResponse.ok) {
+        const poolData = await poolResponse.json()
+        if (poolData.okay && poolData.result) {
+          try {
+            // Deserialize Clarity value
+            const clarityValue = deserializeCV(poolData.result)
+            
+            // Extract value from (ok uint) response
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const anyValue = clarityValue as any
+            if (anyValue.type === 'ok') {
+              if (anyValue.value && anyValue.value.value !== undefined) {
+                const poolAmount = BigInt(anyValue.value.value)
+                // Pool amount is in 6 decimals USD format
+                const usdAmount = (Number(poolAmount) / 1_000_000).toFixed(2)
+                setStacksPoolAmount(usdAmount)
+              }
+            }
+          } catch (parseError) {
+            console.error('Error parsing Stacks pool amount:', parseError)
+          }
+        }
+      }
+
+      // Fetch sBTC price
+      const priceResponse = await fetch(
+        'http://localhost:3999/v2/contracts/call-read/ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM/brick-vault-gateway/get-sbtc-price-usd',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sender: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+            arguments: []
+          })
+        }
+      )
+      
+      if (priceResponse.ok) {
+        const priceData = await priceResponse.json()
+        if (priceData.okay && priceData.result) {
+          try {
+            // Deserialize Clarity value
+            const clarityValue = deserializeCV(priceData.result)
+            
+            // Extract value from (ok uint) response
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const anyValue = clarityValue as any
+            if (anyValue.type === 'ok') {
+              if (anyValue.value && anyValue.value.value !== undefined) {
+                const price = BigInt(anyValue.value.value)
+                setStacksSbtcPrice(price.toString())
+              }
+            }
+          } catch (parseError) {
+            console.error('Error parsing Stacks price:', parseError)
+          }
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch Stacks pool data:', error)
+    } finally {
+      setLoadingStacksData(false)
+    }
+  }
+
+  // Fetch Stacks pool data when pool tab is active
+  useEffect(() => {
+    if (mounted && activeTab === 'pool') {
+      fetchStacksPoolData()
+    }
+  }, [mounted, activeTab])
+
+  // Load Stacks account from localStorage on mount
+  useEffect(() => {
+    if (mounted && typeof window !== 'undefined') {
+      const savedAccount = localStorage.getItem('stacksAccount')
+      if (savedAccount) {
+        try {
+          const account = JSON.parse(savedAccount)
+          setStacksAccount(account)
+        } catch (error) {
+          console.error('Failed to load Stacks account from localStorage:', error)
+        }
+      }
+    }
+  }, [mounted])
 
   // Check if current user is owner and handle network switching
   useEffect(() => {
@@ -1440,6 +1619,222 @@ export default function ManagementPage() {
     return true // 'all'
   })
 
+  // ===== EVM POOL MANAGEMENT FUNCTIONS =====
+
+  // Fund EVM pool
+  const handleFundPool = async () => {
+    if (!isOwner || !fundPoolAmount) return
+
+    if (isNaN(Number(fundPoolAmount)) || Number(fundPoolAmount) <= 0) {
+      showToast('Please enter a valid amount', 'error')
+      return
+    }
+
+    try {
+      setIsFundingPool(true)
+      const amountInWei = parseUnits(fundPoolAmount, 18)
+      
+      // First approve OFTUSDC
+      await writeContractAsync({
+        address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
+        abi: [
+          {
+            "inputs": [
+              {"internalType": "address", "name": "spender", "type": "address"},
+              {"internalType": "uint256", "name": "amount", "type": "uint256"}
+            ],
+            "name": "approve",
+            "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
+            "stateMutability": "nonpayable",
+            "type": "function"
+          }
+        ],
+        functionName: 'approve',
+        args: [stacksManagerAddress as `0x${string}`, amountInWei]
+      })
+
+      // Then fund the pool
+      await writeContractAsync({
+        address: stacksManagerAddress as `0x${string}`,
+        abi: STACKS_CROSS_CHAIN_MANAGER_ABI,
+        functionName: 'fundLiquidityPool',
+        args: [amountInWei]
+      })
+
+      showToast(`Successfully funded pool with ${fundPoolAmount} OFTUSDC`, 'success')
+      setFundPoolAmount('')
+      
+      setTimeout(() => {
+        refetchPoolBalance()
+      }, 2000)
+    } catch (error) {
+      showToast('Failed to fund pool. Please try again.', 'error')
+    } finally {
+      setIsFundingPool(false)
+    }
+  }
+
+  // Withdraw from EVM pool
+  const handleWithdrawPool = async () => {
+    if (!isOwner || !withdrawPoolAmount || !address) return
+
+    if (isNaN(Number(withdrawPoolAmount)) || Number(withdrawPoolAmount) <= 0) {
+      showToast('Please enter a valid amount', 'error')
+      return
+    }
+
+    try {
+      setIsWithdrawingPool(true)
+      const amountInWei = parseUnits(withdrawPoolAmount, 18)
+      
+      await writeContractAsync({
+        address: stacksManagerAddress as `0x${string}`,
+        abi: STACKS_CROSS_CHAIN_MANAGER_ABI,
+        functionName: 'withdrawFromLiquidityPool',
+        args: [amountInWei, address]
+      })
+
+      showToast(`Successfully withdrew ${withdrawPoolAmount} OFTUSDC from pool`, 'success')
+      setWithdrawPoolAmount('')
+      
+      setTimeout(() => {
+        refetchPoolBalance()
+      }, 2000)
+    } catch (error) {
+      showToast('Failed to withdraw from pool. Please try again.', 'error')
+    } finally {
+      setIsWithdrawingPool(false)
+    }
+  }
+
+  // Update EVM sBTC price
+  const handleUpdateEvmPrice = async () => {
+    if (!isOwner || !evmSbtcPrice) return
+
+    if (isNaN(Number(evmSbtcPrice)) || Number(evmSbtcPrice) <= 0) {
+      showToast('Please enter a valid price', 'error')
+      return
+    }
+
+    try {
+      setIsUpdatingEvmPrice(true)
+      const priceWithDecimals = parseUnits(evmSbtcPrice, 8)
+      
+      const hash = await writeContractAsync({
+        address: stacksManagerAddress as `0x${string}`,
+        abi: STACKS_CROSS_CHAIN_MANAGER_ABI,
+        functionName: 'updateSbtcPrice',
+        args: [priceWithDecimals]
+      })
+
+      showToast(`Price update transaction submitted! Hash: ${hash.slice(0, 10)}...`, 'success')
+      
+      await publicClient?.waitForTransactionReceipt({ hash })
+      
+      showToast(`Successfully updated EVM sBTC price to $${evmSbtcPrice}`, 'success')
+      setEvmSbtcPrice('')
+      
+      setTimeout(() => {
+        refetchSbtcPrice()
+      }, 1000)
+    } catch (error) {
+      showToast(`Failed to update sBTC price: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+    } finally {
+      setIsUpdatingEvmPrice(false)
+    }
+  }
+
+  // ===== STACKS POOL MANAGEMENT FUNCTIONS =====
+
+  // Set Stacks pool amount
+  const handleSetStacksPool = async () => {
+    if (!stacksAccount?.address || !stacksPoolAmountInput) {
+      showToast('Please connect Stacks wallet and enter amount', 'error')
+      return
+    }
+
+    if (isNaN(Number(stacksPoolAmountInput)) || Number(stacksPoolAmountInput) < 0) {
+      showToast('Please enter a valid amount', 'error')
+      return
+    }
+
+    try {
+      setIsSettingStacksPool(true)
+      
+      const amountWithDecimals = Math.floor(parseFloat(stacksPoolAmountInput) * 1_000_000)
+      const { uintCV } = await import('@stacks/transactions')
+      const { request: stacksRequest } = await import('@stacks/connect')
+      
+      const response = await stacksRequest('stx_callContract', {
+        contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
+        functionName: 'set-pool-amount-usd',
+        functionArgs: [uintCV(amountWithDecimals)],
+        network: 'devnet'
+      })
+
+      if (response.txid) {
+        showToast(`Transaction submitted! TxID: ${response.txid.slice(0, 8)}...`, 'success')
+      } else {
+        showToast(`Successfully set Stacks pool amount to $${stacksPoolAmountInput}`, 'success')
+      }
+      
+      setStacksPoolAmountInput('')
+      
+      setTimeout(() => {
+        fetchStacksPoolData()
+      }, 3000)
+    } catch (error) {
+      showToast(`Failed to set Stacks pool amount: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+    } finally {
+      setIsSettingStacksPool(false)
+    }
+  }
+
+  // Update Stacks sBTC price
+  const handleUpdateStacksPrice = async () => {
+    if (!stacksAccount?.address || !stacksSbtcPriceInput) {
+      showToast('Please connect Stacks wallet and enter price', 'error')
+      return
+    }
+
+    if (isNaN(Number(stacksSbtcPriceInput)) || Number(stacksSbtcPriceInput) <= 0) {
+      showToast('Please enter a valid price', 'error')
+      return
+    }
+
+    try {
+      setIsUpdatingStacksPrice(true)
+      
+      // Convert plain USD value to 8 decimals (e.g., 95000.99 → 9500099000000)
+      const priceWith8Decimals = Math.floor(parseFloat(stacksSbtcPriceInput) * 100000000)
+      const { uintCV } = await import('@stacks/transactions')
+      const { request: stacksRequest } = await import('@stacks/connect')
+      
+      const response = await stacksRequest('stx_callContract', {
+        contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
+        functionName: 'set-sbtc-price-usd',
+        functionArgs: [uintCV(priceWith8Decimals)],
+        network: 'devnet'
+      })
+
+      if (response.txid) {
+        showToast(`Transaction submitted! TxID: ${response.txid.slice(0, 8)}...`, 'success')
+      } else {
+        showToast(`Successfully updated Stacks sBTC price to $${stacksSbtcPriceInput}`, 'success')
+      }
+      
+      setStacksSbtcPriceInput('')
+      
+      setTimeout(() => {
+        fetchStacksPoolData()
+      }, 3000)
+    } catch (error) {
+      showToast(`Failed to update Stacks sBTC price: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
+    } finally {
+      setIsUpdatingStacksPrice(false)
+    }
+  }
+
   // Access denied component
   if (!mounted) {
     return (
@@ -1566,6 +1961,35 @@ export default function ManagementPage() {
           <p className="text-muted-foreground">Manage your BrickVault platform and properties</p>
         </div>
 
+        {/* Tab Switcher */}
+        <div className="bg-card rounded-lg border p-2 mb-8 grid grid-cols-2 gap-2">
+          <button
+            onClick={() => setActiveTab('properties')}
+            className={`py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+              activeTab === 'properties'
+                ? 'bg-primary text-primary-foreground shadow-md'
+                : 'bg-transparent text-muted-foreground hover:bg-accent'
+            }`}
+          >
+            <Building2 className="h-5 w-5" />
+            <span>Properties Management</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('pool')}
+            className={`py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+              activeTab === 'pool'
+                ? 'bg-primary text-primary-foreground shadow-md'
+                : 'bg-transparent text-muted-foreground hover:bg-accent'
+            }`}
+          >
+            <Coins className="h-5 w-5" />
+            <span>Pool Management</span>
+          </button>
+        </div>
+
+      {/* Properties Management Tab */}
+      {activeTab === 'properties' && (
+        <>
       {/* Network, Connection & Owner Status */}
       <div className="bg-card rounded-lg border p-6 mb-6">
         <h2 className="text-xl font-semibold mb-4 flex items-center">
@@ -3647,6 +4071,394 @@ export default function ManagementPage() {
             </div>
           </div>
         </div>
+      )}
+        </>
+      )}
+
+      {/* Pool Management Tab */}
+      {activeTab === 'pool' && (
+        <>
+          {/* Pool Overview - EVM */}
+          <div className="bg-card rounded-lg border p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-xl font-semibold flex items-center">
+                <Coins className="mr-2 h-5 w-5" />
+                EVM Liquidity Pool (StacksCrossChainManager)
+              </h2>
+              <button
+                onClick={() => {
+                  refetchPoolBalance()
+                  refetchSbtcPrice()
+                }}
+                disabled={loadingStacksData}
+                className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
+              >
+                <RefreshCw className={`h-3 w-3 ${loadingStacksData ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
+            
+            {/* Pool Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              <div className="bg-accent rounded-lg p-4">
+                <h3 className="text-sm text-muted-foreground mb-2">EVM Pool Balance</h3>
+                <p className="text-2xl font-bold text-primary">
+                  {poolBalance ? formatUnits(poolBalance as bigint, 18) : '0'} OFTUSDC
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Available for Stacks deposits</p>
+              </div>
+              <div className="bg-accent rounded-lg p-4">
+                <h3 className="text-sm text-muted-foreground mb-2">EVM sBTC Price</h3>
+                <p className="text-2xl font-bold text-green-600">
+                  ${sbtcPrice ? parseFloat(formatUnits(sbtcPrice, 8)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Current price (8 decimals)</p>
+              </div>
+              <div className="bg-accent rounded-lg p-4">
+                <h3 className="text-sm text-muted-foreground mb-2">EVM Pool USD Value</h3>
+                <p className="text-2xl font-bold text-blue-600">
+                  {poolBalance ? `$${(parseFloat(formatUnits(poolBalance as bigint, 18))).toLocaleString()}` : '$0'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">OFTUSDC value in USD</p>
+              </div>
+            </div>
+
+            {/* EVM Management Actions */}
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-semibold mb-3 text-muted-foreground">EVM Pool Management</h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                {/* Fund Pool */}
+                <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Plus className="h-5 w-5 text-green-600" />
+                    <h4 className="font-semibold text-green-800">Fund Pool</h4>
+                  </div>
+                  <input
+                    type="number"
+                    value={fundPoolAmount}
+                    onChange={(e) => setFundPoolAmount(e.target.value)}
+                    placeholder="Amount (OFTUSDC)"
+                    className="w-full p-2 border rounded mb-2 text-sm"
+                    disabled={isFundingPool}
+                  />
+                  <button
+                    onClick={handleFundPool}
+                    disabled={isFundingPool || !fundPoolAmount || isNaN(Number(fundPoolAmount)) || Number(fundPoolAmount) <= 0}
+                    className="w-full px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 transition-colors text-sm flex items-center justify-center gap-2"
+                  >
+                    {isFundingPool ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Funding...</span>
+                      </>
+                    ) : (
+                      'Add to Pool'
+                    )}
+                  </button>
+                </div>
+
+                {/* Update Price */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingUp className="h-5 w-5 text-blue-600" />
+                    <h4 className="font-semibold text-blue-800">Update Price</h4>
+                  </div>
+                  <input
+                    type="number"
+                    value={evmSbtcPrice}
+                    onChange={(e) => setEvmSbtcPrice(e.target.value)}
+                    placeholder="Price (USD)"
+                    className="w-full p-2 border rounded mb-2 text-sm"
+                    disabled={isUpdatingEvmPrice}
+                  />
+                  <button
+                    onClick={handleUpdateEvmPrice}
+                    disabled={isUpdatingEvmPrice || !evmSbtcPrice || isNaN(Number(evmSbtcPrice)) || Number(evmSbtcPrice) <= 0}
+                    className="w-full px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm flex items-center justify-center gap-2"
+                  >
+                    {isUpdatingEvmPrice ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Updating...</span>
+                      </>
+                    ) : (
+                      'Update sBTC Price'
+                    )}
+                  </button>
+                </div>
+
+                {/* Withdraw */}
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <DollarSign className="h-5 w-5 text-orange-600" />
+                    <h4 className="font-semibold text-orange-800">Withdraw</h4>
+                  </div>
+                  <input
+                    type="number"
+                    value={withdrawPoolAmount}
+                    onChange={(e) => setWithdrawPoolAmount(e.target.value)}
+                    placeholder="Amount (OFTUSDC)"
+                    className="w-full p-2 border rounded mb-2 text-sm"
+                    disabled={isWithdrawingPool}
+                  />
+                  <button
+                    onClick={handleWithdrawPool}
+                    disabled={isWithdrawingPool || !withdrawPoolAmount || isNaN(Number(withdrawPoolAmount)) || Number(withdrawPoolAmount) <= 0}
+                    className="w-full px-3 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 transition-colors text-sm flex items-center justify-center gap-2"
+                  >
+                    {isWithdrawingPool ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Withdrawing...</span>
+                      </>
+                    ) : (
+                      'Withdraw from Pool'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Pool Overview - Stacks */}
+          <div className="bg-card rounded-lg border p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <h2 className="text-xl font-semibold flex items-center">
+                  <Building2 className="mr-2 h-5 w-5" />
+                  Stacks Gateway Pool (brick-vault-gateway)
+                </h2>
+                {/* Stacks Wallet Connection Status */}
+                {stacksAccount ? (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-green-50 border border-green-200 rounded-full">
+                    <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                    <span className="text-xs text-green-800 font-medium">
+                      {stacksAccount.address.slice(0, 8)}...{stacksAccount.address.slice(-4)}
+                    </span>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 px-3 py-1 bg-red-50 border border-red-200 rounded-full">
+                    <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                    <span className="text-xs text-red-800 font-medium">Not Connected</span>
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={fetchStacksPoolData}
+                disabled={loadingStacksData}
+                className="flex items-center space-x-1 px-3 py-1 text-sm bg-orange-100 text-orange-800 rounded hover:bg-orange-200 disabled:opacity-50 transition-colors"
+              >
+                <RefreshCw className={`h-3 w-3 ${loadingStacksData ? 'animate-spin' : ''}`} />
+                <span>Refresh</span>
+              </button>
+            </div>
+            
+            {/* Pool Stats */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+              <div className="bg-accent rounded-lg p-4">
+                <h3 className="text-sm text-muted-foreground mb-2">Stacks Pool Amount (USD)</h3>
+                <p className="text-2xl font-bold text-orange-600">
+                  ${stacksPoolAmount ? parseFloat(stacksPoolAmount).toLocaleString() : '0'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Max capacity for deposits (6 decimals)</p>
+              </div>
+              <div className="bg-accent rounded-lg p-4">
+                <h3 className="text-sm text-muted-foreground mb-2">Stacks sBTC Price</h3>
+                <p className="text-2xl font-bold text-green-600">
+                  ${stacksSbtcPrice && stacksSbtcPrice !== '0' ? (parseFloat(stacksSbtcPrice) / 100000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Price per sBTC (8 decimals)</p>
+              </div>
+              <div className="bg-accent rounded-lg p-4">
+                <h3 className="text-sm text-muted-foreground mb-2">Pool Sync Status</h3>
+                <div className="flex items-center gap-2 mb-1">
+                  {stacksPoolAmount === (poolBalance ? (parseFloat(formatUnits(poolBalance as bigint, 18))).toFixed(2) : '0') ? (
+                    <>
+                      <CheckCircle className="h-5 w-5 text-green-600" />
+                      <p className="text-lg font-bold text-green-600">Synced</p>
+                    </>
+                  ) : (
+                    <>
+                      <AlertTriangle className="h-5 w-5 text-orange-600" />
+                      <p className="text-lg font-bold text-orange-600">Out of Sync</p>
+                    </>
+                  )}
+                </div>
+                <p className="text-xs text-muted-foreground mt-1">EVM ↔ Stacks pool amounts</p>
+              </div>
+            </div>
+
+            {/* Stacks Wallet Connection Alert */}
+            {!stacksAccount && (
+              <div className="mb-4 bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5" />
+                    <div className="text-sm text-orange-800">
+                      <p className="font-medium">⚠️ Stacks Wallet Not Connected</p>
+                      <p>You must connect your Stacks wallet from the Balance page to manage Stacks pool settings. The wallet connection persists across pages.</p>
+                    </div>
+                  </div>
+                  <a
+                    href="/balance"
+                    className="px-4 py-2 bg-orange-600 text-white rounded-lg text-sm hover:bg-orange-700 transition-colors whitespace-nowrap"
+                  >
+                    Connect on Balance Page
+                  </a>
+                </div>
+              </div>
+            )}
+            
+
+            {/* Stacks Management Actions */}
+            <div className="border-t pt-4">
+              <h3 className="text-sm font-semibold mb-3 text-muted-foreground">Stacks Pool Management</h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Set Pool Amount */}
+                <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <Settings className="h-5 w-5 text-purple-600" />
+                    <h4 className="font-semibold text-purple-800">Set Pool Amount</h4>
+                  </div>
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="number"
+                      value={stacksPoolAmountInput}
+                      onChange={(e) => setStacksPoolAmountInput(e.target.value)}
+                      placeholder="Amount (USD)"
+                      className="flex-1 p-2 border rounded text-sm"
+                      disabled={isSettingStacksPool || !stacksAccount}
+                    />
+                    <button
+                      onClick={() => {
+                        if (poolBalance) {
+                          setStacksPoolAmountInput(formatUnits(poolBalance as bigint, 18))
+                        }
+                      }}
+                      disabled={isSettingStacksPool || !stacksAccount || !poolBalance}
+                      className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs hover:bg-purple-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+                    >
+                      Use EVM
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleSetStacksPool}
+                    disabled={isSettingStacksPool || !stacksAccount || !stacksPoolAmountInput || isNaN(Number(stacksPoolAmountInput)) || Number(stacksPoolAmountInput) < 0}
+                    className="w-full px-3 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 disabled:opacity-50 transition-colors text-sm flex items-center justify-center gap-2"
+                  >
+                    {isSettingStacksPool ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Setting...</span>
+                      </>
+                    ) : !stacksAccount ? (
+                      'Connect Stacks Wallet'
+                    ) : (
+                      'Set Pool Amount'
+                    )}
+                  </button>
+                </div>
+
+                {/* Update Price */}
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <TrendingUp className="h-5 w-5 text-blue-600" />
+                    <h4 className="font-semibold text-blue-800">Update Price</h4>
+                  </div>
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="number"
+                      value={stacksSbtcPriceInput}
+                      onChange={(e) => setStacksSbtcPriceInput(e.target.value)}
+                      placeholder="Price (USD)"
+                      className="flex-1 p-2 border rounded text-sm"
+                      disabled={isUpdatingStacksPrice || !stacksAccount}
+                    />
+                    <button
+                      onClick={() => {
+                        if (sbtcPrice) {
+                          // EVM price is in 8 decimals, convert to plain USD for user-friendly input
+                          // E.g., 9500000000000 (8 dec) → 95000 (plain USD)
+                          const evmPriceValue = parseFloat(formatUnits(sbtcPrice, 8))
+                          setStacksSbtcPriceInput(Math.floor(evmPriceValue).toString())
+                        }
+                      }}
+                      disabled={isUpdatingStacksPrice || !stacksAccount || !sbtcPrice}
+                      className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+                    >
+                      Use EVM
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleUpdateStacksPrice}
+                    disabled={isUpdatingStacksPrice || !stacksAccount || !stacksSbtcPriceInput || isNaN(Number(stacksSbtcPriceInput)) || Number(stacksSbtcPriceInput) <= 0}
+                    className="w-full px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm flex items-center justify-center gap-2"
+                  >
+                    {isUpdatingStacksPrice ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Updating...</span>
+                      </>
+                    ) : !stacksAccount ? (
+                      'Connect Stacks Wallet'
+                    ) : (
+                      'Update sBTC Price'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            {/* Sync warning if out of sync */}
+            {stacksPoolAmount !== (poolBalance ? (parseFloat(formatUnits(poolBalance as bigint, 18))).toFixed(2) : '0') && (
+              <div className="mt-4 bg-orange-50 border border-orange-200 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-orange-600 mt-0.5" />
+                  <div className="text-sm text-orange-800">
+                    <p className="font-medium">Pool Amounts Not Synced</p>
+                    <p>EVM Pool: ${poolBalance ? parseFloat(formatUnits(poolBalance as bigint, 18)).toLocaleString() : '0'} | Stacks Pool: ${stacksPoolAmount ? parseFloat(stacksPoolAmount).toLocaleString() : '0'}</p>
+                    <p className="mt-1">Update the Stacks pool amount to match the EVM pool for proper validation.</p>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Pool Information */}
+          <div className="bg-card rounded-lg border p-6">
+            <h2 className="text-xl font-semibold mb-4 flex items-center">
+              <AlertTriangle className="mr-2 h-5 w-5" />
+              Pool Information
+            </h2>
+            <div className="space-y-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-4 w-4 text-blue-600 mt-0.5" />
+                  <div className="text-sm text-blue-800">
+                    <p className="font-medium mb-2">How the Liquidity Pool Works</p>
+                    <ul className="space-y-1 list-disc list-inside">
+                      <li>Stacks users deposit sBTC to the gateway contract</li>
+                      <li>The relayer calculates the USD value using the sBTC price</li>
+                      <li>OFTUSDC is transferred from this pool to the user's EVM custodian address</li>
+                      <li>All OFTUSDC in the pool is backed by locked USDC from the adapter</li>
+                      <li>Pool capacity ensures controlled liquidity for Stacks deposits</li>
+                    </ul>
+                  </div>
+                </div>
+              </div>
+
+              <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                <div className="flex items-start gap-2">
+                  <CheckCircle className="h-4 w-4 text-green-600 mt-0.5" />
+                  <div className="text-sm text-green-800">
+                    <p className="font-medium mb-2">Pool Status</p>
+                    <p>The liquidity pool is fully backed by USDC locked in the USDCOFTAdapter. No unbacked minting occurs.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
       )}
       </div>
     </div>

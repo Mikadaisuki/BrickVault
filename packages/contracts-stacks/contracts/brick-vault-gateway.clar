@@ -13,12 +13,17 @@
 (define-constant ERR-STACKS-ADDRESS-ALREADY-REGISTERED (err u108))
 (define-constant ERR-STACKS-ADDRESS-NOT-REGISTERED (err u109))
 (define-constant ERR-TRANSFER-FAILED (err u110))
+(define-constant ERR-INSUFFICIENT-POOL (err u111))
 
 ;; Data variables
 (define-data-var contract-owner principal tx-sender)
 (define-data-var is-paused bool false)
-(define-data-var min-deposit-amount uint u1000000) ;; 1 sBTC minimum (6 decimals)
+(define-data-var min-deposit-amount uint u100000000) ;; 1 sBTC minimum (8 decimals: 100,000,000 = 1 sBTC)
 (define-data-var total-sbtc-locked uint u0)
+
+;; Pool management (mirrors EVM pool)
+(define-data-var pool-amount-usd uint u0) ;; Available pool in USD (6 decimals: 1 USD = 1,000,000)
+(define-data-var sbtc-price-usd uint u9500000000000) ;; sBTC price in USD (8 decimals: $95,000 = 9,500,000,000,000)
 
 ;; User deposit tracking (simplified - no property-specific logic)
 (define-map user-sbtc-deposits {user: principal} uint)
@@ -50,6 +55,30 @@
       true))
     (err ERR-NOT-OWNER)))
 
+(define-public (set-pool-amount-usd (amount uint))
+  (if (is-eq tx-sender (var-get contract-owner))
+    (ok (begin
+      (var-set pool-amount-usd amount)
+      true))
+    (err ERR-NOT-OWNER)))
+
+(define-public (set-sbtc-price-usd (price uint))
+  (if (is-eq tx-sender (var-get contract-owner))
+    (ok (begin
+      (var-set sbtc-price-usd price)
+      true))
+    (err ERR-NOT-OWNER)))
+
+;; Helper function to calculate USD value from sBTC amount
+;; Matches EVM StacksCrossChainManager calculation logic
+;; sBTC token uses 8 decimals (100000000 = 1 sBTC)
+;; Price uses 8 decimals (9500000000000 = $95,000)
+;; USD pool uses 6 decimals (1000000 = $1)
+;; Formula: (sbtc-amount * price) / 10^10 = USD value with 6 decimals
+;; Example: (100000000 * 9500000000000) / 10000000000 = 95000000000 = $95,000 in 6 decimals
+(define-private (calculate-usd-value (sbtc-amount uint))
+  (/ (* sbtc-amount (var-get sbtc-price-usd)) u10000000000))
+
 ;; Self-register Stacks address to EVM custodian mapping
 ;; evm-custodian should be a 20-byte buffer representing the EVM address (without 0x prefix)
 (define-public (register-stacks-address (evm-custodian (buff 20)))
@@ -79,36 +108,44 @@
     (err ERR-STACKS-ADDRESS-NOT-REGISTERED)))
 
 ;; Simplified sBTC deposit function - transfers sBTC to contract
+;; Checks pool availability before accepting deposit
 (define-public (deposit-sbtc (amount uint))
-  (if (and 
-        (not (var-get is-paused))
-        (>= amount (var-get min-deposit-amount))
-        (is-some (map-get? stacks-to-evm-custodian {stacks-address: tx-sender})))
-    (match (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
-             amount 
-             tx-sender 
-             (as-contract tx-sender) 
-             none)
-      transfer-result (ok (begin
-        ;; Update user deposit record
-        (map-set user-sbtc-deposits {user: tx-sender} 
-          (+ (default-to u0 (map-get? user-sbtc-deposits {user: tx-sender})) amount))
-        
-        ;; Update global total
-        (var-set total-sbtc-locked (+ (var-get total-sbtc-locked) amount))
-        
-        ;; Record deposit timestamp
-        (map-set user-deposit-timestamps {user: tx-sender} u0)
-        
-        ;; Emit deposit event for cross-chain relayer (Type 1: deposit)
-        ;; This will trigger OFTUSDC minting to the user's EVM custodian address
-        (print "deposit:event-emitted")
-        
-        true))
-      err-code (err ERR-TRANSFER-FAILED))
-    (err (if (var-get is-paused) ERR-CONTRACT-PAUSED
-           (if (< amount (var-get min-deposit-amount)) ERR-INVALID-AMOUNT
-             ERR-STACKS-ADDRESS-NOT-REGISTERED)))))
+  (let ((usd-value (calculate-usd-value amount))
+        (current-pool (var-get pool-amount-usd)))
+    (if (and 
+          (not (var-get is-paused))
+          (>= amount (var-get min-deposit-amount))
+          (is-some (map-get? stacks-to-evm-custodian {stacks-address: tx-sender}))
+          (>= current-pool usd-value))
+      (match (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
+               amount 
+               tx-sender 
+               (as-contract tx-sender) 
+               none)
+        transfer-result (ok (begin
+          ;; Update user deposit record
+          (map-set user-sbtc-deposits {user: tx-sender} 
+            (+ (default-to u0 (map-get? user-sbtc-deposits {user: tx-sender})) amount))
+          
+          ;; Update global total
+          (var-set total-sbtc-locked (+ (var-get total-sbtc-locked) amount))
+          
+          ;; Reduce pool amount by USD value of deposit
+          (var-set pool-amount-usd (- current-pool usd-value))
+          
+          ;; Record deposit timestamp
+          (map-set user-deposit-timestamps {user: tx-sender} u0)
+          
+          ;; Emit deposit event for cross-chain relayer (Type 1: deposit)
+          ;; This will trigger OFTUSDC minting to the user's EVM custodian address
+          (print "deposit:event-emitted")
+          
+          true))
+        err-code (err ERR-TRANSFER-FAILED))
+      (err (if (var-get is-paused) ERR-CONTRACT-PAUSED
+             (if (< amount (var-get min-deposit-amount)) ERR-INVALID-AMOUNT
+               (if (is-none (map-get? stacks-to-evm-custodian {stacks-address: tx-sender})) ERR-STACKS-ADDRESS-NOT-REGISTERED
+                 ERR-INSUFFICIENT-POOL)))))))
 
 ;; Note: Users cannot withdraw sBTC back
 ;; Once sBTC is deposited, it's locked and OFTUSDC is minted on EVM
@@ -140,6 +177,12 @@
 (define-read-only (is-contract-paused)
   (ok (var-get is-paused)))
 
+(define-read-only (get-pool-amount-usd)
+  (ok (var-get pool-amount-usd)))
+
+(define-read-only (get-sbtc-price-usd)
+  (ok (var-get sbtc-price-usd)))
+
 ;; Demo/Status function for testing
 (define-read-only (get-contract-sbtc-balance)
   (ok (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token get-balance (as-contract tx-sender))))
@@ -148,4 +191,6 @@
   (ok (tuple 
     (is-paused (var-get is-paused))
     (total-sbtc-locked (var-get total-sbtc-locked))
-    (min-deposit (var-get min-deposit-amount)))))
+    (min-deposit (var-get min-deposit-amount))
+    (pool-amount-usd (var-get pool-amount-usd))
+    (sbtc-price-usd (var-get sbtc-price-usd)))))
