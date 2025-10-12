@@ -129,6 +129,8 @@ export default function BalancePage() {
   const [oftAmount, setOftAmount] = useState('')
   const [quotingFee, setQuotingFee] = useState(false)
   const [approvalStep, setApprovalStep] = useState<'idle' | 'approving' | 'approved' | 'sending'>('idle')
+  const [showRelayNotice, setShowRelayNotice] = useState(false)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   
   // Spoke chain state
   const [spokeUsdcAmount, setSpokeUsdcAmount] = useState('')
@@ -189,10 +191,14 @@ export default function BalancePage() {
     if (isConfirmed && approvalStep === 'sending') {
       setApprovalStep('idle')
       setApprovalHash(undefined)
+      // Show relay notice for testnet delay
+      setShowRelayNotice(true)
     }
     if (isConfirmed && spokeApprovalStep === 'sending') {
       setSpokeApprovalStep('idle')
       setApprovalHash(undefined)
+      // Show relay notice for cross-chain delay
+      setShowRelayNotice(true)
     }
     if (error) {
       setApprovalStep('idle')
@@ -202,21 +208,21 @@ export default function BalancePage() {
   }, [isConfirmed, error, approvalStep, spokeApprovalStep])
 
   // Read user balances (Hub chain)
-  const { data: usdcBalance } = useReadContract({
+  const { data: usdcBalance, refetch: refetchUsdcBalance } = useReadContract({
     address: CONTRACTS.MockUSDCHub as `0x${string}`,
     abi: MOCK_USDC_ABI_ARRAY,
     functionName: 'balanceOf',
     args: evmAddress ? [evmAddress] : undefined,
   })
 
-  const { data: oftBalance } = useReadContract({
+  const { data: oftBalance, refetch: refetchOftBalance } = useReadContract({
     address: CONTRACTS.OFTUSDC as `0x${string}`,
     abi: OFT_USDC_ABI_ARRAY,
     functionName: 'balanceOf',
     args: evmAddress ? [evmAddress] : undefined,
   })
 
-  const { data: vaultBalance } = useReadContract({
+  const { data: vaultBalance, refetch: refetchVaultBalance } = useReadContract({
     address: CONTRACTS.PropertyVault as `0x${string}`,
     abi: PROPERTY_VAULT_GOVERNANCE_ABI_ARRAY,
     functionName: 'balanceOf',
@@ -224,12 +230,29 @@ export default function BalancePage() {
   })
 
   // Read user balances (Spoke chain)
-  const { data: spokeUsdcBalance } = useReadContract({
+  const { data: spokeUsdcBalance, refetch: refetchSpokeUsdcBalance } = useReadContract({
     address: CONTRACTS.MockUSDCSpoke as `0x${string}`,
     abi: MOCK_USDC_ABI_ARRAY,
     functionName: 'balanceOf',
     args: evmAddress ? [evmAddress] : undefined,
   })
+
+  // Refresh all balances
+  const refreshAllBalances = async () => {
+    setIsRefreshing(true)
+    try {
+      await Promise.all([
+        refetchUsdcBalance(),
+        refetchOftBalance(),
+        refetchVaultBalance(),
+        refetchSpokeUsdcBalance(),
+      ])
+    } catch (error) {
+      console.error('Error refreshing balances:', error)
+    } finally {
+      setIsRefreshing(false)
+    }
+  }
 
   // Read allowances for USDCOFTAdapterHub
   const { data: usdcAllowance } = useReadContract({
@@ -982,8 +1005,12 @@ export default function BalancePage() {
     navigator.clipboard.writeText(text)
   }
 
-  // Check if contracts are properly configured
-  const contractsConfigured = Object.values(CONTRACTS).every(addr => addr && addr.length > 0)
+  // Check if contracts are properly configured (only check hub chain essentials)
+  const contractsConfigured = !!(
+    CONTRACTS.MockUSDCHub && 
+    CONTRACTS.USDCOFTAdapterHub && 
+    CONTRACTS.OFTUSDC
+  )
 
   // Show loading state during hydration
   if (!isClient) {
@@ -1098,10 +1125,21 @@ export default function BalancePage() {
               <>
                 {/* User Balances */}
                 <div className="bg-card rounded-lg border p-6 mb-8">
-                  <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
-                    <DollarSign className="h-6 w-6 text-primary" />
-                    Your EVM Balances
-                  </h2>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-2xl font-semibold flex items-center gap-2">
+                      <DollarSign className="h-6 w-6 text-primary" />
+                      Your EVM Balances
+                    </h2>
+                    <button
+                      onClick={refreshAllBalances}
+                      disabled={isRefreshing}
+                      className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-2"
+                      title="Refresh balances"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                      <span className="hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-accent p-4 rounded-lg">
                       <h3 className="font-semibold text-foreground">MockUSDC</h3>
@@ -1166,7 +1204,9 @@ export default function BalancePage() {
                         className="px-6 py-3 bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 transition-all duration-200 font-semibold"
                       >
                         {approvalStep === 'approving' && isPending ? 'Approving USDC...' :
-                         approvalStep === 'approved' && (quotingFee || isPending) ? 'Converting via Adapter...' :
+                         approvalStep === 'approved' && quotingFee ? 'Quoting Fee...' :
+                         approvalStep === 'sending' && isPending ? 'Sending Transaction...' :
+                         approvalStep === 'sending' && isConfirming ? 'Confirming on-chain...' :
                          quotingFee ? 'Quoting Fee...' :
                          isPending ? 'Processing...' :
                          'Approve & Convert USDC to OFTUSDC'}
@@ -1195,7 +1235,11 @@ export default function BalancePage() {
                           {approvalStep === 'sending' && (
                             <>
                               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                              <span className="text-sm text-blue-800">Step 2: Converting USDC to OFTUSDC via adapter... Please confirm in your wallet.</span>
+                              <span className="text-sm text-blue-800">
+                                {isPending ? 'Step 2: Sending transaction... Please confirm in your wallet.' :
+                                 isConfirming ? 'Step 2: Confirming transaction on-chain...' :
+                                 'Step 2: Converting USDC to OFTUSDC via adapter...'}
+                              </span>
                             </>
                           )}
                         </div>
@@ -1211,6 +1255,39 @@ export default function BalancePage() {
                           </div>
                           <div className="flex-1">
                             <h3 className="font-semibold text-lg text-blue-900 mb-2">Start Investing in Properties</h3>
+                            
+                            {/* LayerZero Relay Notice */}
+                            {showRelayNotice && (
+                              <div className="bg-orange-50 border border-orange-300 rounded-lg p-3 mb-4">
+                                <div className="flex items-start gap-2">
+                                  <Clock className="h-4 w-4 text-orange-600 mt-0.5 flex-shrink-0" />
+                                  <div className="flex-1">
+                                    <p className="text-sm text-orange-900 font-medium mb-1">⏳ Waiting for LayerZero Relay</p>
+                                    <p className="text-xs text-orange-800 mb-2">
+                                      Your transaction is confirmed! On testnets, LayerZero relay can take <strong>30 seconds to 2 minutes</strong>. 
+                                      Your OFTUSDC balance will update automatically once complete.
+                                    </p>
+                                    <div className="flex gap-2">
+                                      <button
+                                        onClick={refreshAllBalances}
+                                        disabled={isRefreshing}
+                                        className="px-2 py-1 bg-orange-600 text-white rounded text-xs hover:bg-orange-700 disabled:opacity-50 transition-colors flex items-center gap-1"
+                                      >
+                                        <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                                        Refresh Now
+                                      </button>
+                                      <button
+                                        onClick={() => setShowRelayNotice(false)}
+                                        className="px-2 py-1 bg-white text-orange-800 border border-orange-300 rounded text-xs hover:bg-orange-50 transition-colors"
+                                      >
+                                        Dismiss
+                                      </button>
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                            
                             <p className="text-blue-800 mb-4">
                               Now that you have OFTUSDC, you can explore and invest in tokenized real estate properties. 
                               Browse available properties, review their details, and start building your real estate portfolio.
@@ -1327,6 +1404,40 @@ export default function BalancePage() {
                   </div>
                 )}
 
+                {/* LayerZero Relay Notice */}
+                {showRelayNotice && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-8">
+                    <div className="flex items-start gap-3">
+                      <Clock className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-blue-900 mb-2">⏳ Waiting for LayerZero Relay</h3>
+                        <p className="text-sm text-blue-800 mb-2">
+                          Your transaction is confirmed on-chain! However, on testnets, LayerZero relay can take <strong>30 seconds to 2 minutes</strong> to complete the cross-chain message delivery.
+                        </p>
+                        <p className="text-sm text-blue-800 mb-3">
+                          Your OFTUSDC balance will update automatically once the relay is complete. You can refresh manually using the button above.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={refreshAllBalances}
+                            disabled={isRefreshing}
+                            className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm flex items-center gap-1"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                            Check Now
+                          </button>
+                          <button
+                            onClick={() => setShowRelayNotice(false)}
+                            className="px-3 py-1.5 bg-white text-blue-800 border border-blue-300 rounded-md hover:bg-blue-50 transition-colors text-sm"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 {error && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-8">
                     <div className="flex items-center">
@@ -1374,10 +1485,21 @@ export default function BalancePage() {
               <>
                 {/* User Balances */}
                 <div className="bg-card rounded-lg border p-6 mb-8">
-                  <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
-                    <DollarSign className="h-6 w-6 text-primary" />
-                    Your Spoke Chain Balances
-                  </h2>
+                  <div className="flex items-center justify-between mb-4">
+                    <h2 className="text-2xl font-semibold flex items-center gap-2">
+                      <DollarSign className="h-6 w-6 text-primary" />
+                      Your Spoke Chain Balances
+                    </h2>
+                    <button
+                      onClick={refreshAllBalances}
+                      disabled={isRefreshing}
+                      className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-2"
+                      title="Refresh balances"
+                    >
+                      <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                      <span className="hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-accent p-4 rounded-lg">
                       <h3 className="font-semibold text-foreground">Spoke MockUSDC</h3>
@@ -1438,7 +1560,9 @@ export default function BalancePage() {
                         className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-all duration-200 font-semibold"
                       >
                         {spokeApprovalStep === 'approving' && isPending ? 'Approving USDC...' :
-                         spokeApprovalStep === 'approved' && (spokeQuotingFee || isPending) ? 'Bridging to Hub...' :
+                         spokeApprovalStep === 'approved' && spokeQuotingFee ? 'Quoting Fee...' :
+                         spokeApprovalStep === 'sending' && isPending ? 'Sending Transaction...' :
+                         spokeApprovalStep === 'sending' && isConfirming ? 'Confirming on-chain...' :
                          spokeQuotingFee ? 'Quoting Fee...' :
                          isPending ? 'Processing...' :
                          'Approve & Bridge USDC to Hub'}
@@ -1467,7 +1591,11 @@ export default function BalancePage() {
                           {spokeApprovalStep === 'sending' && (
                             <>
                               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
-                              <span className="text-sm text-blue-800">Step 2: Bridging USDC to hub chain... Please confirm in your wallet.</span>
+                              <span className="text-sm text-blue-800">
+                                {isPending ? 'Step 2: Sending transaction... Please confirm in your wallet.' :
+                                 isConfirming ? 'Step 2: Confirming transaction on-chain...' :
+                                 'Step 2: Bridging USDC to hub chain...'}
+                              </span>
                             </>
                           )}
                         </div>
@@ -1498,7 +1626,41 @@ export default function BalancePage() {
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-8">
                     <div className="flex items-center">
                       <CheckCircle className="h-4 w-4 text-green-600 mr-3" />
-                      <span className="text-green-800">Cross-chain bridge completed!</span>
+                      <span className="text-green-800">Cross-chain bridge transaction confirmed!</span>
+                    </div>
+                  </div>
+                )}
+
+                {/* LayerZero Relay Notice for Spoke Chain */}
+                {showRelayNotice && spokeApprovalStep === 'idle' && (
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-8">
+                    <div className="flex items-start gap-3">
+                      <Clock className="h-5 w-5 text-blue-600 mt-0.5 flex-shrink-0" />
+                      <div className="flex-1">
+                        <h3 className="font-semibold text-blue-900 mb-2">⏳ Waiting for LayerZero Cross-Chain Relay</h3>
+                        <p className="text-sm text-blue-800 mb-2">
+                          Your transaction is confirmed on the spoke chain! However, on testnets, LayerZero cross-chain relay can take <strong>30 seconds to 2 minutes</strong> to deliver your OFTUSDC to the hub chain.
+                        </p>
+                        <p className="text-sm text-blue-800 mb-3">
+                          Your hub chain OFTUSDC balance will update automatically once the relay is complete. You can refresh manually using the button above.
+                        </p>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={refreshAllBalances}
+                            disabled={isRefreshing}
+                            className="px-3 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-colors text-sm flex items-center gap-1"
+                          >
+                            <RefreshCw className={`h-3 w-3 ${isRefreshing ? 'animate-spin' : ''}`} />
+                            Check Now
+                          </button>
+                          <button
+                            onClick={() => setShowRelayNotice(false)}
+                            className="px-3 py-1.5 bg-white text-blue-800 border border-blue-300 rounded-md hover:bg-blue-50 transition-colors text-sm"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 )}

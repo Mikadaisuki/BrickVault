@@ -32,7 +32,7 @@ import {
   PROPERTY_DAO_ABI,
   OFT_USDC_ABI
 } from '@brickvault/abi'
-import { CONTRACT_ADDRESSES, TOKEN_DECIMALS } from '../../config/contracts'
+import { CONTRACT_ADDRESSES, TOKEN_DECIMALS, NETWORK_CONFIG } from '../../config/contracts'
 
 interface PropertyCard {
   id: string
@@ -117,7 +117,7 @@ export default function PropertiesPage() {
     abi: PROPERTY_REGISTRY_ABI,
     functionName: 'getPropertyCount',
     query: {
-      enabled: !!registryAddress && isConnected && mounted && chainId === 31337,
+      enabled: !!registryAddress && isConnected && mounted && chainId === NETWORK_CONFIG.chainId,
     },
   })
 
@@ -132,7 +132,7 @@ export default function PropertiesPage() {
     functionName: 'balanceOf',
     args: address ? [address] : undefined,
     query: {
-      enabled: !!address && isConnected && mounted && chainId === 31337,
+      enabled: !!address && isConnected && mounted && chainId === NETWORK_CONFIG.chainId,
     },
   })
 
@@ -143,7 +143,7 @@ export default function PropertiesPage() {
     functionName: 'allowance',
     args: address && selectedProperty ? [address, selectedProperty.vaultAddress as `0x${string}`] : undefined,
     query: {
-      enabled: !!address && !!selectedProperty && isConnected && mounted && chainId === 31337,
+      enabled: !!address && !!selectedProperty && isConnected && mounted && chainId === NETWORK_CONFIG.chainId,
     },
   })
 
@@ -960,15 +960,15 @@ export default function PropertiesPage() {
                   Wrong Network
                 </h3>
                 <div className="mt-2 text-sm text-yellow-700">
-                  <p>Please switch to <strong>Localhost (Chain ID: 31337)</strong> to view property data.</p>
+                  <p>Please switch to <strong>{NETWORK_CONFIG.name} (Chain ID: {NETWORK_CONFIG.chainId})</strong> to view property data.</p>
                   <p className="mt-1">Current network: Chain ID {chainId}</p>
                 </div>
                 <div className="mt-3">
                   <button
-                    onClick={() => switchChain({ chainId: 31337 })}
+                    onClick={() => switchChain({ chainId: NETWORK_CONFIG.chainId })}
                     className="bg-yellow-600 hover:bg-yellow-700 text-white px-3 py-1 rounded text-sm"
                   >
-                    Switch to Localhost
+                    Switch to {NETWORK_CONFIG.name}
                   </button>
                 </div>
               </div>

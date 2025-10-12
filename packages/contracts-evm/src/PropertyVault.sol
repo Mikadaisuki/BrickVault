@@ -51,7 +51,7 @@ contract PropertyVault is VaultBase {
 
     // Modifiers
     modifier onlyActiveProperty() {
-        require(registry.isPropertyActive(propertyId), 'PropertyVault: property is not active');
+        require(registry.isPropertyActive(propertyId));
         _;
     }
 
@@ -65,20 +65,13 @@ contract PropertyVault is VaultBase {
         address _environmentConfig,
         address _registry
     ) VaultBase(_asset, _name, _symbol, _owner, _depositCap) {
-        require(_propertyId > 0, 'PropertyVault: invalid property ID');
-        require(_environmentConfig != address(0), 'PropertyVault: invalid environment config address');
-        require(_registry != address(0), 'PropertyVault: invalid registry address');
+        require(_propertyId > 0, "PV1");
+        require(_environmentConfig != address(0), "PV2");
+        require(_registry != address(0), "PV3");
         
         propertyId = _propertyId;
         environmentConfig = EnvironmentConfig(_environmentConfig);
         registry = IPropertyRegistry(_registry);
-        
-        // Verify EnvironmentConfig contract
-        try environmentConfig.isStrictErrorHandling() returns (bool) {
-            // Success - contract is valid
-        } catch {
-            revert('PropertyVault: invalid EnvironmentConfig contract');
-        }
         
         emit PropertyVaultInitialized(_propertyId, _registry);
     }
@@ -115,74 +108,41 @@ contract PropertyVault is VaultBase {
         return super.mint(shares, receiver);
     }
 
-    /**
-     * @dev Harvest rent income for this specific property
-     * @param amount Amount of underlying asset to add as rent income
-     */
     function harvestRent(uint256 amount) external onlyOwner {
-        require(amount > 0, 'PropertyVault: amount must be positive');
-        
-        // Start a new period for each harvest
+        require(amount > 0);
         currentPeriod++;
         currentPeriodIncome = amount;
         currentPeriodDistributed = 0;
-        
-        // Transfer assets from caller to vault
         IERC20(asset()).transferFrom(msg.sender, address(this), amount);
-        
-        // Update tracking variables with overflow protection
         lastRentHarvest = block.timestamp;
-        
         uint256 currentRentHarvested = totalRentHarvested;
-        require(currentRentHarvested <= type(uint256).max - amount, 'PropertyVault: rent harvested overflow');
+        require(currentRentHarvested <= type(uint256).max - amount);
         totalRentHarvested = currentRentHarvested + amount;
-        
         uint256 currentIncomeHarvested = totalIncomeHarvested;
-        require(currentIncomeHarvested <= type(uint256).max - amount, 'PropertyVault: income harvested overflow');
+        require(currentIncomeHarvested <= type(uint256).max - amount);
         totalIncomeHarvested = currentIncomeHarvested + amount;
-        
         emit Harvest(amount, totalAssets());
         emit RentHarvested(amount, totalAssets(), propertyId);
     }
 
-    /**
-     * @dev Deposit liquidation proceeds after property sale
-     * @param amount Amount of OFTUSDC from property sale
-     * @notice This function is called after the property is sold during liquidation.
-     * Unlike harvestRent, this does NOT increment the period counter.
-     */
     function depositLiquidationProceeds(uint256 amount) external onlyOwner {
-        require(amount > 0, 'PropertyVault: amount must be positive');
-        
-        // Transfer liquidation proceeds from platform to vault
-        // This adds to totalAssets() which is what users redeem against
+        require(amount > 0);
         IERC20(asset()).transferFrom(msg.sender, address(this), amount);
-        
         emit Harvest(amount, totalAssets());
     }
 
-    /**
-     * @dev Update NAV (Net Asset Value) for this specific property
-     * @param delta Positive or negative amount to adjust NAV
-     */
     function updateNAV(int256 delta) external override onlyOwner {
-        require(address(propertyToken) != address(0), 'PropertyVault: property not purchased yet');
-        
+        require(address(propertyToken) != address(0));
         if (delta > 0) {
-            // Appreciation - mint new PropertyTokens
             uint256 mintAmount = uint256(delta);
             propertyToken.mint(address(this), mintAmount, "Property appreciation");
         } else if (delta < 0) {
-            // Depreciation - burn PropertyTokens
             uint256 burnAmount = uint256(-delta);
-            require(propertyToken.balanceOf(address(this)) >= burnAmount, 'PropertyVault: insufficient PropertyTokens for NAV reduction');
+            require(propertyToken.balanceOf(address(this)) >= burnAmount);
             propertyToken.burn(address(this), burnAmount, "Property depreciation");
         }
-        
-        // Update tracking variables
         lastNAVUpdate = block.timestamp;
         totalNAVChanges += delta > 0 ? uint256(delta) : uint256(-delta);
-        
         emit NAVUpdated(propertyId, delta, totalAssets());
     }
 

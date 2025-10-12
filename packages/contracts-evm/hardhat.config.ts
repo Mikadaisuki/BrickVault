@@ -31,6 +31,8 @@ const config: HardhatUserConfig = {
       url: process.env.EVM_RPC_SEPOLIA || 'https://eth-sepolia.public.blastapi.io',
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 11155111,
+      gas: 30000000, // Set explicit high gas limit for large contract deployments
+      gasPrice: 'auto',
     },
     baseSepolia: {
       url: process.env.EVM_RPC_BASE_SEPOLIA || 'https://sepolia.base.org',

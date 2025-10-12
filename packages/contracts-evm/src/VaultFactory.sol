@@ -31,7 +31,7 @@ contract VaultFactory is Ownable {
         address environmentConfig,
         address registry
     ) external returns (address vault) {
-        require(authorizedCallers[msg.sender] || msg.sender == owner(), 'Not authorized');
+        require(authorizedCallers[msg.sender] || msg.sender == owner(), "VF1");
         
         vault = address(new PropertyVaultGovernance(
             underlyingAsset,

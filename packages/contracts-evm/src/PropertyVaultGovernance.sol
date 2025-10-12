@@ -17,12 +17,12 @@ contract PropertyVaultGovernance is PropertyVault {
     uint256 public totalIncomeDistributed;
 
     modifier onlyDAO() {
-        require(msg.sender == address(dao), 'Only DAO');
+        require(msg.sender == address(dao));
         _;
     }
 
     modifier notLiquidating() {
-        require(!isLiquidating, 'Liquidating');
+        require(!isLiquidating);
         _;
     }
 
@@ -38,7 +38,7 @@ contract PropertyVaultGovernance is PropertyVault {
     ) PropertyVault(_asset, _name, _symbol, _owner, _depositCap, _propertyId, _environmentConfig, _registry) {}
 
     function setDAO(address _dao) external onlyOwner {
-        require(_dao != address(0), 'Invalid DAO');
+        require(_dao != address(0));
         dao = PropertyDAO(_dao);
         emit DAOSet(_dao);
     }
@@ -49,7 +49,7 @@ contract PropertyVaultGovernance is PropertyVault {
         notLiquidating
         returns (uint256 shares)
     {
-        require(_canDeposit(), 'deposits blocked');
+        require(_canDeposit());
         shares = super.deposit(assets, receiver);
         if (address(dao) != address(0)) {
             dao.updateTotalInvested(totalAssets());
@@ -67,20 +67,20 @@ contract PropertyVaultGovernance is PropertyVault {
                 if (currentStage == PropertyDAO.PropertyStage.Liquidated) {
                     return super.redeem(shares, receiver, owner);
                 } else {
-                    require(_canWithdraw(), 'withdrawals blocked');
+                    require(_canWithdraw());
                 }
             } catch {
-                require(_canWithdraw(), 'withdrawals blocked');
+                require(_canWithdraw());
             }
         } else {
-            require(_canWithdraw(), 'withdrawals blocked');
+            require(_canWithdraw());
         }
         
         assets = convertToAssets(shares);
         
         if (propertyPurchased) {
             uint256 maxWithdrawable = _getMaxWithdrawable(owner);
-            require(assets <= maxWithdrawable, 'income only');
+            require(assets <= maxWithdrawable);
         }
         
         return super.redeem(shares, receiver, owner);
@@ -92,15 +92,15 @@ contract PropertyVaultGovernance is PropertyVault {
         notLiquidating
         returns (uint256 shares)
     {
-        require(_canWithdraw(), 'withdrawals blocked');
+        require(_canWithdraw());
         
         if (propertyPurchased) {
             uint256 maxWithdrawable = _getMaxWithdrawable(owner);
-            require(assets <= maxWithdrawable, 'income only');
+            require(assets <= maxWithdrawable);
             
             // For rent income withdrawals, don't burn shares
             uint256 userShares = balanceOf(owner);
-            require(userShares > 0, 'No shares');
+            require(userShares > 0);
             
             // Transfer income directly without burning shares
             IERC20(asset()).transfer(receiver, assets);
@@ -126,23 +126,23 @@ contract PropertyVaultGovernance is PropertyVault {
     }
 
     function transfer(address to, uint256 value) public override(ERC20, IERC20) returns (bool) {
-        require(_canTransfer(), 'transfers blocked');
+        require(_canTransfer());
         return super.transfer(to, value);
     }
 
     function transferFrom(address from, address to, uint256 value) public override(ERC20, IERC20) returns (bool) {
-        require(_canTransfer(), 'transfers blocked');
+        require(_canTransfer());
         return super.transferFrom(from, to, value);
     }
 
     function initiateLiquidation() external onlyDAO {
-        require(!isLiquidating, 'Already liquidating');
+        require(!isLiquidating);
         isLiquidating = true;
         _pause();
     }
 
     function completeLiquidation() external onlyDAO {
-        require(isLiquidating, 'Not liquidating');
+        require(isLiquidating);
         isLiquidating = false;
         _unpause();
     }
@@ -153,22 +153,6 @@ contract PropertyVaultGovernance is PropertyVault {
 
     function getMaxWithdrawable(address user) external view returns (uint256) {
         return _getMaxWithdrawable(user);
-    }
-
-    function getWithdrawalStatus() external view returns (string memory) {
-        if (address(dao) == address(0)) return "Allowed";
-        
-        try dao.getCurrentStage() returns (PropertyDAO.PropertyStage stage) {
-            if (stage == PropertyDAO.PropertyStage.Funded || stage == PropertyDAO.PropertyStage.Liquidated) {
-                return "Blocked";
-            }
-            if ((stage == PropertyDAO.PropertyStage.UnderManagement || stage == PropertyDAO.PropertyStage.Liquidating) && propertyPurchased) {
-                return "Income-only";
-            }
-            return "Allowed";
-        } catch {
-            return "Allowed";
-        }
     }
 
     function _canDeposit() internal view returns (bool) {
@@ -226,19 +210,19 @@ contract PropertyVaultGovernance is PropertyVault {
 
 
     function setStacksCrossChainManager(address _stacksManager) external onlyOwner {
-        require(_stacksManager != address(0), 'Invalid manager');
+        require(_stacksManager != address(0));
         stacksManager = StacksCrossChainManager(_stacksManager);
         emit StacksCrossChainManagerSet(_stacksManager);
     }
 
     function mintShares(address user, uint256 amount) external {
-        require(msg.sender == address(stacksManager) && user != address(0) && amount > 0, 'Invalid');
+        require(msg.sender == address(stacksManager) && user != address(0) && amount > 0);
         _mint(user, amount);
         emit SharesMinted(user, amount);
     }
 
     function burnShares(address user, uint256 amount) external {
-        require(msg.sender == address(stacksManager) && user != address(0) && amount > 0 && balanceOf(user) >= amount, 'Invalid');
+        require(msg.sender == address(stacksManager) && user != address(0) && amount > 0 && balanceOf(user) >= amount);
         _burn(user, amount);
         emit SharesBurned(user, amount);
     }

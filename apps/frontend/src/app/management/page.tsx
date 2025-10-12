@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from 'wagmi'
 import { Building2, Users, Settings, Plus, Pause, Play, DollarSign, AlertTriangle, Eye, MapPin, Calendar, CheckCircle, FileText, TrendingUp, X, Clock, Vote, Loader2, ExternalLink, Copy, CheckCircle2, Coins, RefreshCw } from 'lucide-react'
 import { PROPERTY_REGISTRY_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, PROPERTY_DAO_ABI, PROPERTY_DAO_FACTORY_ABI, STACKS_CROSS_CHAIN_MANAGER_ABI } from '@brickvault/abi'
-import { CONTRACT_ADDRESSES } from '../../config/contracts'
+import { CONTRACT_ADDRESSES, NETWORK_CONFIG } from '../../config/contracts'
 import { Header } from '@/components/Header'
 import { formatUnits, parseUnits } from 'viem'
 
@@ -193,6 +193,9 @@ export default function ManagementPage() {
   const { writeContract, writeContractAsync, data: hash, isPending, error } = useWriteContract()
   const publicClient = usePublicClient()
   
+  // Get expected chain ID from config
+  const expectedChainId = NETWORK_CONFIG.chainId
+  
   // Track rent approval transaction separately
   const { isLoading: isRentApprovalConfirming, isSuccess: isRentApprovalConfirmed } = useWaitForTransactionReceipt({
     hash: rentApprovalHash,
@@ -212,7 +215,7 @@ export default function ManagementPage() {
     abi: PROPERTY_REGISTRY_ABI,
     functionName: 'owner',
     query: {
-      enabled: !!registryAddress && isConnected && chainId === 31337,
+      enabled: !!registryAddress && isConnected && chainId === expectedChainId,
     },
   })
 
@@ -222,7 +225,7 @@ export default function ManagementPage() {
     abi: PROPERTY_REGISTRY_ABI,
     functionName: 'getPropertyCount',
     query: {
-      enabled: !!registryAddress && isConnected && chainId === 31337,
+      enabled: !!registryAddress && isConnected && chainId === expectedChainId,
     },
   })
 
@@ -232,7 +235,7 @@ export default function ManagementPage() {
     abi: STACKS_CROSS_CHAIN_MANAGER_ABI,
     functionName: 'getPoolBalance',
     query: {
-      enabled: !!stacksManagerAddress && isConnected && chainId === 31337,
+      enabled: !!stacksManagerAddress && isConnected && chainId === expectedChainId,
     },
   })
 
@@ -242,7 +245,7 @@ export default function ManagementPage() {
     abi: STACKS_CROSS_CHAIN_MANAGER_ABI,
     functionName: 'getSbtcPrice',
     query: {
-      enabled: !!stacksManagerAddress && isConnected && chainId === 31337,
+      enabled: !!stacksManagerAddress && isConnected && chainId === expectedChainId,
     },
   })
 
@@ -562,16 +565,16 @@ export default function ManagementPage() {
     setMounted(true)
   }, [])
 
-  // Auto-switch to localhost if on wrong network
+  // Auto-switch to expected network if on wrong network
   useEffect(() => {
-    if (mounted && isConnected && chainId !== 31337) {
+    if (mounted && isConnected && chainId !== expectedChainId) {
       try {
-        switchChain({ chainId: 31337 })
+        switchChain({ chainId: expectedChainId })
       } catch (error) {
         // Chain switch failed
       }
     }
-  }, [mounted, isConnected, chainId, switchChain])
+  }, [mounted, isConnected, chainId, switchChain, expectedChainId])
 
   useEffect(() => {
     if (mounted && owner && address) {
@@ -1860,8 +1863,8 @@ export default function ManagementPage() {
     )
   }
 
-  // Show network warning if not on localhost
-  if (mounted && isConnected && chainId !== 31337) {
+  // Show network warning if not on expected network
+  if (mounted && isConnected && chainId !== expectedChainId) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
@@ -1870,14 +1873,14 @@ export default function ManagementPage() {
             <h2 className="text-lg font-semibold text-yellow-800">Wrong Network</h2>
           </div>
           <p className="text-yellow-700 mt-2">
-            Please switch to Localhost network (Chain ID: 31337) to access the management panel.
+            Please switch to {NETWORK_CONFIG.name} network (Chain ID: {expectedChainId}) to access the management panel.
           </p>
           <div className="mt-4">
             <button
-              onClick={() => switchChain({ chainId: 31337 })}
+              onClick={() => switchChain({ chainId: expectedChainId })}
               className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded text-sm"
             >
-              Switch to Localhost
+              Switch to {NETWORK_CONFIG.name}
             </button>
           </div>
         </div>
@@ -2003,10 +2006,10 @@ export default function ManagementPage() {
               <p className="text-sm text-muted-foreground">Network</p>
               <div className="flex items-center">
                 <div className={`w-2 h-2 rounded-full mr-2 ${
-                  chainId === 31337 ? 'bg-green-500' : 'bg-red-500'
+                  chainId === expectedChainId ? 'bg-green-500' : 'bg-red-500'
                 }`}></div>
                 <p className="font-semibold text-sm">
-                  {chainId === 31337 ? 'Localhost (31337)' : `Chain ID: ${chainId}`}
+                  {chainId === expectedChainId ? `${NETWORK_CONFIG.name} (${expectedChainId})` : `Chain ID: ${chainId}`}
                 </p>
               </div>
             </div>

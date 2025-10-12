@@ -50,25 +50,11 @@ contract PropertyRegistry is Ownable {
     }
 
     constructor(address _owner, address _environmentConfig, address _vaultFactory) Ownable(_owner) {
-        require(_environmentConfig != address(0), 'PropertyRegistryCore: invalid environment config address');
-        require(_vaultFactory != address(0), 'PropertyRegistryCore: invalid vault factory address');
+        require(_environmentConfig != address(0), "PReg1");
+        require(_vaultFactory != address(0), "PReg2");
         
         environmentConfig = EnvironmentConfig(_environmentConfig);
         vaultFactory = VaultFactory(_vaultFactory);
-        
-        // Verify EnvironmentConfig contract
-        try environmentConfig.isStrictErrorHandling() returns (bool) {
-            // Success - contract is valid
-        } catch {
-            revert('PropertyRegistryCore: invalid EnvironmentConfig contract');
-        }
-        
-        // VaultFactory is valid if we can get its owner
-        try vaultFactory.owner() returns (address) {
-            // Success - contract is valid
-        } catch {
-            revert('PropertyRegistryCore: invalid VaultFactory contract');
-        }
     }
 
     /**
@@ -84,9 +70,9 @@ contract PropertyRegistry is Ownable {
         uint256 depositCap,
         address underlyingAsset
     ) external virtual onlyOwner returns (uint32 propertyId, address vault) {
-        require(bytes(name).length > 0, 'PropertyRegistryCore: name required');
-        require(depositCap > 0, 'PropertyRegistryCore: deposit cap must be positive');
-        require(underlyingAsset != address(0), 'PropertyRegistryCore: invalid underlying asset');
+        require(bytes(name).length > 0, "PR1");
+        require(depositCap > 0, "PR2");
+        require(underlyingAsset != address(0), "PR3");
 
         propertyId = nextPropertyId++;
         

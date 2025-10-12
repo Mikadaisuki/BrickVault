@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAccount, useReadContract } from 'wagmi'
 import { Building2, Layers, Users, DollarSign, Globe, Shield, Activity, Settings } from 'lucide-react'
-import { CONTRACT_ADDRESSES as SHARED_CONTRACT_ADDRESSES } from '../config/contracts'
+import { CONTRACT_ADDRESSES as SHARED_CONTRACT_ADDRESSES, NETWORK_CONFIG } from '../config/contracts'
 
 // Use shared contract addresses from config
 const CONTRACT_ADDRESSES = {
@@ -47,6 +47,7 @@ export function ContractStatus() {
   const { address, isConnected } = useAccount()
   const [contracts, setContracts] = useState<ContractStatus[]>([])
   const [mounted, setMounted] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
 
   // Prevent hydration mismatch by only rendering after mount
   useEffect(() => {
@@ -54,6 +55,7 @@ export function ContractStatus() {
   }, [])
 
   // Contract definitions with icons and categories (Unified Adapter Architecture)
+  // Filter out contracts without addresses (not deployed on this network)
   const contractDefinitions = [
     {
       name: 'EnvironmentConfig',
@@ -139,17 +141,18 @@ export function ContractStatus() {
       icon: <Globe className="h-5 w-5" />,
       category: 'Cross-Chain Layer'
     }
-  ]
+  ].filter(contract => contract.address && contract.address.length > 0)
 
   // Check contract deployment status
   useEffect(() => {
     const checkContracts = async () => {
+      setIsLoading(true)
       const contractStatuses: ContractStatus[] = []
       
       for (const contract of contractDefinitions) {
         try {
           // Check if code exists at the address
-          const codeResult = await fetch('http://localhost:8545', {
+          const codeResult = await fetch(NETWORK_CONFIG.rpcUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -170,7 +173,7 @@ export function ContractStatus() {
           let owner: string | undefined
           if (isDeployed) {
             try {
-              const ownerResult = await fetch('http://localhost:8545', {
+              const ownerResult = await fetch(NETWORK_CONFIG.rpcUrl, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -212,6 +215,7 @@ export function ContractStatus() {
       }
       
       setContracts(contractStatuses)
+      setIsLoading(false)
     }
 
     if (isConnected) {
@@ -251,6 +255,23 @@ export function ContractStatus() {
           Contract Status
         </h2>
         <p className="text-muted-foreground">Connect your wallet to view contract status</p>
+      </div>
+    )
+  }
+
+  if (isLoading) {
+    return (
+      <div className="bg-card rounded-lg border p-6">
+        <h2 className="text-xl font-semibold mb-4 flex items-center">
+          <Activity className="mr-2 h-5 w-5" />
+          Contract Status
+        </h2>
+        <div className="flex items-center justify-center py-12">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto mb-4"></div>
+            <p className="text-muted-foreground">Checking contract deployment status...</p>
+          </div>
+        </div>
       </div>
     )
   }

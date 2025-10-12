@@ -6,13 +6,7 @@ import '@openzeppelin/contracts/utils/Pausable.sol';
 import '@openzeppelin/contracts/utils/ReentrancyGuard.sol';
 import './PropertyVaultGovernance.sol';
 
-/**
- * @title PropertyDAO
- * @dev Comprehensive DAO governance for property vaults
- * @notice Handles all property decisions: funding, liquidation, management, etc.
- */
 contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
-    // Events
     event ProposalCreated(
         uint256 indexed proposalId,
         address indexed proposer,
@@ -28,29 +22,28 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
     event ThresholdUpdated(uint256 propertyId, ThresholdType thresholdType, uint256 newThreshold);
     event StageChanged(PropertyStage newStage);
 
-    // Enums
     enum ProposalType {
-        PropertyLiquidation,    // Liquidate property
-        PropertyPurchase,       // Purchase property with funds (includes withdrawal approval)
-        ThresholdUpdate,        // Update action thresholds
-        ManagementChange,       // Change property manager
-        NAVUpdate,             // Update property valuation
-        EmergencyPause,        // Pause all operations
-        EmergencyUnpause,      // Resume operations
-        PropertyStageChange    // Change property stage
+        PropertyLiquidation,
+        PropertyPurchase,
+        ThresholdUpdate,
+        ManagementChange,
+        NAVUpdate,
+        EmergencyPause,
+        EmergencyUnpause,
+        PropertyStageChange
     }
 
     enum ThresholdType {
-        LiquidationThreshold,   // % of shares needed to trigger liquidation
-        EmergencyThreshold      // % of shares needed for emergency actions
+        LiquidationThreshold,
+        EmergencyThreshold
     }
 
     enum PropertyStage {
-        OpenToFund,            // Property is open for investment
-        Funded,                // Property is fully funded and purchased
-        UnderManagement,       // Property is under management
-        Liquidating,           // Property is being liquidated
-        Liquidated             // Property has been liquidated
+        OpenToFund,
+        Funded,
+        UnderManagement,
+        Liquidating,
+        Liquidated
     }
 
     enum ProposalStatus {
@@ -60,7 +53,6 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         Expired
     }
 
-    // Structs
     struct Proposal {
         uint256 id;
         address proposer;
@@ -71,7 +63,7 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         uint256 votesAgainst;
         bool executed;
         ProposalStatus status;
-        bytes data; // Encoded function call data
+        bytes data;
     }
 
     struct Vote {
@@ -81,53 +73,47 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
     }
 
     struct PropertyThresholds {
-        uint256 liquidationThreshold; // % of shares needed to trigger liquidation (default 20%)
-        uint256 emergencyThreshold;   // % of shares needed for emergency actions (default 50%)
+        uint256 liquidationThreshold;
+        uint256 emergencyThreshold;
     }
 
     struct PropertyInfo {
-        PropertyStage stage;          // Current property stage
-        uint256 totalValue;           // Total property value
-        uint256 totalInvested;        // Total amount invested by users
-        uint256 fundingTarget;        // Target amount to fund (set by platform)
-        uint256 fundingDeadline;      // Deadline for funding (set by platform)
-        bool isFullyFunded;          // Whether property is fully funded
+        PropertyStage stage;
+        uint256 totalValue;
+        uint256 totalInvested;
+        uint256 fundingTarget;
+        uint256 fundingDeadline;
+        bool isFullyFunded;
     }
 
-    // State variables
     PropertyVaultGovernance public immutable propertyVault;
     uint32 public immutable propertyId;
     uint256 public proposalCount;
     uint256 public constant VOTING_PERIOD = 7 days;
     uint256 public constant EXECUTION_DELAY = 1 days;
-    uint256 public constant QUORUM_THRESHOLD = 30; // 30% of total shares
-    uint256 public constant MAJORITY_THRESHOLD = 51; // 51% of votes
+    uint256 public constant QUORUM_THRESHOLD = 30;
+    uint256 public constant MAJORITY_THRESHOLD = 51;
 
     mapping(uint256 => Proposal) public proposals;
     mapping(uint256 => mapping(address => Vote)) public votes;
     mapping(address => bool) public authorizedExecutors;
     
-    // Property-specific state
     PropertyThresholds public thresholds;
     PropertyInfo public propertyInfo;
     bool public isLiquidating;
 
-    // Modifiers
     modifier onlyShareholder() {
-        require(propertyVault.balanceOf(msg.sender) > 0, 'PropertyDAO: not a shareholder');
+        require(propertyVault.balanceOf(msg.sender) > 0);
         _;
     }
 
     modifier onlyAuthorizedExecutor() {
-        require(
-            authorizedExecutors[msg.sender] || msg.sender == owner(),
-            'PropertyDAO: not authorized executor'
-        );
+        require(authorizedExecutors[msg.sender] || msg.sender == owner());
         _;
     }
 
     modifier notLiquidating() {
-        require(!isLiquidating, 'PropertyDAO: property is liquidating');
+        require(!isLiquidating);
         _;
     }
 
@@ -139,13 +125,11 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         propertyId = propertyVault.propertyId();
         authorizedExecutors[msg.sender] = true;
         
-        // Set default thresholds
         thresholds = PropertyThresholds({
-            liquidationThreshold: 20, // 20%
-            emergencyThreshold: 50    // 50%
+            liquidationThreshold: 20,
+            emergencyThreshold: 50
         });
         
-        // Initialize property info
         propertyInfo = PropertyInfo({
             stage: PropertyStage.OpenToFund,
             totalValue: 0,
@@ -157,46 +141,32 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
     }
 
 
-    /**
-     * @dev Create a new proposal (shareholders only)
-     * @param proposalType Type of proposal
-     * @param description Description of the proposal
-     * @param data Encoded function call data
-     */
     function createProposal(
         ProposalType proposalType,
         string memory description,
         bytes memory data
     ) external onlyShareholder notLiquidating returns (uint256) {
-        require(bytes(description).length > 0, 'PropertyDAO: description required');
+        require(bytes(description).length > 0);
         
-        // Stage-based proposal creation restrictions
         if (propertyInfo.stage == PropertyStage.OpenToFund) {
-            require(false, 'PropertyDAO: cannot create proposals in OpenToFund stage');
+            require(false);
         } else if (propertyInfo.stage == PropertyStage.Liquidating) {
-            require(false, 'PropertyDAO: cannot create proposals in Liquidating stage');
+            require(false);
         } else if (propertyInfo.stage == PropertyStage.Liquidated) {
-            require(false, 'PropertyDAO: cannot create proposals in Liquidated stage');
+            require(false);
         }
         
-        // In Funded stage, block all proposal types
-        // Only the platform can move to UnderManagement through property purchase process
         if (propertyInfo.stage == PropertyStage.Funded) {
-            require(false, 'PropertyDAO: in Funded stage, no proposals allowed - only platform can move to UnderManagement through property purchase');
+            require(false);
         }
         
-        // In UnderManagement stage, restrict platform-managed proposal types
         if (propertyInfo.stage == PropertyStage.UnderManagement) {
-            // PropertyPurchase is only for platform (already purchased property)
-            require(proposalType != ProposalType.PropertyPurchase, 'PropertyDAO: PropertyPurchase proposals are platform-managed only');
+            require(proposalType != ProposalType.PropertyPurchase);
+            require(proposalType != ProposalType.NAVUpdate);
             
-            // NAVUpdate is only for platform (platform manages property and accounting)
-            require(proposalType != ProposalType.NAVUpdate, 'PropertyDAO: NAVUpdate proposals are platform-managed only');
-            
-            // PropertyStageChange can only move to Liquidating (next stage)
             if (proposalType == ProposalType.PropertyStageChange) {
                 (uint8 newStage) = abi.decode(data, (uint8));
-                require(newStage == 3, 'PropertyDAO: in UnderManagement stage, can only propose move to Liquidating stage');
+                require(newStage == 3);
             }
         }
         
@@ -220,18 +190,12 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         return proposalId;
     }
 
-    /**
-     * @dev Create a proposal as platform (only owner)
-     * @param proposalType Type of proposal
-     * @param description Description of the proposal
-     * @param data Encoded function call data
-     */
     function createPlatformProposal(
         ProposalType proposalType,
         string memory description,
         bytes memory data
     ) internal notLiquidating returns (uint256) {
-        require(bytes(description).length > 0, 'PropertyDAO: description required');
+        require(bytes(description).length > 0);
         
         proposalCount++;
         uint256 proposalId = proposalCount;
@@ -253,41 +217,28 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         return proposalId;
     }
 
-    /**
-     * @dev Platform proposes to close funding and move to Funded stage
-     * @notice This function is deprecated - funding closes automatically when target is reached
-     */
-    function proposeCloseFunding(string memory /* description */) external view onlyOwner notLiquidating returns (uint256) {
-        require(propertyInfo.stage == PropertyStage.OpenToFund, 'PropertyDAO: not in OpenToFund stage');
-        require(propertyInfo.isFullyFunded, 'PropertyDAO: funding target not reached');
-        
-        // Funding should close automatically when target is reached
-        // This function is kept for backward compatibility but should not be used
-        revert('PropertyDAO: funding closes automatically when target is reached');
+    function proposeCloseFunding(string memory) external view onlyOwner notLiquidating returns (uint256) {
+        require(propertyInfo.stage == PropertyStage.OpenToFund);
+        require(propertyInfo.isFullyFunded);
+        revert();
     }
 
-    /**
-     * @dev Vote on a proposal
-     * @param proposalId ID of the proposal
-     * @param support True for yes, false for no
-     */
     function vote(uint256 proposalId, bool support) external onlyShareholder {
-        // Stage-based voting restrictions
         if (propertyInfo.stage == PropertyStage.OpenToFund) {
-            require(false, 'PropertyDAO: cannot vote in OpenToFund stage');
+            require(false);
         } else if (propertyInfo.stage == PropertyStage.Liquidating) {
-            require(false, 'PropertyDAO: cannot vote in Liquidating stage');
+            require(false);
         } else if (propertyInfo.stage == PropertyStage.Liquidated) {
-            require(false, 'PropertyDAO: cannot vote in Liquidated stage');
+            require(false);
         }
         
         Proposal storage proposal = proposals[proposalId];
-        require(proposal.status == ProposalStatus.Active, 'PropertyDAO: proposal not active');
-        require(block.timestamp <= proposal.deadline, 'PropertyDAO: voting period ended');
-        require(!votes[proposalId][msg.sender].hasVoted, 'PropertyDAO: already voted');
+        require(proposal.status == ProposalStatus.Active);
+        require(block.timestamp <= proposal.deadline);
+        require(!votes[proposalId][msg.sender].hasVoted);
 
         uint256 weight = propertyVault.balanceOf(msg.sender);
-        require(weight > 0, 'PropertyDAO: no shares to vote with');
+        require(weight > 0);
 
         votes[proposalId][msg.sender] = Vote({
             hasVoted: true,
@@ -304,65 +255,33 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         emit Voted(proposalId, msg.sender, support, weight);
     }
 
-    /**
-     * @dev Handle stage transition to Funded (called by platform)
-     * This only changes the stage - sBTC conversion happens after vote passes
-     */
     function transitionToFunded() external onlyOwner {
-        require(propertyInfo.stage == PropertyStage.OpenToFund, 'PropertyDAO: not in OpenToFund stage');
-        require(propertyInfo.isFullyFunded, 'PropertyDAO: property not fully funded');
-        
-        // Update stage to Funded
+        require(propertyInfo.stage == PropertyStage.OpenToFund);
+        require(propertyInfo.isFullyFunded);
         propertyInfo.stage = PropertyStage.Funded;
-        
-        // No automatic sBTC conversion here - that happens after vote passes
-        // Users will vote on property purchase, then platform manually converts sBTC to USD off-chain
-        
         emit StageChanged(PropertyStage.Funded);
     }
 
-
-    /**
-     * @dev Execute a proposal
-     * @param proposalId ID of the proposal to execute
-     */
     function executeProposal(uint256 proposalId) external onlyAuthorizedExecutor nonReentrant {
         Proposal storage proposal = proposals[proposalId];
-        require(proposal.status == ProposalStatus.Active, 'PropertyDAO: proposal not active');
-        require(block.timestamp > proposal.deadline, 'PropertyDAO: voting period not ended');
-        require(!proposal.executed, 'PropertyDAO: already executed');
+        require(proposal.status == ProposalStatus.Active);
+        require(block.timestamp > proposal.deadline);
+        require(!proposal.executed);
 
         uint256 totalVotes = proposal.votesFor + proposal.votesAgainst;
         uint256 totalShares = propertyVault.totalSupply();
         
-        require(totalShares > 0, 'PropertyDAO: no shares minted yet');
-        require(totalVotes > 0, 'PropertyDAO: no votes cast');
-        
-        // Check quorum (30% of total shares must vote)
-        require(
-            totalVotes >= (totalShares * QUORUM_THRESHOLD) / 100,
-            'PropertyDAO: quorum not met'
-        );
-
-        // Check majority (51% of votes must be in favor)
-        require(
-            proposal.votesFor > (totalVotes * MAJORITY_THRESHOLD) / 100,
-            'PropertyDAO: majority not reached'
-        );
+        require(totalShares > 0);
+        require(totalVotes > 0);
+        require(totalVotes >= (totalShares * QUORUM_THRESHOLD) / 100);
+        require(proposal.votesFor > (totalVotes * MAJORITY_THRESHOLD) / 100);
 
         proposal.executed = true;
         proposal.status = ProposalStatus.Executed;
-
-        // Execute the proposal based on type
         bool success = _executeProposal(proposal);
-        
         emit ProposalExecuted(proposalId, success);
     }
 
-    /**
-     * @dev Execute proposal based on type
-     * @param proposal The proposal to execute
-     */
     function _executeProposal(Proposal memory proposal) internal returns (bool) {
         if (proposal.proposalType == ProposalType.PropertyLiquidation) {
             return _executePropertyLiquidation(proposal.data);
@@ -382,96 +301,51 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         return false;
     }
 
-    /**
-     * @dev Execute property stage change
-     * @param data Encoded stage change data (newStage)
-     */
     function _executePropertyStageChange(bytes memory data) internal returns (bool) {
         PropertyStage newStage = PropertyStage(abi.decode(data, (uint8)));
-        
-        // Validate stage transition
-        require(_isValidStageTransition(propertyInfo.stage, newStage), 'PropertyDAO: invalid stage transition');
-        
+        require(_isValidStageTransition(propertyInfo.stage, newStage));
         propertyInfo.stage = newStage;
         
-        // Handle stage-specific logic
         if (newStage == PropertyStage.Funded) {
             propertyInfo.isFullyFunded = true;
         } else if (newStage == PropertyStage.Liquidating) {
             isLiquidating = true;
-            // Initiate liquidation on vault (sets isLiquidating flag and pauses)
             propertyVault.initiateLiquidation();
         } else if (newStage == PropertyStage.Liquidated) {
-            // Complete liquidation: unpause vault and clear isLiquidating flag
-            try propertyVault.completeLiquidation() {
-                // Liquidation completed successfully
-            } catch {
-                // If completeLiquidation fails, try unpause as fallback
-                try propertyVault.unpause() {
-                    // Vault unpaused successfully
-                } catch {
-                    // If unpause also fails, continue - this is not critical
-                }
+            try propertyVault.completeLiquidation() {} catch {
+                try propertyVault.unpause() {} catch {}
             }
         }
-        
         return true;
     }
 
-    /**
-     * @dev Execute property purchase (includes fund withdrawal approval)
-     * @param data Encoded purchase data (purchasePrice, propertyManager)
-     */
     function _executePropertyPurchase(bytes memory data) internal returns (bool) {
         (uint256 purchasePrice, address propertyManager) = abi.decode(data, (uint256, address));
-        
-        require(propertyInfo.stage == PropertyStage.Funded, 'PropertyDAO: not in Funded stage');
-        require(propertyInfo.isFullyFunded, 'PropertyDAO: funding target not reached');
-        require(purchasePrice > 0, 'PropertyDAO: invalid purchase price');
-        require(propertyManager != address(0), 'PropertyDAO: invalid property manager');
-        
-        // Stage is already Funded, so deposits and withdrawals are already blocked
-        // Call vault to initiate purchase
+        require(propertyInfo.stage == PropertyStage.Funded);
+        require(propertyInfo.isFullyFunded);
+        require(purchasePrice > 0);
+        require(propertyManager != address(0));
         propertyVault.initiatePropertyPurchase(purchasePrice, propertyManager);
-        
-        // Immediately withdraw funds for purchase (users voted to approve this)
         propertyVault.withdrawForPurchase(purchasePrice);
-        
         emit PropertyFunded(propertyId, propertyInfo.totalInvested, purchasePrice);
         return true;
     }
 
-
-    /**
-     * @dev Execute property liquidation
-     * @param data Encoded liquidation data (salePrice)
-     */
     function _executePropertyLiquidation(bytes memory data) internal returns (bool) {
         uint256 salePrice = abi.decode(data, (uint256));
-        
-        require(!isLiquidating, 'PropertyDAO: already liquidating');
-        require(salePrice > 0, 'PropertyDAO: invalid sale price');
-        
+        require(!isLiquidating);
+        require(salePrice > 0);
         isLiquidating = true;
-        
-        // Change stage to Liquidating
         propertyInfo.stage = PropertyStage.Liquidating;
-        // Initiate liquidation on vault (sets isLiquidating flag and pauses)
         propertyVault.initiateLiquidation();
-        
         emit PropertyLiquidated(propertyId, salePrice, salePrice);
         return true;
     }
 
-    /**
-     * @dev Execute threshold update
-     * @param data Encoded threshold data (thresholdType, newThreshold)
-     */
     function _executeThresholdUpdate(bytes memory data) internal returns (bool) {
         (uint8 thresholdTypeRaw, uint256 newThreshold) = abi.decode(data, (uint8, uint256));
         ThresholdType thresholdType = ThresholdType(thresholdTypeRaw);
-        
-        require(newThreshold > 0 && newThreshold <= 100, 'PropertyDAO: invalid threshold');
+        require(newThreshold > 0 && newThreshold <= 100);
         
         if (thresholdType == ThresholdType.LiquidationThreshold) {
             thresholds.liquidationThreshold = newThreshold;
@@ -537,65 +411,36 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         }
     }
 
-    /**
-     * @dev Set property funding target (only callable by platform/owner)
-     * @param targetAmount Target amount to fund
-     * @param deadline Funding deadline
-     */
     function setFundingTarget(uint256 targetAmount, uint256 deadline) external onlyOwner {
-        require(propertyInfo.stage == PropertyStage.OpenToFund, 'PropertyDAO: not in OpenToFund stage');
-        require(targetAmount > 0, 'PropertyDAO: invalid target amount');
-        require(deadline > block.timestamp, 'PropertyDAO: invalid deadline');
-        
+        require(propertyInfo.stage == PropertyStage.OpenToFund);
+        require(targetAmount > 0);
+        require(deadline > block.timestamp);
         propertyInfo.fundingTarget = targetAmount;
         propertyInfo.fundingDeadline = deadline;
     }
 
-    /**
-     * @dev Update property value (only callable by platform/owner)
-     * @param newValue New property value
-     */
     function updatePropertyValue(uint256 newValue) external onlyOwner {
         propertyInfo.totalValue = newValue;
     }
 
-    /**
-     * @dev Update total invested amount (only callable by vault or platform)
-     * @param newInvested New total invested amount
-     */
     function updateTotalInvested(uint256 newInvested) external {
         address currentOwner = owner();
-        require(msg.sender == address(propertyVault) || msg.sender == currentOwner, 'PropertyDAO: only vault or owner');
+        require(msg.sender == address(propertyVault) || msg.sender == currentOwner);
         propertyInfo.totalInvested = newInvested;
         
-        // Check if property is fully funded
         if (newInvested >= propertyInfo.fundingTarget && propertyInfo.fundingTarget > 0 && !propertyInfo.isFullyFunded) {
             propertyInfo.isFullyFunded = true;
-            
-            // Automatically close deposits and withdrawals when funding target is reached
             if (propertyInfo.stage == PropertyStage.OpenToFund) {
                 propertyInfo.stage = PropertyStage.Funded;
-                
-                
-                // Automatically create property purchase proposal when funding target is reached
                 _createAutoPropertyPurchaseProposal();
             }
         }
     }
 
-    /**
-     * @dev Create automatic property purchase proposal when funding target is reached
-     */
     function _createAutoPropertyPurchaseProposal() internal {
-        // Create a default property purchase proposal
-        // The platform can update the details later if needed
-        uint256 purchasePrice = propertyInfo.totalInvested; // Use total invested as purchase price
-        address propertyManager = owner(); // Use owner as default property manager
-        
-        // Encode the purchase data
+        uint256 purchasePrice = propertyInfo.totalInvested;
+        address propertyManager = owner();
         bytes memory purchaseData = abi.encode(purchasePrice, propertyManager);
-        
-        // Create proposal for property purchase
         createPlatformProposal(
             ProposalType.PropertyPurchase,
             "Automatic property purchase proposal - funding target reached",
@@ -603,35 +448,18 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         );
     }
 
-    /**
-     * @dev Check if liquidation threshold is met
-     */
     function isLiquidationThresholdMet() external pure returns (bool) {
-        // This would need to track shares that voted for liquidation
-        // For now, return false as placeholder
         return false;
     }
 
-    /**
-     * @dev Get proposal details
-     * @param proposalId ID of the proposal
-     */
     function getProposal(uint256 proposalId) external view returns (Proposal memory) {
         return proposals[proposalId];
     }
 
-    /**
-     * @dev Get voting power of an address
-     * @param voter Address to check
-     */
     function getVotingPower(address voter) external view returns (uint256) {
         return propertyVault.balanceOf(voter);
     }
 
-    /**
-     * @dev Check if a proposal can be executed
-     * @param proposalId ID of the proposal
-     */
     function canExecute(uint256 proposalId) external view returns (bool) {
         Proposal memory proposal = proposals[proposalId];
         if (proposal.status != ProposalStatus.Active) return false;
@@ -646,71 +474,42 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
                proposal.votesFor > (totalVotes * MAJORITY_THRESHOLD) / 100;
     }
 
-    /**
-     * @dev Get current thresholds
-     */
     function getThresholds() external view returns (PropertyThresholds memory) {
         return thresholds;
     }
 
-    /**
-     * @dev Get property info
-     */
     function getPropertyInfo() external view returns (PropertyInfo memory) {
         return propertyInfo;
     }
 
-    /**
-     * @dev Get current property stage
-     */
     function getCurrentStage() external view returns (PropertyStage) {
         return propertyInfo.stage;
     }
 
-    /**
-     * @dev Check if property is fully funded
-     */
     function isFullyFunded() external view returns (bool) {
         return propertyInfo.isFullyFunded;
     }
 
-    /**
-     * @dev Add authorized executor
-     * @param executor Address to authorize
-     */
     function addAuthorizedExecutor(address executor) external onlyOwner {
         authorizedExecutors[executor] = true;
     }
 
-    /**
-     * @dev Remove authorized executor
-     * @param executor Address to remove authorization
-     */
     function removeAuthorizedExecutor(address executor) external onlyOwner {
         authorizedExecutors[executor] = false;
     }
 
-    /**
-     * @dev Create property purchase proposal (shareholders can vote on this)
-     * @param purchasePrice The total price to purchase the property
-     * @param propertyManager Address that will receive funds for purchase
-     * @param description Description of the property purchase proposal
-     */
     function proposePropertyPurchase(
         uint256 purchasePrice, 
         address propertyManager, 
         string memory description
     ) external onlyShareholder notLiquidating returns (uint256) {
-        require(propertyInfo.stage == PropertyStage.Funded, 'PropertyDAO: not in Funded stage');
-        require(propertyInfo.isFullyFunded, 'PropertyDAO: funding target not reached');
-        require(purchasePrice > 0, 'PropertyDAO: invalid purchase price');
-        require(propertyManager != address(0), 'PropertyDAO: invalid property manager');
-        require(bytes(description).length > 0, 'PropertyDAO: description required');
+        require(propertyInfo.stage == PropertyStage.Funded);
+        require(propertyInfo.isFullyFunded);
+        require(purchasePrice > 0);
+        require(propertyManager != address(0));
+        require(bytes(description).length > 0);
         
-        // Encode the purchase data
         bytes memory purchaseData = abi.encode(purchasePrice, propertyManager);
-        
-        // Create proposal for property purchase
         proposalCount++;
         uint256 proposalId = proposalCount;
         
@@ -731,27 +530,18 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         return proposalId;
     }
 
-    /**
-     * @dev Platform can also create property purchase proposal (for convenience)
-     * @param purchasePrice The total price to purchase the property
-     * @param propertyManager Address that will receive funds for purchase
-     * @param description Description of the property purchase proposal
-     */
     function createPropertyPurchaseProposal(
         uint256 purchasePrice, 
         address propertyManager, 
         string memory description
     ) external onlyOwner notLiquidating returns (uint256) {
-        require(propertyInfo.stage == PropertyStage.Funded, 'PropertyDAO: not in Funded stage');
-        require(propertyInfo.isFullyFunded, 'PropertyDAO: funding target not reached');
-        require(purchasePrice > 0, 'PropertyDAO: invalid purchase price');
-        require(propertyManager != address(0), 'PropertyDAO: invalid property manager');
-        require(bytes(description).length > 0, 'PropertyDAO: description required');
+        require(propertyInfo.stage == PropertyStage.Funded);
+        require(propertyInfo.isFullyFunded);
+        require(purchasePrice > 0);
+        require(propertyManager != address(0));
+        require(bytes(description).length > 0);
         
-        // Encode the purchase data
         bytes memory purchaseData = abi.encode(purchasePrice, propertyManager);
-        
-        // Create proposal for property purchase
         return createPlatformProposal(
             ProposalType.PropertyPurchase,
             description,
@@ -759,70 +549,34 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         );
     }
 
-    /**
-     * @dev Complete property purchase (only callable by platform/owner)
-     * @param propertyAddress Physical property address/identifier
-     */
     function completePropertyPurchase(string memory propertyAddress) external onlyOwner {
-        require(propertyInfo.stage == PropertyStage.Funded, 'PropertyDAO: not in Funded stage');
-        
-        // Call vault to complete purchase
+        require(propertyInfo.stage == PropertyStage.Funded);
         propertyVault.completePropertyPurchase(propertyAddress);
-        
-        // Change stage to UnderManagement to allow income withdrawals
         propertyInfo.stage = PropertyStage.UnderManagement;
     }
 
-
-    /**
-     * @dev Update property stage (internal function called by vault)
-     * @param newStage New property stage (0=OpenToFund, 1=Funded, 2=UnderManagement, 3=Liquidating, 4=Liquidated)
-     */
     function updatePropertyStage(uint8 newStage) external {
-        require(msg.sender == address(propertyVault) || msg.sender == owner(), 'PropertyDAO: only vault or owner');
-        require(newStage <= 4, 'PropertyDAO: invalid stage');
-        
+        require(msg.sender == address(propertyVault) || msg.sender == owner());
+        require(newStage <= 4);
         propertyInfo.stage = PropertyStage(newStage);
         
-        // Handle stage-specific logic
         if (PropertyStage(newStage) == PropertyStage.Liquidated) {
-            // Complete liquidation: unpause vault and clear isLiquidating flag
-            try propertyVault.completeLiquidation() {
-                // Liquidation completed successfully
-            } catch {
-                // If completeLiquidation fails, try unpause as fallback
-                try propertyVault.unpause() {
-                    // Vault unpaused successfully
-                } catch {
-                    // If unpause also fails, continue - this is not critical
-                }
+            try propertyVault.completeLiquidation() {} catch {
+                try propertyVault.unpause() {} catch {}
             }
         }
-        
-        
         emit StageChanged(PropertyStage(newStage));
     }
 
-
-    /**
-     * @dev Check if property is ready for purchase
-     */
     function isReadyForPurchase() external view returns (bool) {
         return propertyInfo.isFullyFunded && 
                propertyInfo.stage == PropertyStage.Funded;
     }
 
-    /**
-     * @dev Revert property back to OpenToFund stage (only callable by owner)
-     * @notice This allows reopening deposits if funding target needs to be adjusted
-     */
     function revertToOpenToFund() external onlyOwner {
-        require(propertyInfo.stage == PropertyStage.Funded, 'PropertyDAO: not in Funded stage');
-        
+        require(propertyInfo.stage == PropertyStage.Funded);
         propertyInfo.stage = PropertyStage.OpenToFund;
-        propertyInfo.isFullyFunded = false; // Reset funding status
-        
-        
+        propertyInfo.isFullyFunded = false;
         emit StageChanged(PropertyStage.OpenToFund);
     }
 

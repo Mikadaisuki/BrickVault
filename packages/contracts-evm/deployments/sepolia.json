@@ -1,0 +1,40 @@
+{
+  "network": "sepolia",
+  "chainId": 11155111,
+  "contracts": {
+    "EnvironmentConfig": "0xd71e603ADD4d9AAe3bd54E6e15F90886A7d72581",
+    "SepoliaEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+    "MockUSDCHub": "0xd8C13CdE494b721a314c0C8b1de520130f829E3d",
+    "USDCOFTAdapterHub": "0xF60c503c6eed2B4269495b6Ef3c50115f284f21C",
+    "OFTUSDC": "0x824D35FEa28db1842f6626481c45788408216629",
+    "VaultFactory": "0x72011AD1d0Af8A7D6f8662e91A86804df5bf054d",
+    "PropertyDAOFactory": "0x6c7dd295487d018641270F8de05e54d337c1EA1F",
+    "PropertyRegistry": "0x91366D7170533b0F4c7AeAFC2c701803787F583c",
+    "StacksCrossChainManager": "0x880e008e55Ca008e4c37D7eA06462d35F3679e47"
+  },
+  "note": "Properties and DAOs can be created via PropertyRegistry.createProperty()",
+  "minting": {
+    "mockUSDCDeployer": "0x172859d452718A7E5BfB452c90433ca6Ad9E63ef",
+    "note": "Use mockUSDC.mint(address, amount) to mint USDC to test users"
+  },
+  "layerzero": {
+    "hubEID": 40161,
+    "hubEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+    "note": "Spoke chain deployment is separate - see TESTNET_DEPLOYMENT.md"
+  },
+  "configuration": {
+    "vaultDepositCap": "100000000000000000000000",
+    "fundingTarget": "50000000000000000000000",
+    "fundingDeadline": 1765410601,
+    "liquidityPoolBalance": "0",
+    "sbtcPrice": "95000",
+    "note": "Fund liquidity pool manually after deployment"
+  },
+  "decimals": {
+    "usdc": 6,
+    "oftUSDC": 18,
+    "vaultShares": 18
+  },
+  "deploymentTime": "2025-10-11T23:50:14.009Z",
+  "deployer": "0x172859d452718A7E5BfB452c90433ca6Ad9E63ef"
+}
