@@ -2,19 +2,19 @@
   "network": "localhost",
   "chainId": 31337,
   "contracts": {
-    "EnvironmentConfig": "0x922D6956C99E12DFeB3224DEA977D0939758A1Fe",
-    "HubEndpoint": "0x5081a39b8A5f0E35a8D959395a630b68B74Dd30f",
-    "SpokeEndpoint": "0x1fA02b2d6A771842690194Cf62D91bdd92BfE28d",
-    "MockUSDCHub": "0xdbC43Ba45381e02825b14322cDdd15eC4B3164E6",
-    "MockUSDCSpoke": "0x04C89607413713Ec9775E14b954286519d836FEf",
-    "USDCOFTAdapterHub": "0x21dF544947ba3E8b3c32561399E88B52Dc8b2823",
-    "USDCOFTAdapterSpoke": "0x2E2Ed0Cfd3AD2f1d34481277b3204d807Ca2F8c2",
-    "OFTUSDC": "0x4C4a2f8c81640e47606d3fd77B353E87Ba015584",
-    "VaultFactory": "0x172076E0166D1F9Cc711C77Adf8488051744980C",
-    "PropertyRegistry": "0xBEc49fA140aCaA83533fB00A2BB19bDdd0290f25",
-    "PropertyVault": "0xD3F77aFa1aA264da7Ef6eB4cEfB91a486dd61bA2",
-    "PropertyDAO": "0xfbC22278A96299D91d41C453234d97b4F5Eb9B2d",
-    "StacksCrossChainManager": "0x4C2F7092C2aE51D986bEFEe378e50BD4dB99C901"
+    "EnvironmentConfig": "0x4EE6eCAD1c2Dae9f525404De8555724e3c35d07B",
+    "HubEndpoint": "0xBEc49fA140aCaA83533fB00A2BB19bDdd0290f25",
+    "SpokeEndpoint": "0xD84379CEae14AA33C123Af12424A37803F885889",
+    "MockUSDCHub": "0x2B0d36FACD61B71CC05ab8F3D2355ec3631C0dd5",
+    "MockUSDCSpoke": "0xfbC22278A96299D91d41C453234d97b4F5Eb9B2d",
+    "USDCOFTAdapterHub": "0xC9a43158891282A2B1475592D5719c001986Aaec",
+    "USDCOFTAdapterSpoke": "0x1c85638e118b37167e9298c2268758e058DdfDA0",
+    "OFTUSDC": "0x46b142DD1E924FAb83eCc3c08e4D46E82f005e0E",
+    "VaultFactory": "0x5c74c94173F05dA1720953407cbb920F3DF9f887",
+    "PropertyRegistry": "0xe8D2A1E88c91DCd5433208d4152Cc4F399a7e91d",
+    "PropertyVault": "0x0F9019Dd30C7Cc5774d4883fba933aA0Caba9424",
+    "PropertyDAO": "0x4b6aB5F819A515382B0dEB6935D793817bB4af28",
+    "StacksCrossChainManager": "0xc96304e3c037f81dA488ed9dEa1D8F2a48278a75"
   },
   "layerzero": {
     "hubEID": 1,
@@ -28,12 +28,12 @@
   "configuration": {
     "vaultDepositCap": "10000000000000000000000",
     "fundingTarget": "10000000000000000000000",
-    "fundingDeadline": 1762818086
+    "fundingDeadline": 1762897783
   },
   "decimals": {
     "mockUSDC": 6,
     "oftUSDC": 18,
     "vaultShares": 18
   },
-  "deploymentTime": "2025-10-11T23:41:26.730Z"
+  "deploymentTime": "2025-10-12T21:49:43.757Z"
 }

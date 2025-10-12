@@ -580,4 +580,18 @@ contract PropertyDAO is Ownable, Pausable, ReentrancyGuard {
         emit StageChanged(PropertyStage.OpenToFund);
     }
 
+    /**
+     * @dev Skip voting period for testing (sets deadline to past so proposal can be executed)
+     * @param proposalId The proposal ID to skip voting period for
+     * @notice This is a testing/development function - use with caution
+     */
+    function skipVotingPeriod(uint256 proposalId) external onlyOwner {
+        Proposal storage proposal = proposals[proposalId];
+        require(proposal.status == ProposalStatus.Active, "Proposal not active");
+        require(!proposal.executed, "Proposal already executed");
+        // Set deadline to 1 second in the past so canExecute() check passes
+        // (canExecute requires block.timestamp > proposal.deadline)
+        proposal.deadline = block.timestamp > 0 ? block.timestamp - 1 : 0;
+    }
+
 }

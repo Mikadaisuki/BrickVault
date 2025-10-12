@@ -119,11 +119,17 @@ async function main() {
 
   // 6.5. Configure LayerZero endpoints for cross-chain communication
   console.log('\n6️⃣.5️⃣ Configuring LayerZero endpoints...');
+  
+  // Hub endpoint routing (messages originating from hub)
   await hubEndpoint.setDestLzEndpoint(await oftUSDC.getAddress(), await hubEndpoint.getAddress());
   await hubEndpoint.setDestLzEndpoint(await usdcOFTAdapterHub.getAddress(), await hubEndpoint.getAddress());
+  await hubEndpoint.setDestLzEndpoint(await usdcOFTAdapterSpoke.getAddress(), await spokeEndpoint.getAddress()); // 🔧 CRITICAL: Route hub → spoke adapter
+  console.log('✅ Hub endpoint routing configured');
+  
+  // Spoke endpoint routing (messages originating from spoke)
   await spokeEndpoint.setDestLzEndpoint(await oftUSDC.getAddress(), await hubEndpoint.getAddress());
   await spokeEndpoint.setDestLzEndpoint(await usdcOFTAdapterSpoke.getAddress(), await spokeEndpoint.getAddress());
-  console.log('✅ LayerZero endpoints configured');
+  console.log('✅ Spoke endpoint routing configured');
 
   // 6.6. Set peers for unified adapter architecture
   console.log('\n6️⃣.6️⃣ Setting up peer relationships...');

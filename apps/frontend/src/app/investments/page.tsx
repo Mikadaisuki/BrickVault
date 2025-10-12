@@ -32,6 +32,7 @@ interface Proposal {
   votesFor: bigint
   votesAgainst: bigint
   status: string
+  data: string // Encoded proposal data
   userVote?: {
     hasVoted: boolean
     support: boolean
@@ -314,6 +315,7 @@ export default function InvestmentsPage() {
               status: Number(status) === 0 ? 'Active' : 
                      Number(status) === 1 ? 'Executed' :
                      Number(status) === 2 ? 'Rejected' : 'Expired',
+              data: data || '0x',
               userVote
             }
             proposals.push(proposalData)
@@ -517,6 +519,26 @@ export default function InvestmentsPage() {
       alert('Failed to create proposal. Please try again.')
     } finally {
       setIsCreatingProposal(false)
+    }
+  }
+
+  // Helper function to decode liquidation price from proposal data
+  const decodeLiquidationPrice = (data: string): string | null => {
+    if (!data || data === '0x' || data.length < 66) {
+      return null
+    }
+    
+    try {
+      // Data is encoded as uint256 (32 bytes = 64 hex chars + 0x prefix)
+      // Remove '0x' prefix and parse as BigInt
+      const hexValue = data.startsWith('0x') ? data.slice(2) : data
+      const liquidationPriceBigInt = BigInt('0x' + hexValue.slice(0, 64))
+      
+      // Convert from 18 decimals to readable format
+      return formatUnits(liquidationPriceBigInt, 18)
+    } catch (error) {
+      console.error('Error decoding liquidation price:', error)
+      return null
     }
   }
 
@@ -1445,22 +1467,35 @@ export default function InvestmentsPage() {
                                    proposal.proposalType === 5 ? 'Emergency Pause' :
                                    proposal.proposalType === 6 ? 'Emergency Unpause' :
                                    proposal.proposalType === 7 ? 'Property Stage Change' : 'Other'}
+                              </span>
+                            </div>
+                            <p className="text-sm text-muted-foreground mt-1">{proposal.description}</p>
+                            
+                            {/* Show liquidation price for Property Liquidation proposals */}
+                            {proposal.proposalType === 0 && proposal.data && proposal.data !== '0x' && (
+                              <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
+                                <DollarSign className="h-4 w-4 text-red-600" />
+                                <span className="text-sm font-medium text-red-800">
+                                  Liquidation Price: 
+                                  <span className="ml-1 font-bold">
+                                    ${parseFloat(decodeLiquidationPrice(proposal.data) || '0').toLocaleString()} USDC
+                                  </span>
                                 </span>
                               </div>
-                              <p className="text-sm text-muted-foreground mt-1">{proposal.description}</p>
-                            </div>
-                            <span className={`px-2 py-1 rounded-full text-xs ${
-                              proposal.status === 'Active' 
-                                ? 'bg-green-100 text-green-800'
-                                : proposal.executed
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-gray-100 text-gray-800'
-                            }`}>
-                              {proposal.status}
-                            </span>
+                            )}
                           </div>
-                          
-                          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
+                          <span className={`px-2 py-1 rounded-full text-xs ${
+                            proposal.status === 'Active' 
+                              ? 'bg-green-100 text-green-800'
+                              : proposal.executed
+                              ? 'bg-blue-100 text-blue-800'
+                              : 'bg-gray-100 text-gray-800'
+                          }`}>
+                            {proposal.status}
+                          </span>
+                        </div>
+                        
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm mb-4">
                             <div>
                               <span className="text-muted-foreground">Proposer:</span>
                               <p className="font-mono text-xs">

@@ -1036,19 +1036,6 @@
     "type": "function"
   },
   {
-    "inputs": [],
-    "name": "getWithdrawalStatus",
-    "outputs": [
-      {
-        "internalType": "string",
-        "name": "",
-        "type": "string"
-      }
-    ],
-    "stateMutability": "view",
-    "type": "function"
-  },
-  {
     "inputs": [
       {
         "internalType": "uint256",

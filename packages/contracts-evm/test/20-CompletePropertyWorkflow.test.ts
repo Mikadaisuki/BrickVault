@@ -2147,5 +2147,202 @@ describe('Complete Property Workflow Test', function () {
     console.log('\n✅ PROPERTY STATUS CONTROL TEST PASSED! 🎉');
     console.log('='.repeat(80));
   });
+
+  it('⏭️ Test Skip Voting Period Function', async function () {
+    console.log('\n' + '='.repeat(80));
+    console.log('⏭️ SKIP VOTING PERIOD TEST');
+    console.log('🎯 Testing fast-forward function for development');
+    console.log('='.repeat(80));
+
+    // ============================================================================
+    // PHASE 1: SETUP PROPERTY AND COMPLETE FUNDING
+    // ============================================================================
+    console.log('\n📍 PHASE 1: SETUP PROPERTY');
+    console.log('-'.repeat(80));
+
+    const createTx = await propertyRegistry.connect(platformOwner).createProperty(
+      'Test Property for Skip Function',
+      DEPOSIT_CAP,
+      await oftUSDC.getAddress()
+    );
+    const receipt = await createTx.wait();
+    
+    const propertyCreatedEvent = receipt?.logs.find(
+      (log: any) => log.fragment?.name === 'PropertyCreated'
+    );
+    const vaultAddress = propertyCreatedEvent?.args?.vault;
+    
+    const testVault = await ethers.getContractAt('PropertyVaultGovernance', vaultAddress);
+    console.log('✅ Property Vault created:', vaultAddress);
+
+    // Deploy DAO and link
+    const PropertyDAO = await ethers.getContractFactory('PropertyDAO');
+    const testDAO = await PropertyDAO.deploy(vaultAddress, platformOwner.address);
+    await testDAO.waitForDeployment();
+    await testVault.connect(platformOwner).setDAO(await testDAO.getAddress());
+    console.log('✅ PropertyDAO deployed and linked');
+    
+    // Set funding target
+    const fundingDeadline = (await time.latest()) + 30 * 24 * 60 * 60;
+    await testDAO.connect(platformOwner).setFundingTarget(FUNDING_TARGET, fundingDeadline);
+    console.log('✅ Funding target set:', ethers.formatUnits(FUNDING_TARGET, 18), 'OFTUSDC');
+
+    // Fund the property
+    const investorAmount = ethers.parseUnits('100000', USDC_DECIMALS);
+    await mockUSDC.connect(platformOwner).mint(investor1.address, investorAmount);
+    await mockUSDC.connect(investor1).approve(await oftAdapter.getAddress(), investorAmount);
+    
+    const options = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
+    const sendParam = [2, ethers.zeroPadValue(investor1.address, 32), investorAmount, investorAmount, options, '0x', '0x'];
+    const [nativeFee] = await oftAdapter.quoteSend(sendParam, false);
+    await oftAdapter.connect(investor1).send(sendParam, [nativeFee, 0n], investor1.address, { value: nativeFee });
+    
+    const oftAmount = investorAmount * BigInt(10 ** 12);
+    await oftUSDC.connect(investor1).approve(vaultAddress, oftAmount);
+    await testVault.connect(investor1).deposit(oftAmount, investor1.address);
+    console.log('✅ Property funded - auto-transition to Funded stage');
+
+    // ============================================================================
+    // PHASE 2: TEST SKIP VOTING PERIOD
+    // ============================================================================
+    console.log('\n📍 PHASE 2: TEST SKIP VOTING PERIOD');
+    console.log('-'.repeat(80));
+
+    // Check that proposal was auto-created
+    const proposalCount = await testDAO.proposalCount();
+    console.log('📋 Proposal count:', proposalCount);
+    expect(proposalCount).to.be.greaterThan(0);
+
+    const proposal = await testDAO.getProposal(1);
+    console.log('📋 Auto-created proposal:');
+    console.log('   - ID:', proposal.id);
+    console.log('   - Type:', proposal.proposalType, '(PropertyPurchase)');
+    console.log('   - Deadline:', new Date(Number(proposal.deadline) * 1000).toLocaleString());
+    console.log('   - Status:', proposal.status, '(Active)');
+
+    // Vote on proposal
+    console.log('\n🗳️ Voting on proposal...');
+    await testDAO.connect(investor1).vote(1, true);
+    console.log('✅ Investor voted YES');
+
+    // Check if can execute BEFORE skipping (should be false)
+    const canExecuteBefore = await testDAO.canExecute(1);
+    console.log('\n🔍 Before skip:');
+    console.log('   - Current time:', new Date().toLocaleString());
+    console.log('   - Deadline:', new Date(Number(proposal.deadline) * 1000).toLocaleString());
+    console.log('   - Can execute?', canExecuteBefore);
+    expect(canExecuteBefore).to.be.false;
+
+    // Skip voting period using new function
+    console.log('\n⏭️ Skipping voting period...');
+    await testDAO.connect(platformOwner).skipVotingPeriod(1);
+    console.log('✅ Voting period skipped!');
+
+    // Check proposal after skip
+    const proposalAfterSkip = await testDAO.getProposal(1);
+    const currentTime = BigInt(await time.latest());
+    console.log('\n📋 After skip:');
+    console.log('   - Current time:', currentTime);
+    console.log('   - New deadline:', proposalAfterSkip.deadline);
+    console.log('   - Deadline < Current time?', proposalAfterSkip.deadline < currentTime);
+    expect(proposalAfterSkip.deadline).to.equal(currentTime - BigInt(1)); // Deadline set to 1 second ago
+
+    // Check if can execute AFTER skipping (should be true)
+    const canExecuteAfter = await testDAO.canExecute(1);
+    console.log('   - Can execute now?', canExecuteAfter);
+    expect(canExecuteAfter).to.be.true;
+
+    // Execute proposal immediately
+    console.log('\n✅ Executing proposal immediately (no 7-day wait!)...');
+    await testDAO.connect(platformOwner).executeProposal(1);
+    console.log('✅ Proposal executed successfully!');
+
+    const executedProposal = await testDAO.getProposal(1);
+    expect(executedProposal.executed).to.be.true;
+    expect(executedProposal.status).to.equal(1); // Executed
+
+    // Complete property purchase to transition to UnderManagement
+    console.log('\n🏠 Completing property purchase...');
+    await testDAO.connect(platformOwner).completePropertyPurchase('123 Test Street');
+    const stageAfterPurchase = await testDAO.getCurrentStage();
+    console.log('✅ Stage after purchase:', stageAfterPurchase, '(UnderManagement)');
+    expect(stageAfterPurchase).to.equal(2); // UnderManagement
+
+    // ============================================================================
+    // PHASE 3: TEST ERROR CONDITIONS
+    // ============================================================================
+    console.log('\n📍 PHASE 3: TEST ERROR CONDITIONS');
+    console.log('-'.repeat(80));
+
+    // Try to skip already executed proposal
+    console.log('🚫 Attempting to skip already executed proposal...');
+    try {
+      await testDAO.connect(platformOwner).skipVotingPeriod(1);
+      console.log('❌ ERROR: Should have been blocked!');
+      expect.fail('Should not allow skipping executed proposal');
+    } catch (error: any) {
+      console.log('✅ Correctly blocked!');
+      console.log('   - Error:', error.message.split('\n')[0]);
+      expect(error.message).to.match(/Proposal already executed|reverted/i);
+    }
+
+    // Try to skip as non-owner
+    console.log('\n🚫 Attempting to skip as non-owner...');
+    
+    // Create another proposal for testing (now in UnderManagement stage)
+    console.log('   Creating test liquidation proposal...');
+    const liquidationData = ethers.AbiCoder.defaultAbiCoder().encode(
+      ['uint256'],
+      [ethers.parseUnits('50000', 18)]
+    );
+    await testDAO.connect(investor1).createProposal(
+      0, // PropertyLiquidation
+      'Test liquidation for skip function',
+      liquidationData
+    );
+    console.log('   ✅ Liquidation proposal created (ID: 2)');
+    
+    try {
+      await testDAO.connect(investor1).skipVotingPeriod(2); // investor1 is not owner
+      console.log('❌ ERROR: Non-owner should not be able to skip!');
+      expect.fail('Should not allow non-owner to skip');
+    } catch (error: any) {
+      console.log('✅ Correctly blocked non-owner!');
+      console.log('   - Error:', error.message.split('\n')[0]);
+      expect(error.message).to.match(/Ownable|caller is not the owner|reverted/i);
+    }
+
+    // ============================================================================
+    // PHASE 4: SUMMARY
+    // ============================================================================
+    console.log('\n' + '='.repeat(80));
+    console.log('📊 SKIP VOTING PERIOD SUMMARY');
+    console.log('='.repeat(80));
+
+    console.log('\n✅ Function Tested:');
+    console.log('   - skipVotingPeriod(proposalId) - Owner only');
+    console.log('   - Sets proposal.deadline = block.timestamp');
+    console.log('   - Allows immediate execution after voting');
+
+    console.log('\n✅ Validations Working:');
+    console.log('   ✅ Only owner can skip voting period');
+    console.log('   ✅ Cannot skip already executed proposals');
+    console.log('   ✅ Can execute immediately after skip');
+    console.log('   ✅ Proposal must be active');
+
+    console.log('\n💡 Use Cases:');
+    console.log('   • Development: Skip 7-day wait for faster testing');
+    console.log('   • Testing: Avoid time.increase() in tests');
+    console.log('   • Demo: Show complete flow quickly');
+    console.log('   ⚠️  Production: Consider removing or restricting');
+
+    console.log('\n🎯 Comparison:');
+    console.log('   Old Way: Vote → time.increase(7 days) → Execute');
+    console.log('   New Way: Vote → skipVotingPeriod() → Execute ✨');
+    console.log('   Time Saved: 7 days → Instant!');
+
+    console.log('\n✅ SKIP VOTING PERIOD TEST PASSED! 🎉');
+    console.log('='.repeat(80));
+  });
 });
 

@@ -136,6 +136,8 @@ export default function BalancePage() {
   const [spokeUsdcAmount, setSpokeUsdcAmount] = useState('')
   const [spokeApprovalStep, setSpokeApprovalStep] = useState<'idle' | 'approving' | 'approved' | 'sending'>('idle')
   const [spokeQuotingFee, setSpokeQuotingFee] = useState(false)
+  const [spokeOftAmount, setSpokeOftAmount] = useState('')
+  const [spokeQuotingUnwrapFee, setSpokeQuotingUnwrapFee] = useState(false)
   
   // Track approval transaction separately
   const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>()
@@ -144,8 +146,8 @@ export default function BalancePage() {
   })
   
   // Configuration for local devnet
-  // NOTE: Contract uses 6 decimals for sBTC (min-deposit-amount is u1000000)
-  const [mockMinDeposit] = useState('1') // 1 sBTC minimum
+  // NOTE: Contract uses 8 decimals for sBTC (min-deposit-amount is u10000000 for 0.1 sBTC)
+  const [mockMinDeposit] = useState('0.1') // 0.1 sBTC minimum
   const [mockTotalLocked] = useState('15.7') // Mock total value locked
 
   useEffect(() => {
@@ -751,8 +753,6 @@ export default function BalancePage() {
           args: [sendParamTuple, false],
         })
         
-        console.log('Quote result:', quoteResult)
-        
         if (typeof quoteResult === 'object' && quoteResult !== null && 'nativeFee' in quoteResult) {
           nativeFee = (quoteResult as { nativeFee: bigint }).nativeFee
         } else if (Array.isArray(quoteResult)) {
@@ -760,10 +760,7 @@ export default function BalancePage() {
         } else {
           nativeFee = quoteResult as bigint
         }
-        
-        console.log('Quoted native fee:', nativeFee.toString())
       } catch (quoteError) {
-        console.warn('quoteSend failed, using fallback fee:', quoteError)
         nativeFee = BigInt(1000000000000000)
       }
       
@@ -782,8 +779,6 @@ export default function BalancePage() {
         value: nativeFee,
         gas: BigInt(10000000),
       })
-      
-      console.log('writeContract called successfully')
     } catch (err) {
       console.error('Error sending via adapter:', err)
       setQuotingFee(false)
@@ -792,20 +787,11 @@ export default function BalancePage() {
 
   // Unwrap OFTUSDC back to USDC (same-chain unwrapping via adapter)
   const redeemOFTUSDCToUSDC = async () => {
-    if (!oftAmount || !evmAddress || !publicClient) {
-      console.error('Missing required parameters:', { oftAmount, evmAddress: !!evmAddress, publicClient: !!publicClient })
-      return
-    }
+    if (!oftAmount || !evmAddress || !publicClient) return
     
     try {
-      console.log('🔄 Starting OFTUSDC unwrap process...')
-      console.log('  Amount:', oftAmount, 'OFTUSDC')
-      console.log('  User:', evmAddress)
-      console.log('  Hub EID:', LAYERZERO_CONFIG.hubEID)
-      
       setQuotingFee(true)
       const amount = parseUnits(oftAmount, TOKEN_DECIMALS.OFTUSDC)
-      console.log('  Parsed amount (18 decimals):', amount.toString())
       
       // Check if user has enough balance
       const currentBalance = oftBalance as bigint || BigInt(0)
@@ -830,23 +816,14 @@ export default function BalancePage() {
         oftCmd: '0x' as `0x${string}`,
       }
       
-      console.log('  Send params:', {
-        dstEid: sendParamTuple.dstEid,
-        to: sendParamTuple.to,
-        amountLD: sendParamTuple.amountLD.toString()
-      })
-      
       let nativeFee: bigint
       try {
-        console.log('  Quoting LayerZero fee...')
         const quoteResult = await publicClient.readContract({
           address: CONTRACTS.OFTUSDC as `0x${string}`,
           abi: OFT_USDC_ABI_ARRAY,
           functionName: 'quoteSend',
           args: [sendParamTuple, false],
         })
-        
-        console.log('  Quote result:', quoteResult)
         
         if (typeof quoteResult === 'object' && quoteResult !== null && 'nativeFee' in quoteResult) {
           nativeFee = (quoteResult as { nativeFee: bigint }).nativeFee
@@ -855,10 +832,7 @@ export default function BalancePage() {
         } else {
           nativeFee = quoteResult as bigint
         }
-        
-        console.log('  ✅ Quoted native fee:', nativeFee.toString(), 'wei')
       } catch (quoteError) {
-        console.warn('  ⚠️ quoteSend failed, using fallback fee:', quoteError)
         nativeFee = BigInt(1000000000000000)
       }
       
@@ -869,7 +843,6 @@ export default function BalancePage() {
         lzTokenFee: BigInt(0),
       }
       
-      console.log('  📤 Sending unwrap transaction...')
       writeContract({
         address: CONTRACTS.OFTUSDC as `0x${string}`,
         abi: OFT_USDC_ABI_ARRAY,
@@ -878,10 +851,8 @@ export default function BalancePage() {
         value: nativeFee,
         gas: BigInt(10000000),
       })
-      
-      console.log('  ✅ Transaction sent! Waiting for confirmation...')
     } catch (err) {
-      console.error('❌ Error unwrapping OFTUSDC via adapter:', err)
+      console.error('Error unwrapping OFTUSDC:', err)
       setQuotingFee(false)
       alert(`Error unwrapping OFTUSDC: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
@@ -917,16 +888,9 @@ export default function BalancePage() {
     if (!spokeUsdcAmount || !evmAddress || !publicClient) return
     
     try {
-      console.log('🌉 Starting cross-chain USDC bridge from spoke to hub...')
-      console.log('  Amount:', spokeUsdcAmount, 'USDC')
-      console.log('  User:', evmAddress)
-      console.log('  From: Spoke Chain (EID', LAYERZERO_CONFIG.spokeEID, ')')
-      console.log('  To: Hub Chain (EID', LAYERZERO_CONFIG.hubEID, ')')
-      
       setSpokeApprovalStep('sending')
       setSpokeQuotingFee(true)
       const amount = parseUnits(spokeUsdcAmount, TOKEN_DECIMALS.USDC)
-      console.log('  Parsed amount (6 decimals):', amount.toString())
       
       const options = Options.newOptions()
         .addExecutorLzReceiveOption(200000, 0)
@@ -943,23 +907,14 @@ export default function BalancePage() {
         oftCmd: '0x' as `0x${string}`,
       }
       
-      console.log('  Send params:', {
-        dstEid: sendParamTuple.dstEid,
-        to: sendParamTuple.to,
-        amountLD: sendParamTuple.amountLD.toString()
-      })
-      
       let nativeFee: bigint
       try {
-        console.log('  Quoting LayerZero fee...')
         const quoteResult = await publicClient.readContract({
           address: CONTRACTS.USDCOFTAdapterSpoke as `0x${string}`,
           abi: USDC_OFT_ADAPTER_ABI_ARRAY,
           functionName: 'quoteSend',
           args: [sendParamTuple, false],
         })
-        
-        console.log('  Quote result:', quoteResult)
         
         if (typeof quoteResult === 'object' && quoteResult !== null && 'nativeFee' in quoteResult) {
           nativeFee = (quoteResult as { nativeFee: bigint }).nativeFee
@@ -968,10 +923,7 @@ export default function BalancePage() {
         } else {
           nativeFee = quoteResult as bigint
         }
-        
-        console.log('  ✅ Quoted native fee:', nativeFee.toString(), 'wei')
       } catch (quoteError) {
-        console.warn('  ⚠️ quoteSend failed, using fallback fee:', quoteError)
         nativeFee = BigInt(1000000000000000)
       }
       
@@ -982,7 +934,6 @@ export default function BalancePage() {
         lzTokenFee: BigInt(0),
       }
       
-      console.log('  📤 Sending cross-chain bridge transaction...')
       writeContract({
         address: CONTRACTS.USDCOFTAdapterSpoke as `0x${string}`,
         abi: USDC_OFT_ADAPTER_ABI_ARRAY,
@@ -991,12 +942,140 @@ export default function BalancePage() {
         value: nativeFee,
         gas: BigInt(10000000),
       })
-      
-      console.log('  ✅ Transaction sent! USDC will arrive as OFTUSDC on hub chain...')
     } catch (err) {
-      console.error('❌ Error bridging USDC cross-chain:', err)
+      console.error('Error bridging USDC cross-chain:', err)
       setSpokeQuotingFee(false)
       alert(`Error bridging USDC: ${err instanceof Error ? err.message : 'Unknown error'}`)
+    }
+  }
+
+  // Unwrap OFTUSDC back to Spoke chain USDC (cross-chain unwrap)
+  const unwrapOFTUSDCToSpokeChain = async () => {
+    if (!spokeOftAmount || !evmAddress || !publicClient) return
+    
+    try {
+      setSpokeQuotingUnwrapFee(true)
+      const amount = parseUnits(spokeOftAmount, TOKEN_DECIMALS.OFTUSDC)
+      
+      // Check if user has enough OFTUSDC balance
+      const currentBalance = oftBalance as bigint || BigInt(0)
+      if (amount > currentBalance) {
+        alert(`Insufficient OFTUSDC balance. You have ${formatUnits(currentBalance, TOKEN_DECIMALS.OFTUSDC)} but trying to unwrap ${spokeOftAmount}`)
+        setSpokeQuotingUnwrapFee(false)
+        return
+      }
+
+      // Check spoke adapter liquidity (USDC locked)
+      const spokeAdapterUsdcBalance = await publicClient.readContract({
+        address: CONTRACTS.MockUSDCSpoke as `0x${string}`,
+        abi: MOCK_USDC_ABI_ARRAY,
+        functionName: 'balanceOf',
+        args: [CONTRACTS.USDCOFTAdapterSpoke as `0x${string}`],
+      }) as bigint
+
+      const requiredUSDC = amount / BigInt(10 ** 12) // Convert from 18 to 6 decimals
+      
+      if (spokeAdapterUsdcBalance < requiredUSDC) {
+        alert(
+          `⚠️ Insufficient liquidity on spoke chain!\n\n` +
+          `The spoke adapter has ${formatUnits(spokeAdapterUsdcBalance, TOKEN_DECIMALS.USDC)} USDC locked, ` +
+          `but you need ${formatUnits(requiredUSDC, TOKEN_DECIMALS.USDC)} USDC to unwrap.\n\n` +
+          `Lockbox Model: Each chain's adapter can only unlock USDC that was deposited on that chain.\n\n` +
+          `Solutions:\n` +
+          `• Wait for more users to deposit on spoke chain (increases liquidity)\n` +
+          `• Unwrap to hub chain instead (use Hub tab)\n` +
+          `• Contact platform to add liquidity`
+        )
+        setSpokeQuotingUnwrapFee(false)
+        return
+      }
+      
+      const options = Options.newOptions()
+        .addExecutorLzReceiveOption(200000, 0)
+        .toHex()
+        .toString()
+      
+      const sendParamTuple = {
+        dstEid: LAYERZERO_CONFIG.spokeEID, // Cross-chain to spoke
+        to: pad(evmAddress, { size: 32 }),
+        amountLD: amount,
+        minAmountLD: amount,
+        extraOptions: options as `0x${string}`,
+        composeMsg: '0x' as `0x${string}`,
+        oftCmd: '0x' as `0x${string}`,
+      }
+      
+      let nativeFee: bigint
+      try {
+        const quoteResult = await publicClient.readContract({
+          address: CONTRACTS.OFTUSDC as `0x${string}`,
+          abi: OFT_USDC_ABI_ARRAY,
+          functionName: 'quoteSend',
+          args: [sendParamTuple, false],
+        })
+        
+        if (typeof quoteResult === 'object' && quoteResult !== null && 'nativeFee' in quoteResult) {
+          nativeFee = (quoteResult as { nativeFee: bigint }).nativeFee
+        } else if (Array.isArray(quoteResult)) {
+          nativeFee = quoteResult[0] as bigint
+        } else {
+          nativeFee = quoteResult as bigint
+        }
+      } catch (quoteError) {
+        nativeFee = BigInt(1000000000000000)
+      }
+      
+      setSpokeQuotingUnwrapFee(false)
+      
+      const feeTuple = {
+        nativeFee: nativeFee,
+        lzTokenFee: BigInt(0),
+      }
+      
+      // Verify peer configuration
+      const peerBytes = await publicClient.readContract({
+        address: CONTRACTS.OFTUSDC as `0x${string}`,
+        abi: OFT_USDC_ABI_ARRAY,
+        functionName: 'peers',
+        args: [LAYERZERO_CONFIG.spokeEID],
+      }) as `0x${string}`
+      
+      if (peerBytes === '0x0000000000000000000000000000000000000000000000000000000000000000') {
+        alert(
+          `⚠️ Cross-chain not configured!\n\n` +
+          `OFTUSDC contract doesn't have a peer configured for spoke chain (EID ${LAYERZERO_CONFIG.spokeEID}).\n\n` +
+          `This is a deployment configuration issue. Please contact the platform administrator.`
+        )
+        setSpokeQuotingUnwrapFee(false)
+        return
+      }
+      
+      writeContract({
+        address: CONTRACTS.OFTUSDC as `0x${string}`,
+        abi: OFT_USDC_ABI_ARRAY,
+        functionName: 'send',
+        args: [sendParamTuple, feeTuple, evmAddress],
+        value: nativeFee,
+        gas: BigInt(10000000),
+      })
+    } catch (err) {
+      console.error('Error unwrapping OFTUSDC to spoke chain:', err)
+      setSpokeQuotingUnwrapFee(false)
+      
+      // Provide more specific error messages
+      const errorMessage = err instanceof Error ? err.message : 'Unknown error'
+      if (errorMessage.includes('Internal JSON-RPC error') || errorMessage.includes('reverted')) {
+        alert(
+          `⚠️ Transaction Failed!\n\n` +
+          `Possible reasons:\n` +
+          `• Peer not configured: OFTUSDC → Spoke Adapter\n` +
+          `• Wrong network: Make sure you're on hub chain\n` +
+          `• LayerZero endpoint issue\n\n` +
+          `Try unwrapping to hub chain instead (use Hub tab).`
+        )
+      } else {
+        alert(`Error unwrapping to spoke chain: ${errorMessage}`)
+      }
     }
   }
 
@@ -1325,15 +1404,15 @@ export default function BalancePage() {
                 <div className="bg-card rounded-lg border p-6 mb-8">
                   <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
                     <ArrowRight className="h-6 w-6 text-primary" />
-                    Step 2: Unwrap OFTUSDC back to USDC (Hub Chain)
+                    Step 2: Unwrap OFTUSDC to Hub Chain USDC
                   </h2>
                   <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
                     <div className="flex items-start gap-2">
                       <Info className="h-4 w-4 text-orange-600 mt-0.5" />
                       <div className="text-sm text-orange-800">
-                        <p className="font-medium">How Unwrapping Works</p>
-                        <p className="mb-2">Send your OFTUSDC (18 decimals) back through the adapter on the same chain. The adapter will burn the OFTUSDC and unlock your original USDC (6 decimals). Small LayerZero fee applies.</p>
-                        <p className="font-medium text-xs">Note: If you invested in a vault, you need to redeem your vault shares first to get OFTUSDC, then come here to unwrap it to USDC.</p>
+                        <p className="font-medium">Hub Chain Local Unwrap</p>
+                        <p className="mb-2">Send your OFTUSDC (18 decimals) back through the hub adapter on the same chain. The adapter will burn the OFTUSDC and unlock USDC (6 decimals) on hub chain. Small LayerZero fee applies.</p>
+                        <p className="font-medium text-xs">Note: This only unwraps to hub chain USDC. If you came from spoke chain, use the spoke tab to unwrap back to spoke chain.</p>
                       </div>
                     </div>
                   </div>
@@ -1451,17 +1530,37 @@ export default function BalancePage() {
                 <div className="bg-card rounded-lg border p-6">
                   <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
                     <Zap className="h-6 w-6 text-primary" />
-                    Unified Adapter Flow (Hub Chain)
+                    Hub Chain Local Flows
                   </h2>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-center space-x-4 text-sm flex-wrap gap-y-4">
-                      <div className="bg-accent px-4 py-2 rounded-lg text-foreground font-semibold">USDC (6 dec)</div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <div className="bg-blue-100 px-4 py-2 rounded-lg text-blue-800 font-medium">USDCOFTAdapter.send(HUB_EID)</div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <div className="bg-accent px-4 py-2 rounded-lg text-foreground font-semibold">OFTUSDC (18 dec)</div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <div className="bg-primary px-4 py-2 rounded-lg text-primary-foreground font-semibold">Invest in Properties</div>
+                  <div className="space-y-6">
+                    {/* Wrap Flow */}
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 text-green-700">📥 Wrap Flow (Hub USDC → OFTUSDC)</h3>
+                      <div className="flex items-center justify-center space-x-4 text-sm flex-wrap gap-y-4">
+                        <div className="bg-accent px-4 py-2 rounded-lg text-foreground font-semibold">Hub USDC (6 dec)</div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="bg-blue-100 px-4 py-2 rounded-lg text-blue-800 font-medium">Adapter.send(HUB_EID)</div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="bg-green-100 px-4 py-2 rounded-lg text-green-800 font-semibold">OFTUSDC (18 dec)</div>
+                      </div>
+                    </div>
+
+                    {/* Unwrap Flow */}
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 text-orange-700">📤 Unwrap Flow (OFTUSDC → Hub USDC)</h3>
+                      <div className="flex items-center justify-center space-x-4 text-sm flex-wrap gap-y-4">
+                        <div className="bg-green-100 px-4 py-2 rounded-lg text-green-800 font-semibold">OFTUSDC (18 dec)</div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="bg-blue-100 px-4 py-2 rounded-lg text-blue-800 font-medium">OFTUSDC.send(HUB_EID)</div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="bg-accent px-4 py-2 rounded-lg text-foreground font-semibold">Hub USDC (6 dec)</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <p className="text-xs text-blue-800">
+                        💡 <strong>Same-Chain Operations:</strong> Hub chain users can wrap and unwrap locally. Small LayerZero fee applies for same-chain operations.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1610,6 +1709,68 @@ export default function BalancePage() {
                   </div>
                 </div>
 
+                {/* Unwrap OFTUSDC to Spoke Chain USDC */}
+                <div className="bg-card rounded-lg border p-6 mb-8">
+                  <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
+                    <ArrowRight className="h-6 w-6 text-primary" />
+                    Unwrap OFTUSDC to Spoke Chain USDC
+                  </h2>
+                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+                    <div className="flex items-start gap-2">
+                      <Info className="h-4 w-4 text-purple-600 mt-0.5" />
+                      <div className="text-sm text-purple-800">
+                        <p className="font-medium">Redeem Back to Origin Chain</p>
+                        <p className="mb-2">Send your OFTUSDC (18 decimals) from hub chain back to spoke chain. The spoke adapter will burn the OFTUSDC and unlock your original USDC (6 decimals). LayerZero cross-chain fee applies.</p>
+                        <p className="font-medium text-xs">Note: If you invested in a vault, you need to redeem your vault shares first to get OFTUSDC, then come here to unwrap it back to spoke chain USDC.</p>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="block text-sm font-medium text-foreground mb-2">
+                        OFTUSDC Amount to Unwrap
+                      </label>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className="text-sm text-muted-foreground">
+                          Available: {oftBalance ? formatUnits(oftBalance as bigint, TOKEN_DECIMALS.OFTUSDC) : '0'} OFTUSDC
+                        </span>
+                        {(() => {
+                          const balance = oftBalance as bigint | undefined
+                          return balance && balance > 0 ? (
+                            <button
+                              onClick={() => setSpokeOftAmount(formatUnits(balance, TOKEN_DECIMALS.OFTUSDC))}
+                              className="text-xs px-2 py-1 bg-purple-100 text-purple-800 rounded hover:bg-purple-200 transition-colors"
+                            >
+                              Max
+                            </button>
+                          ) : null
+                        })()}
+                      </div>
+                      <input
+                        type="number"
+                        value={spokeOftAmount}
+                        onChange={(e) => setSpokeOftAmount(e.target.value)}
+                        className="w-full px-3 py-2 border border-border rounded-md focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent bg-background text-foreground"
+                        placeholder="Enter OFTUSDC amount to unwrap"
+                        step="0.000000000000000001"
+                        min="0"
+                      />
+                      {spokeOftAmount && (
+                        <p className="text-sm text-muted-foreground mt-1">
+                          You will receive approximately {spokeOftAmount} USDC (scaled to 6 decimals) on spoke chain
+                        </p>
+                      )}
+                    </div>
+                    <button
+                      onClick={unwrapOFTUSDCToSpokeChain}
+                      disabled={isPending || spokeQuotingUnwrapFee || !spokeOftAmount || parseFloat(spokeOftAmount) <= 0}
+                      className="w-full px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 transition-colors font-semibold"
+                    >
+                      {spokeQuotingUnwrapFee ? 'Quoting Fee...' : isPending ? 'Unwrapping...' : 'Unwrap to Spoke Chain USDC'}
+                    </button>
+                  </div>
+                </div>
+
                 {/* Transaction Status */}
                 {(isPending || isConfirming) && (
                   <div className="bg-accent border border-border rounded-lg p-4 mb-8">
@@ -1626,7 +1787,7 @@ export default function BalancePage() {
                   <div className="bg-green-50 border border-green-200 rounded-lg p-4 mb-8">
                     <div className="flex items-center">
                       <CheckCircle className="h-4 w-4 text-green-600 mr-3" />
-                      <span className="text-green-800">Cross-chain bridge transaction confirmed!</span>
+                      <span className="text-green-800">Transaction confirmed!</span>
                     </div>
                   </div>
                 )}
@@ -1678,19 +1839,41 @@ export default function BalancePage() {
                 <div className="bg-card rounded-lg border p-6">
                   <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
                     <Globe className="h-6 w-6 text-primary" />
-                    Cross-Chain Bridge Flow (Spoke → Hub)
+                    Cross-Chain Flows (Spoke ↔ Hub)
                   </h2>
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-center space-x-4 text-sm flex-wrap gap-y-4">
-                      <div className="bg-purple-100 px-4 py-2 rounded-lg text-purple-800 font-semibold">Spoke USDC (6 dec)</div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <div className="bg-blue-100 px-4 py-2 rounded-lg text-blue-800 font-medium">USDCOFTAdapter.send(HUB_EID)</div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <div className="bg-orange-100 px-4 py-2 rounded-lg text-orange-800 font-medium">LayerZero Bridge</div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <div className="bg-green-100 px-4 py-2 rounded-lg text-green-800 font-semibold">Hub OFTUSDC (18 dec)</div>
-                      <ArrowRight className="h-4 w-4 text-muted-foreground" />
-                      <div className="bg-primary px-4 py-2 rounded-lg text-primary-foreground font-semibold">Invest in Properties</div>
+                  <div className="space-y-6">
+                    {/* Deposit Flow */}
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 text-green-700">📥 Deposit Flow (Spoke → Hub)</h3>
+                      <div className="flex items-center justify-center space-x-4 text-sm flex-wrap gap-y-4">
+                        <div className="bg-purple-100 px-4 py-2 rounded-lg text-purple-800 font-semibold">Spoke USDC (6 dec)</div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="bg-blue-100 px-4 py-2 rounded-lg text-blue-800 font-medium">Adapter.send(HUB_EID)</div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="bg-orange-100 px-4 py-2 rounded-lg text-orange-800 font-medium">LayerZero</div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="bg-green-100 px-4 py-2 rounded-lg text-green-800 font-semibold">Hub OFTUSDC (18 dec)</div>
+                      </div>
+                    </div>
+                    
+                    {/* Withdrawal Flow */}
+                    <div>
+                      <h3 className="text-sm font-semibold mb-3 text-purple-700">📤 Withdrawal Flow (Hub → Spoke)</h3>
+                      <div className="flex items-center justify-center space-x-4 text-sm flex-wrap gap-y-4">
+                        <div className="bg-green-100 px-4 py-2 rounded-lg text-green-800 font-semibold">Hub OFTUSDC (18 dec)</div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="bg-blue-100 px-4 py-2 rounded-lg text-blue-800 font-medium">OFTUSDC.send(SPOKE_EID)</div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="bg-orange-100 px-4 py-2 rounded-lg text-orange-800 font-medium">LayerZero</div>
+                        <ArrowRight className="h-4 w-4 text-muted-foreground" />
+                        <div className="bg-purple-100 px-4 py-2 rounded-lg text-purple-800 font-semibold">Spoke USDC (6 dec)</div>
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-3">
+                      <p className="text-xs text-blue-800">
+                        💡 <strong>Lockbox Model:</strong> Each chain's adapter locks USDC. When you unwrap, it unlocks USDC on that specific chain. Users redeem back to their origin chain.
+                      </p>
                     </div>
                   </div>
                 </div>
@@ -1704,10 +1887,23 @@ export default function BalancePage() {
           <>
             {/* Connection Status */}
             <div className="bg-card rounded-lg border p-6 mb-8">
-              <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
-                <Globe className="h-6 w-6 text-primary" />
-                Connection Status
-              </h2>
+              <div className="flex items-center justify-between mb-4">
+                <h2 className="text-2xl font-semibold flex items-center gap-2">
+                  <Globe className="h-6 w-6 text-primary" />
+                  Connection Status
+                </h2>
+                {stacksConnected && (
+                  <button
+                    onClick={refreshBalances}
+                    disabled={isRefreshing}
+                    className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-colors flex items-center gap-2"
+                    title="Refresh Stacks balances"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                    <span className="hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                  </button>
+                )}
+              </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {/* Stacks Connection */}
                 <div className="bg-accent rounded-lg p-4">
@@ -1741,16 +1937,7 @@ export default function BalancePage() {
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">STX Balance:</span>
-                          <div className="flex items-center gap-2">
-                            <span className="font-semibold">{stacksAccount.balance} STX</span>
-                            <button
-                              onClick={refreshBalances}
-                              className="p-1 hover:bg-accent rounded"
-                              title="Refresh balances"
-                            >
-                              <RefreshCw className="h-3 w-3" />
-                            </button>
-                          </div>
+                          <span className="font-semibold">{stacksAccount.balance} STX</span>
                         </div>
                         <div className="flex items-center justify-between">
                           <span className="text-sm text-muted-foreground">sBTC Balance:</span>

@@ -348,7 +348,7 @@ describe("BrickVault Gateway Contract Tests", () => {
       const { result } = simnet.callPublicFn(
         "brick-vault-gateway",
         "deposit-sbtc",
-        [Cl.uint(50000000)], // 0.5 sBTC (8 decimals - below 1 sBTC minimum)
+        [Cl.uint(5000000)], // 0.05 sBTC (8 decimals - below 0.1 sBTC minimum)
         address1
       );
       
@@ -1024,6 +1024,293 @@ describe("BrickVault Gateway Contract Tests", () => {
       expect(events.length).toBeGreaterThan(0);
       // Print events are logged to stdout, not as contract events
       // The contract is working correctly if no error was thrown
+    });
+
+  });
+
+  describe("Owner sBTC Withdrawal Tests", () => {
+    const evmAddressToBuffer = (evmAddress: string) => {
+      const hex = evmAddress.startsWith('0x') ? evmAddress.slice(2) : evmAddress;
+      return Cl.buffer(Buffer.from(hex.padStart(40, '0'), 'hex'));
+    };
+
+    beforeEach(() => {
+      // Set sufficient pool amount
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "set-pool-amount-usd",
+        [Cl.uint(1000000000000)], // 1,000,000 USD
+        deployer
+      );
+      
+      // Register Stacks address and make deposits
+      const mockEvmAddress = '0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb1';
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "register-stacks-address",
+        [evmAddressToBuffer(mockEvmAddress)],
+        address1
+      );
+
+      // Make a deposit so contract has some sBTC
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "deposit-sbtc",
+        [Cl.uint(300000000)], // 3 sBTC (8 decimals)
+        address1
+      );
+    });
+
+    it("should allow owner to withdraw sBTC", () => {
+      const withdrawAmount = 100000000; // 1 sBTC (8 decimals)
+      
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(withdrawAmount), Cl.principal(address2)],
+        deployer
+      );
+      
+      expect(result).toBeDefined();
+      expect(result.type).toBe('ok');
+      expect(result.value.type).toBe('true');
+    });
+
+    it("should not allow non-owner to withdraw sBTC", () => {
+      const withdrawAmount = 100000000; // 1 sBTC (8 decimals)
+      
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(withdrawAmount), Cl.principal(address2)],
+        address1 // Not owner
+      );
+      
+      expect(result).toBeDefined();
+      expect(result.value.type).toBe('err');
+      expect(result.value.value.value).toBe(101n); // ERR-NOT-OWNER
+    });
+
+    it("should not allow withdrawal of zero amount", () => {
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(0), Cl.principal(address2)],
+        deployer
+      );
+      
+      expect(result).toBeDefined();
+      expect(result.value.type).toBe('err');
+      expect(result.value.value.value).toBe(102n); // ERR-INVALID-AMOUNT
+    });
+
+    it("should update total-sbtc-locked after withdrawal", () => {
+      const withdrawAmount = 100000000; // 1 sBTC (8 decimals)
+      
+      // Check initial total locked
+      const initialLocked = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-total-sbtc-locked",
+        [],
+        deployer
+      );
+      
+      expect(initialLocked.result.value.value).toBe(300000000n); // 3 sBTC deposited
+
+      // Withdraw
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(withdrawAmount), Cl.principal(address2)],
+        deployer
+      );
+
+      // Check final total locked
+      const finalLocked = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-total-sbtc-locked",
+        [],
+        deployer
+      );
+      
+      expect(finalLocked.result.value.value).toBe(200000000n); // 3 - 1 = 2 sBTC
+    });
+
+    it("should fail withdrawal if amount exceeds contract balance", () => {
+      const withdrawAmount = 500000000; // 5 sBTC (8 decimals) - more than contract has (only 3 sBTC)
+      
+      // Try to withdraw more than contract has
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(withdrawAmount), Cl.principal(address2)],
+        deployer
+      );
+
+      // Should fail because contract doesn't have enough sBTC
+      expect(result.value.type).toBe('err');
+      expect(result.value.value.value).toBe(110n); // ERR-TRANSFER-FAILED
+
+      // Total locked should remain unchanged
+      const finalLocked = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-total-sbtc-locked",
+        [],
+        deployer
+      );
+      
+      expect(finalLocked.result.value.value).toBe(300000000n); // Still 3 sBTC
+    });
+
+    it("should transfer sBTC to recipient address", () => {
+      const withdrawAmount = 100000000; // 1 sBTC (8 decimals)
+      
+      // Get recipient's initial balance
+      const initialBalance = simnet.callReadOnlyFn(
+        "SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token",
+        "get-balance",
+        [Cl.principal(address2)],
+        address2
+      );
+
+      // Withdraw to address2
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(withdrawAmount), Cl.principal(address2)],
+        deployer
+      );
+      
+      expect(result.type).toBe('ok');
+
+      // Get recipient's final balance
+      const finalBalance = simnet.callReadOnlyFn(
+        "SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token",
+        "get-balance",
+        [Cl.principal(address2)],
+        address2
+      );
+
+      // Verify recipient received the sBTC
+      expect(Number(finalBalance.result.value.value)).toBeGreaterThan(
+        Number(initialBalance.result.value.value)
+      );
+    });
+
+    it("should decrease contract sBTC balance after withdrawal", () => {
+      const withdrawAmount = 100000000; // 1 sBTC (8 decimals)
+      
+      // Get contract's initial balance
+      const initialBalance = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-contract-sbtc-balance",
+        [],
+        deployer
+      );
+
+      // Withdraw
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(withdrawAmount), Cl.principal(address2)],
+        deployer
+      );
+
+      // Get contract's final balance
+      const finalBalance = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-contract-sbtc-balance",
+        [],
+        deployer
+      );
+
+      // Verify contract balance decreased
+      expect(Number(finalBalance.result.value.value.value)).toBeLessThan(
+        Number(initialBalance.result.value.value.value)
+      );
+    });
+
+    it("should emit withdrawal event", () => {
+      const withdrawAmount = 100000000; // 1 sBTC (8 decimals)
+      
+      const { events } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(withdrawAmount), Cl.principal(address2)],
+        deployer
+      );
+
+      // Check that events were emitted
+      expect(events.length).toBeGreaterThan(0);
+      
+      // Check for ft_transfer_event (sBTC transfer)
+      const transferEvent = events.find((e: { event: string }) => e.event === 'ft_transfer_event');
+      expect(transferEvent).toBeDefined();
+      expect(transferEvent.data.amount).toBe('100000000');
+      expect(transferEvent.data.recipient).toBe(address2);
+    });
+
+    it("should allow multiple withdrawals", () => {
+      // First withdrawal
+      simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(100000000), Cl.principal(address2)], // 1 sBTC
+        deployer
+      );
+
+      // Second withdrawal
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(50000000), Cl.principal(address3)], // 0.5 sBTC
+        deployer
+      );
+      
+      expect(result.type).toBe('ok');
+
+      // Check total locked
+      const finalLocked = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-total-sbtc-locked",
+        [],
+        deployer
+      );
+      
+      // Should be 3 - 1 - 0.5 = 1.5 sBTC = 150000000
+      expect(finalLocked.result.value.value).toBe(150000000n);
+    });
+
+    it("should allow owner to withdraw entire contract balance", () => {
+      // Get total contract balance
+      const contractBalance = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-contract-sbtc-balance",
+        [],
+        deployer
+      );
+
+      const balance = Number(contractBalance.result.value.value.value);
+
+      // Withdraw entire balance
+      const { result } = simnet.callPublicFn(
+        "brick-vault-gateway",
+        "withdraw-sbtc",
+        [Cl.uint(balance), Cl.principal(address2)],
+        deployer
+      );
+      
+      expect(result.type).toBe('ok');
+
+      // Check contract balance is now zero
+      const finalBalance = simnet.callReadOnlyFn(
+        "brick-vault-gateway",
+        "get-contract-sbtc-balance",
+        [],
+        deployer
+      );
+      
+      expect(finalBalance.result.value.value.value).toBe(0n);
     });
 
   });

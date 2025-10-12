@@ -7,6 +7,8 @@ import { PROPERTY_REGISTRY_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, PROPERTY_DAO_ABI,
 import { CONTRACT_ADDRESSES, NETWORK_CONFIG } from '../../config/contracts'
 import { Header } from '@/components/Header'
 import { formatUnits, parseUnits } from 'viem'
+import { Pc, uintCV, principalCV, deserializeCV } from '@stacks/transactions'
+import { request as stacksRequest } from '@stacks/connect'
 
 // Stacks account interface
 interface StacksAccount {
@@ -56,6 +58,7 @@ interface Proposal {
   votesAgainst: bigint
   status: string
   canExecute: boolean
+  data: string // Encoded proposal data
 }
 
 export default function ManagementPage() {
@@ -75,6 +78,7 @@ export default function ManagementPage() {
   // Stacks pool data
   const [stacksPoolAmount, setStacksPoolAmount] = useState<string>('0')
   const [stacksSbtcPrice, setStacksSbtcPrice] = useState<string>('0')
+  const [stacksContractSbtcBalance, setStacksContractSbtcBalance] = useState<string>('0')
   const [loadingStacksData, setLoadingStacksData] = useState(false)
   const [stacksAccount, setStacksAccount] = useState<StacksAccount | null>(null)
   
@@ -107,6 +111,9 @@ export default function ManagementPage() {
   const [isSettingStacksPool, setIsSettingStacksPool] = useState(false)
   const [stacksSbtcPriceInput, setStacksSbtcPriceInput] = useState('')
   const [isUpdatingStacksPrice, setIsUpdatingStacksPrice] = useState(false)
+  const [stacksWithdrawAmount, setStacksWithdrawAmount] = useState('')
+  const [stacksWithdrawRecipient, setStacksWithdrawRecipient] = useState('')
+  const [isWithdrawingStacksSbtc, setIsWithdrawingStacksSbtc] = useState(false)
   
   // Property detail modal state
   const [selectedProperty, setSelectedProperty] = useState<PropertyData | null>(null)
@@ -179,6 +186,9 @@ export default function ManagementPage() {
   const [showDeactivateConfirmModal, setShowDeactivateConfirmModal] = useState(false)
   const [propertyToDeactivate, setPropertyToDeactivate] = useState<PropertyData | null>(null)
   const [isDeactivating, setIsDeactivating] = useState(false)
+  
+  // Skip voting period state
+  const [skippingProposalId, setSkippingProposalId] = useState<number | null>(null)
   
   // Toast notification state
   const [toast, setToast] = useState<{
@@ -458,8 +468,6 @@ export default function ManagementPage() {
   const fetchStacksPoolData = async () => {
     setLoadingStacksData(true)
     try {
-      const { deserializeCV } = await import('@stacks/transactions')
-      
       // Fetch pool amount
       const poolResponse = await fetch(
         'http://localhost:3999/v2/contracts/call-read/ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM/brick-vault-gateway/get-pool-amount-usd',
@@ -531,6 +539,44 @@ export default function ManagementPage() {
           }
         }
       }
+
+      // Fetch contract sBTC balance
+      const balanceResponse = await fetch(
+        'http://localhost:3999/v2/contracts/call-read/ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM/brick-vault-gateway/get-contract-sbtc-balance',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sender: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+            arguments: []
+          })
+        }
+      )
+      
+      if (balanceResponse.ok) {
+        const balanceData = await balanceResponse.json()
+        if (balanceData.okay && balanceData.result) {
+          try {
+            // Deserialize Clarity value
+            const clarityValue = deserializeCV(balanceData.result)
+            
+            // Extract value from (ok (ok uint)) response
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const anyValue = clarityValue as any
+            if (anyValue.type === 'ok' && anyValue.value && anyValue.value.type === 'ok') {
+              if (anyValue.value.value && anyValue.value.value.value !== undefined) {
+                const balance = BigInt(anyValue.value.value.value)
+                // Balance is in 8 decimals sBTC format
+                const sbtcAmount = (Number(balance) / 100_000_000).toFixed(8)
+                setStacksContractSbtcBalance(sbtcAmount)
+              }
+            }
+          } catch (parseError) {
+            console.error('Error parsing Stacks contract balance:', parseError)
+          }
+        }
+      }
+
     } catch (error) {
       console.error('Failed to fetch Stacks pool data:', error)
     } finally {
@@ -752,7 +798,8 @@ export default function ManagementPage() {
               status: Number(status) === 0 ? 'Active' : 
                      Number(status) === 1 ? 'Executed' :
                      Number(status) === 2 ? 'Rejected' : 'Expired',
-              canExecute: canExecute
+              canExecute: canExecute,
+              data: data || '0x'
             }
             proposals.push(proposalData)
           }
@@ -1184,6 +1231,55 @@ export default function ManagementPage() {
   }
 
 
+
+  // Helper function to decode liquidation price from proposal data
+  const decodeLiquidationPrice = (data: string): string | null => {
+    if (!data || data === '0x' || data.length < 66) {
+      return null
+    }
+    
+    try {
+      // Data is encoded as uint256 (32 bytes = 64 hex chars + 0x prefix)
+      // Remove '0x' prefix and parse as BigInt
+      const hexValue = data.startsWith('0x') ? data.slice(2) : data
+      const liquidationPriceBigInt = BigInt('0x' + hexValue.slice(0, 64))
+      
+      // Convert from 18 decimals to readable format
+      return formatUnits(liquidationPriceBigInt, 18)
+    } catch (error) {
+      console.error('Error decoding liquidation price:', error)
+      return null
+    }
+  }
+
+  // Function to skip voting period
+  const handleSkipVotingPeriod = async (proposalId: number, daoAddress: string) => {
+    if (!isOwner) return
+
+    try {
+      setSkippingProposalId(proposalId)
+      
+      const hash = await writeContractAsync({
+        address: daoAddress as `0x${string}`,
+        abi: PROPERTY_DAO_ABI,
+        functionName: 'skipVotingPeriod',
+        args: [proposalId]
+      })
+      
+      showToast(`Successfully skipped voting period for proposal ${proposalId}`, 'success')
+      
+      // Refresh proposals after a short delay
+      setTimeout(() => {
+        if (selectedProperty) {
+          fetchPropertyProposals(selectedProperty.id)
+        }
+      }, 2000)
+    } catch (error) {
+      showToast('Failed to skip voting period. Please try again.', 'error')
+    } finally {
+      setSkippingProposalId(null)
+    }
+  }
 
   // Function to execute proposal
   const handleExecuteProposal = async (proposalId: number, daoAddress: string) => {
@@ -1765,8 +1861,6 @@ export default function ManagementPage() {
       setIsSettingStacksPool(true)
       
       const amountWithDecimals = Math.floor(parseFloat(stacksPoolAmountInput) * 1_000_000)
-      const { uintCV } = await import('@stacks/transactions')
-      const { request: stacksRequest } = await import('@stacks/connect')
       
       const response = await stacksRequest('stx_callContract', {
         contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
@@ -1810,8 +1904,6 @@ export default function ManagementPage() {
       
       // Convert plain USD value to 8 decimals (e.g., 95000.99 → 9500099000000)
       const priceWith8Decimals = Math.floor(parseFloat(stacksSbtcPriceInput) * 100000000)
-      const { uintCV } = await import('@stacks/transactions')
-      const { request: stacksRequest } = await import('@stacks/connect')
       
       const response = await stacksRequest('stx_callContract', {
         contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
@@ -1835,6 +1927,103 @@ export default function ManagementPage() {
       showToast(`Failed to update Stacks sBTC price: ${error instanceof Error ? error.message : 'Unknown error'}`, 'error')
     } finally {
       setIsUpdatingStacksPrice(false)
+    }
+  }
+
+  // Withdraw sBTC from Stacks contract
+  const handleWithdrawStacksSbtc = async () => {
+    if (!stacksAccount?.address || !stacksWithdrawAmount || !stacksWithdrawRecipient) {
+      showToast('Please connect Stacks wallet and enter amount and recipient', 'error')
+      return
+    }
+
+    if (isNaN(Number(stacksWithdrawAmount)) || Number(stacksWithdrawAmount) <= 0) {
+      showToast('Please enter a valid amount', 'error')
+      return
+    }
+
+    try {
+      setIsWithdrawingStacksSbtc(true)
+      
+      // Convert sBTC amount to 8 decimals (e.g., 1.5 → 150000000)
+      const amountWith8Decimals = Math.floor(parseFloat(stacksWithdrawAmount) * 100000000)
+      
+      const amountCV = uintCV(amountWith8Decimals)
+      const recipientCV = principalCV(stacksWithdrawRecipient)
+      
+      // Post condition: Contract will send sBTC tokens to recipient
+      const postCondition = Pc.principal('ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway')
+        .willSendLte(amountWith8Decimals)
+        .ft('ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-token', 'sbtc-token')
+      
+      // @ts-ignore - Stacks Connect API types
+      const response = await stacksRequest('stx_callContract', {
+        contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
+        functionName: 'withdraw-sbtc',
+        functionArgs: [amountCV, recipientCV],
+        postConditions: [postCondition],
+        network: 'devnet'
+      })
+
+      if (response.txid) {
+        const txid = response.txid
+        showToast(`Withdrawal submitted! TxID: ${txid.slice(0, 8)}...`, 'info')
+        
+        // Wait for transaction to be mined and check result
+        setTimeout(async () => {
+          try {
+            const txidClean = txid.startsWith('0x') ? txid.slice(2) : txid
+            const txResponse = await fetch(`http://localhost:3999/extended/v1/tx/0x${txidClean}`)
+            if (txResponse.ok) {
+              const txData = await txResponse.json()
+              
+              if (txData.tx_status === 'success') {
+                showToast(`✅ Successfully withdrew ${stacksWithdrawAmount} sBTC!`, 'success')
+                setStacksWithdrawAmount('')
+                setStacksWithdrawRecipient('')
+                fetchStacksPoolData()
+              } else if (txData.tx_status === 'abort_by_response' || txData.tx_status === 'abort_by_post_condition') {
+                const errorMsg = txData.tx_result?.repr || 'Unknown error'
+                
+                // Parse error code into user-friendly message
+                let userFriendlyError = errorMsg
+                if (errorMsg.includes('u101')) {
+                  userFriendlyError = 'Not authorized: Only contract owner can withdraw'
+                } else if (errorMsg.includes('u102')) {
+                  userFriendlyError = 'Invalid amount: Amount must be greater than 0'
+                } else if (errorMsg.includes('u110')) {
+                  userFriendlyError = 'Transfer failed: Insufficient contract balance or transfer error'
+                }
+                
+                showToast(`Transaction failed: ${userFriendlyError}`, 'error')
+              } else {
+                showToast(`Transaction status: ${txData.tx_status}`, 'info')
+              }
+            }
+          } catch (error) {
+            console.error('Error checking transaction:', error)
+          }
+        }, 3000)
+      } else {
+        showToast(`Successfully withdrew ${stacksWithdrawAmount} sBTC to ${stacksWithdrawRecipient.slice(0, 8)}...`, 'success')
+        setStacksWithdrawAmount('')
+        setStacksWithdrawRecipient('')
+        
+        setTimeout(() => {
+          fetchStacksPoolData()
+        }, 3000)
+      }
+    } catch (error) {
+      let errorMessage = 'Unknown error'
+      if (error instanceof Error) {
+        errorMessage = error.message
+      } else if (typeof error === 'object' && error !== null) {
+        errorMessage = JSON.stringify(error)
+      }
+      
+      showToast(`Failed to withdraw sBTC: ${errorMessage}`, 'error')
+    } finally {
+      setIsWithdrawingStacksSbtc(false)
     }
   }
 
@@ -2850,6 +3039,19 @@ export default function ManagementPage() {
                               </span>
                             </div>
                             <p className="text-sm text-muted-foreground mt-1">{proposal.description}</p>
+                            
+                            {/* Show liquidation price for Property Liquidation proposals */}
+                            {proposal.proposalType === 0 && proposal.data && proposal.data !== '0x' && (
+                              <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
+                                <DollarSign className="h-4 w-4 text-red-600" />
+                                <span className="text-sm font-medium text-red-800">
+                                  Liquidation Price: 
+                                  <span className="ml-1 font-bold">
+                                    ${parseFloat(decodeLiquidationPrice(proposal.data) || '0').toLocaleString()} USDC
+                                  </span>
+                                </span>
+                              </div>
+                            )}
                           </div>
                           <div className="flex items-center gap-2">
                             <span className={`px-2 py-1 rounded-full text-xs ${
@@ -2906,6 +3108,25 @@ export default function ManagementPage() {
                         {/* Action Buttons */}
                         <div className="flex items-center justify-between pt-3 border-t">
                           <div className="flex items-center space-x-2">
+                            {proposal.status === 'Active' && !proposal.canExecute && (
+                              <button
+                                onClick={() => handleSkipVotingPeriod(proposal.id, selectedProperty?.daoAddress || '')}
+                                disabled={skippingProposalId === proposal.id}
+                                className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded text-sm hover:bg-yellow-200 disabled:opacity-50 flex items-center"
+                              >
+                                {skippingProposalId === proposal.id ? (
+                                  <>
+                                    <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                                    Skipping...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Clock className="h-3 w-3 mr-1" />
+                                    Skip Voting Period
+                                  </>
+                                )}
+                              </button>
+                            )}
                             {proposal.canExecute && (
                               <button
                                 onClick={() => handleExecuteProposal(proposal.id, selectedProperty?.daoAddress || '')}
@@ -2939,7 +3160,7 @@ export default function ManagementPage() {
                             {proposal.status === 'Active' && !proposal.canExecute && (
                               <div className="flex items-center text-sm text-muted-foreground">
                                 <Clock className="h-3 w-3 mr-1" />
-                                <span>Active - Use Hardhat console to skip time</span>
+                                <span>Waiting for deadline</span>
                               </div>
                             )}
                             {proposal.executed && selectedProperty?.daoStage === 1 && (
@@ -4257,23 +4478,30 @@ export default function ManagementPage() {
             </div>
             
             {/* Pool Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
               <div className="bg-accent rounded-lg p-4">
-                <h3 className="text-sm text-muted-foreground mb-2">Stacks Pool Amount (USD)</h3>
+                <h3 className="text-sm text-muted-foreground mb-2">Pool Amount (USD)</h3>
                 <p className="text-2xl font-bold text-orange-600">
                   ${stacksPoolAmount ? parseFloat(stacksPoolAmount).toLocaleString() : '0'}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">Max capacity for deposits (6 decimals)</p>
+                <p className="text-xs text-muted-foreground mt-1">Max capacity (6 dec)</p>
               </div>
               <div className="bg-accent rounded-lg p-4">
-                <h3 className="text-sm text-muted-foreground mb-2">Stacks sBTC Price</h3>
+                <h3 className="text-sm text-muted-foreground mb-2">sBTC Price</h3>
                 <p className="text-2xl font-bold text-green-600">
                   ${stacksSbtcPrice && stacksSbtcPrice !== '0' ? (parseFloat(stacksSbtcPrice) / 100000000).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1">Price per sBTC (8 decimals)</p>
+                <p className="text-xs text-muted-foreground mt-1">Per sBTC (8 dec)</p>
               </div>
               <div className="bg-accent rounded-lg p-4">
-                <h3 className="text-sm text-muted-foreground mb-2">Pool Sync Status</h3>
+                <h3 className="text-sm text-muted-foreground mb-2">Contract Balance</h3>
+                <p className="text-2xl font-bold text-purple-600">
+                  {stacksContractSbtcBalance ? parseFloat(stacksContractSbtcBalance).toFixed(4) : '0.0000'} sBTC
+                </p>
+                <p className="text-xs text-muted-foreground mt-1">Available in contract</p>
+              </div>
+              <div className="bg-accent rounded-lg p-4">
+                <h3 className="text-sm text-muted-foreground mb-2">Sync Status</h3>
                 <div className="flex items-center gap-2 mb-1">
                   {stacksPoolAmount === (poolBalance ? (parseFloat(formatUnits(poolBalance as bigint, 18))).toFixed(2) : '0') ? (
                     <>
@@ -4287,7 +4515,7 @@ export default function ManagementPage() {
                     </>
                   )}
                 </div>
-                <p className="text-xs text-muted-foreground mt-1">EVM ↔ Stacks pool amounts</p>
+                <p className="text-xs text-muted-foreground mt-1">EVM ↔ Stacks</p>
               </div>
             </div>
 
@@ -4316,7 +4544,7 @@ export default function ManagementPage() {
             {/* Stacks Management Actions */}
             <div className="border-t pt-4">
               <h3 className="text-sm font-semibold mb-3 text-muted-foreground">Stacks Pool Management</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {/* Set Pool Amount */}
                 <div className="bg-purple-50 border border-purple-200 rounded-lg p-4">
                   <div className="flex items-center gap-2 mb-3">
@@ -4406,6 +4634,60 @@ export default function ManagementPage() {
                       'Connect Stacks Wallet'
                     ) : (
                       'Update sBTC Price'
+                    )}
+                  </button>
+                </div>
+
+                {/* Withdraw sBTC */}
+                <div className="bg-orange-50 border border-orange-200 rounded-lg p-4">
+                  <div className="flex items-center gap-2 mb-3">
+                    <DollarSign className="h-5 w-5 text-orange-600" />
+                    <h4 className="font-semibold text-orange-800">Withdraw sBTC</h4>
+                  </div>
+                  <input
+                    type="number"
+                    value={stacksWithdrawAmount}
+                    onChange={(e) => setStacksWithdrawAmount(e.target.value)}
+                    placeholder="Amount (sBTC)"
+                    className="w-full p-2 border rounded mb-2 text-sm"
+                    disabled={isWithdrawingStacksSbtc || !stacksAccount}
+                  />
+                  <div className="flex gap-2 mb-2">
+                    <input
+                      type="text"
+                      value={stacksWithdrawRecipient}
+                      onChange={(e) => setStacksWithdrawRecipient(e.target.value)}
+                      placeholder="Recipient (Stacks Address)"
+                      className="flex-1 p-2 border rounded text-sm"
+                      disabled={isWithdrawingStacksSbtc || !stacksAccount}
+                    />
+                    <button
+                      onClick={() => {
+                        if (stacksAccount?.address) {
+                          setStacksWithdrawRecipient(stacksAccount.address)
+                        }
+                      }}
+                      disabled={isWithdrawingStacksSbtc || !stacksAccount}
+                      className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs hover:bg-orange-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+                      title="Use current wallet address"
+                    >
+                      Use Wallet
+                    </button>
+                  </div>
+                  <button
+                    onClick={handleWithdrawStacksSbtc}
+                    disabled={isWithdrawingStacksSbtc || !stacksAccount || !stacksWithdrawAmount || !stacksWithdrawRecipient || isNaN(Number(stacksWithdrawAmount)) || Number(stacksWithdrawAmount) <= 0}
+                    className="w-full px-3 py-2 bg-orange-600 text-white rounded hover:bg-orange-700 disabled:opacity-50 transition-colors text-sm flex items-center justify-center gap-2"
+                  >
+                    {isWithdrawingStacksSbtc ? (
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span>Withdrawing...</span>
+                      </>
+                    ) : !stacksAccount ? (
+                      'Connect Stacks Wallet'
+                    ) : (
+                      'Withdraw sBTC'
                     )}
                   </button>
                 </div>

@@ -18,7 +18,7 @@
 ;; Data variables
 (define-data-var contract-owner principal tx-sender)
 (define-data-var is-paused bool false)
-(define-data-var min-deposit-amount uint u100000000) ;; 1 sBTC minimum (8 decimals: 100,000,000 = 1 sBTC)
+(define-data-var min-deposit-amount uint u10000000) ;; 0.1 sBTC minimum (8 decimals: 10,000,000 = 0.1 sBTC)
 (define-data-var total-sbtc-locked uint u0)
 
 ;; Pool management (mirrors EVM pool)
@@ -68,6 +68,30 @@
       (var-set sbtc-price-usd price)
       true))
     (err ERR-NOT-OWNER)))
+
+;; Owner withdrawal function for managing locked sBTC
+(define-public (withdraw-sbtc (amount uint) (recipient principal))
+  (let ((current-locked (var-get total-sbtc-locked)))
+    (if (is-eq tx-sender (var-get contract-owner))
+      (if (> amount u0)
+        (match (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
+                 amount 
+                 tx-sender 
+                 recipient 
+                 none))
+          transfer-result (ok (begin
+            ;; Update total locked if the amount withdrawn is less than or equal to current locked
+            (if (<= amount current-locked)
+              (var-set total-sbtc-locked (- current-locked amount))
+              (var-set total-sbtc-locked u0))
+            
+            ;; Emit event for tracking
+            (print "withdraw:owner-withdrawal")
+            
+            true))
+          err-code (err ERR-TRANSFER-FAILED))
+        (err ERR-INVALID-AMOUNT))
+      (err ERR-NOT-OWNER))))
 
 ;; Helper function to calculate USD value from sBTC amount
 ;; Matches EVM StacksCrossChainManager calculation logic
@@ -150,7 +174,7 @@
 ;; Note: Users cannot withdraw sBTC back
 ;; Once sBTC is deposited, it's locked and OFTUSDC is minted on EVM
 ;; Users can only use OFTUSDC for investments on the platform
-;; The owner does not have withdrawal capabilities - funds are managed via the relayer system
+;; The owner can withdraw sBTC for pool management and cross-chain operations
 
 ;; Read functions
 (define-read-only (get-user-sbtc-deposits (user principal))

@@ -1503,5 +1503,393 @@ describe('Property Workflow Test (Unified Adapter Architecture)', function () {
     console.log('\n✅ UNIFIED ADAPTER ARCHITECTURE TEST PASSED! 🎉');
     console.log('='.repeat(80));
   });
+
+  it('🌐 Test Flexible Unwrap: User Chooses Destination Chain for OFTUSDC → USDC', async function () {
+    console.log('\n' + '='.repeat(80));
+    console.log('🌐 FLEXIBLE UNWRAP DESTINATION TEST');
+    console.log('🎯 User deposits on Spoke → Can unwrap to ANY chain with adapter');
+    console.log('='.repeat(80));
+
+    // ============================================================================
+    // PHASE 1: SETUP THREE CHAINS (HUB + 2 SPOKES)
+    // ============================================================================
+    console.log('\n📍 PHASE 1: SETUP THREE CHAINS');
+    console.log('-'.repeat(80));
+
+    const HUB_EID = 1;
+    const SPOKE_A_EID = 2;
+    const SPOKE_B_EID = 3;
+
+    // Deploy endpoints for all three chains
+    console.log('🔗 Deploying mock endpoints for 3 chains...');
+    const MockLayerZeroEndpointV2 = await ethers.getContractFactory('EndpointV2Mock');
+    const hubEndpoint = await MockLayerZeroEndpointV2.deploy(HUB_EID);
+    await hubEndpoint.waitForDeployment();
+    
+    const spokeAEndpoint = await MockLayerZeroEndpointV2.deploy(SPOKE_A_EID);
+    await spokeAEndpoint.waitForDeployment();
+    
+    const spokeBEndpoint = await MockLayerZeroEndpointV2.deploy(SPOKE_B_EID);
+    await spokeBEndpoint.waitForDeployment();
+    
+    console.log('✅ Hub Endpoint (EID 1):', await hubEndpoint.getAddress());
+    console.log('✅ Spoke A Endpoint (EID 2):', await spokeAEndpoint.getAddress());
+    console.log('✅ Spoke B Endpoint (EID 3):', await spokeBEndpoint.getAddress());
+
+    // Deploy MockUSDC on all chains
+    console.log('\n💵 Deploying MockUSDC on all chains...');
+    const MockUSDC = await ethers.getContractFactory('MockUSDC');
+    
+    const hubUSDC = await MockUSDC.deploy('USDC (Hub)', 'USDC', USDC_DECIMALS, platformOwner.address);
+    await hubUSDC.waitForDeployment();
+    
+    const spokeAUSDC = await MockUSDC.deploy('USDC (Spoke A)', 'USDC', USDC_DECIMALS, platformOwner.address);
+    await spokeAUSDC.waitForDeployment();
+    
+    const spokeBUSDC = await MockUSDC.deploy('USDC (Spoke B)', 'USDC', USDC_DECIMALS, platformOwner.address);
+    await spokeBUSDC.waitForDeployment();
+    
+    console.log('✅ Hub USDC deployed');
+    console.log('✅ Spoke A USDC deployed');
+    console.log('✅ Spoke B USDC deployed');
+
+    // Deploy OFTUSDC on hub
+    console.log('\n🏦 Deploying OFTUSDC on Hub...');
+    const OFTUSDC = await ethers.getContractFactory('OFTUSDC');
+    const hubOFTUSDC = await OFTUSDC.deploy('OFTUSDC', 'OFTUSDC', await hubEndpoint.getAddress(), platformOwner.address);
+    await hubOFTUSDC.waitForDeployment();
+    console.log('✅ Hub OFTUSDC deployed:', await hubOFTUSDC.getAddress());
+
+    // Deploy USDCOFTAdapter on all chains
+    console.log('\n🌉 Deploying USDCOFTAdapter on all chains...');
+    const USDCOFTAdapter = await ethers.getContractFactory('USDCOFTAdapter');
+    
+    const hubAdapter = await USDCOFTAdapter.deploy(await hubUSDC.getAddress(), await hubEndpoint.getAddress(), platformOwner.address);
+    await hubAdapter.waitForDeployment();
+    
+    const spokeAAdapter = await USDCOFTAdapter.deploy(await spokeAUSDC.getAddress(), await spokeAEndpoint.getAddress(), platformOwner.address);
+    await spokeAAdapter.waitForDeployment();
+    
+    const spokeBAdapter = await USDCOFTAdapter.deploy(await spokeBUSDC.getAddress(), await spokeBEndpoint.getAddress(), platformOwner.address);
+    await spokeBAdapter.waitForDeployment();
+    
+    console.log('✅ Hub Adapter deployed:', await hubAdapter.getAddress());
+    console.log('✅ Spoke A Adapter deployed:', await spokeAAdapter.getAddress());
+    console.log('✅ Spoke B Adapter deployed:', await spokeBAdapter.getAddress());
+
+    // ============================================================================
+    // PHASE 2: CONFIGURE LAYERZERO PEERS (ALL COMBINATIONS)
+    // ============================================================================
+    console.log('\n📍 PHASE 2: CONFIGURE LAYERZERO PEERS');
+    console.log('-'.repeat(80));
+
+    const hubOFTBytes32 = ethers.zeroPadValue(await hubOFTUSDC.getAddress(), 32);
+    const hubAdapterBytes32 = ethers.zeroPadValue(await hubAdapter.getAddress(), 32);
+    const spokeAAdapterBytes32 = ethers.zeroPadValue(await spokeAAdapter.getAddress(), 32);
+    const spokeBAdapterBytes32 = ethers.zeroPadValue(await spokeBAdapter.getAddress(), 32);
+
+    // Hub Adapter ↔ Hub OFTUSDC
+    await hubAdapter.connect(platformOwner).setPeer(HUB_EID, hubOFTBytes32);
+    await hubOFTUSDC.connect(platformOwner).setPeer(HUB_EID, hubAdapterBytes32);
+    console.log('✅ Hub Adapter ↔ Hub OFTUSDC');
+
+    // Spoke A Adapter ↔ Hub OFTUSDC
+    await spokeAAdapter.connect(platformOwner).setPeer(HUB_EID, hubOFTBytes32);
+    await hubOFTUSDC.connect(platformOwner).setPeer(SPOKE_A_EID, spokeAAdapterBytes32);
+    console.log('✅ Spoke A Adapter ↔ Hub OFTUSDC');
+
+    // Spoke B Adapter ↔ Hub OFTUSDC
+    await spokeBAdapter.connect(platformOwner).setPeer(HUB_EID, hubOFTBytes32);
+    await hubOFTUSDC.connect(platformOwner).setPeer(SPOKE_B_EID, spokeBAdapterBytes32);
+    console.log('✅ Spoke B Adapter ↔ Hub OFTUSDC');
+
+    // Configure endpoint routing
+    await hubEndpoint.setDestLzEndpoint(await spokeAAdapter.getAddress(), await spokeAEndpoint.getAddress());
+    await hubEndpoint.setDestLzEndpoint(await spokeBAdapter.getAddress(), await spokeBEndpoint.getAddress());
+    await spokeAEndpoint.setDestLzEndpoint(await hubOFTUSDC.getAddress(), await hubEndpoint.getAddress());
+    await spokeBEndpoint.setDestLzEndpoint(await hubOFTUSDC.getAddress(), await hubEndpoint.getAddress());
+    await hubEndpoint.setDestLzEndpoint(await hubOFTUSDC.getAddress(), await hubEndpoint.getAddress());
+    await hubEndpoint.setDestLzEndpoint(await hubAdapter.getAddress(), await hubEndpoint.getAddress());
+    console.log('✅ All endpoint routing configured');
+
+    // ============================================================================
+    // PHASE 3: USER DEPOSITS ON SPOKE A
+    // ============================================================================
+    console.log('\n📍 PHASE 3: USER DEPOSITS ON SPOKE A');
+    console.log('-'.repeat(80));
+
+    const depositAmount = ethers.parseUnits('10000', USDC_DECIMALS);
+    
+    console.log('1️⃣ User has USDC on Spoke A...');
+    await spokeAUSDC.connect(platformOwner).mint(investor1.address, depositAmount);
+    const initialSpokeAUSDC = await spokeAUSDC.balanceOf(investor1.address);
+    console.log('   ✅ Spoke A USDC:', ethers.formatUnits(initialSpokeAUSDC, USDC_DECIMALS));
+
+    console.log('\n2️⃣ Bridge from Spoke A to Hub...');
+    const options = Options.newOptions().addExecutorLzReceiveOption(200000, 0).toHex().toString();
+    
+    await spokeAUSDC.connect(investor1).approve(await spokeAAdapter.getAddress(), depositAmount);
+    const sendParam = {
+      dstEid: HUB_EID,
+      to: ethers.zeroPadValue(investor1.address, 32),
+      amountLD: depositAmount,
+      minAmountLD: depositAmount,
+      extraOptions: options,
+      composeMsg: '0x',
+      oftCmd: '0x'
+    };
+    
+    const feeQuote = await spokeAAdapter.quoteSend(sendParam, false);
+    const fee = { nativeFee: feeQuote.nativeFee, lzTokenFee: feeQuote.lzTokenFee };
+    await spokeAAdapter.connect(investor1).send(sendParam, fee, investor1.address, { value: fee.nativeFee });
+    
+    const hubOFTBalance = await hubOFTUSDC.balanceOf(investor1.address);
+    const expectedOFT = depositAmount * BigInt(10 ** 12);
+    console.log('   ✅ Hub OFTUSDC received:', ethers.formatUnits(hubOFTBalance, 18));
+    expect(hubOFTBalance).to.equal(expectedOFT);
+
+    // ============================================================================
+    // PHASE 4: TEST UNWRAP OPTION 1 - Back to Spoke A (Origin)
+    // ============================================================================
+    console.log('\n📍 PHASE 4: OPTION 1 - Unwrap to Spoke A (Origin Chain)');
+    console.log('-'.repeat(80));
+
+    // User sends part of OFTUSDC back to Spoke A (use exact USDC amount to avoid rounding)
+    const unwrapToSpokeAUSDC = depositAmount / BigInt(3); // 1/3 in USDC decimals
+    const unwrapToSpokeA = unwrapToSpokeAUSDC * BigInt(10 ** 12); // Scale to OFTUSDC
+    
+    console.log('📤 Sending', ethers.formatUnits(unwrapToSpokeA, 18), 'OFTUSDC to Spoke A...');
+    const unwrapASendParam = {
+      dstEid: SPOKE_A_EID, // Back to origin
+      to: ethers.zeroPadValue(investor1.address, 32),
+      amountLD: unwrapToSpokeA,
+      minAmountLD: unwrapToSpokeA * BigInt(99) / BigInt(100), // 1% slippage tolerance
+      extraOptions: options,
+      composeMsg: '0x',
+      oftCmd: '0x'
+    };
+    
+    const unwrapAFee = await hubOFTUSDC.quoteSend(unwrapASendParam, false);
+    await hubOFTUSDC.connect(investor1).send(
+      unwrapASendParam,
+      { nativeFee: unwrapAFee.nativeFee, lzTokenFee: unwrapAFee.lzTokenFee },
+      investor1.address,
+      { value: unwrapAFee.nativeFee }
+    );
+    
+    const spokeABalance = await spokeAUSDC.balanceOf(investor1.address);
+    const expectedSpokeAUSDC = unwrapToSpokeAUSDC; // Already in USDC decimals
+    console.log('✅ Spoke A USDC received:', ethers.formatUnits(spokeABalance, USDC_DECIMALS));
+    expect(spokeABalance).to.equal(expectedSpokeAUSDC);
+
+    // ============================================================================
+    // PHASE 5: SETUP LIQUIDITY ON SPOKE B (Required for unwrapping!)
+    // ============================================================================
+    console.log('\n📍 PHASE 5: SETUP LIQUIDITY ON SPOKE B');
+    console.log('-'.repeat(80));
+    console.log('💡 Lockbox Model: Each adapter needs USDC locked to unlock!');
+
+    // Someone needs to deposit on Spoke B first to create liquidity
+    const spokeBLiquidityUSDC = ethers.parseUnits('5000', USDC_DECIMALS);
+    
+    console.log('   Pre-funding Spoke B adapter with liquidity...');
+    await spokeBUSDC.connect(platformOwner).mint(investor2.address, spokeBLiquidityUSDC);
+    await spokeBUSDC.connect(investor2).approve(await spokeBAdapter.getAddress(), spokeBLiquidityUSDC);
+    
+    // Investor2 deposits on Spoke B (creates liquidity in Spoke B adapter)
+    const spokeBLiqSendParam = {
+      dstEid: HUB_EID,
+      to: ethers.zeroPadValue(investor2.address, 32),
+      amountLD: spokeBLiquidityUSDC,
+      minAmountLD: spokeBLiquidityUSDC,
+      extraOptions: options,
+      composeMsg: '0x',
+      oftCmd: '0x'
+    };
+    const spokeBLiqFee = await spokeBAdapter.quoteSend(spokeBLiqSendParam, false);
+    await spokeBAdapter.connect(investor2).send(
+      spokeBLiqSendParam,
+      { nativeFee: spokeBLiqFee.nativeFee, lzTokenFee: spokeBLiqFee.lzTokenFee },
+      investor2.address,
+      { value: spokeBLiqFee.nativeFee }
+    );
+    
+    console.log('   ✅ Spoke B adapter now has liquidity:', ethers.formatUnits(spokeBLiquidityUSDC, USDC_DECIMALS), 'USDC');
+
+    // ============================================================================
+    // PHASE 6: TEST UNWRAP OPTION 2 - To Spoke B (Different Chain!)
+    // ============================================================================
+    console.log('\n📍 PHASE 6: OPTION 2 - Unwrap to Spoke B (DIFFERENT Chain!)');
+    console.log('-'.repeat(80));
+
+    // Now user can unwrap to Spoke B because it has liquidity!
+    const unwrapToSpokeBUSDC = depositAmount / BigInt(3); // 1/3 in USDC decimals
+    const unwrapToSpokeB = unwrapToSpokeBUSDC * BigInt(10 ** 12); // Scale to OFTUSDC
+    
+    console.log('📤 Sending', ethers.formatUnits(unwrapToSpokeB, 18), 'OFTUSDC to Spoke B...');
+    const unwrapBSendParam = {
+      dstEid: SPOKE_B_EID, // Different chain!
+      to: ethers.zeroPadValue(investor1.address, 32),
+      amountLD: unwrapToSpokeB,
+      minAmountLD: unwrapToSpokeB * BigInt(99) / BigInt(100), // 1% slippage tolerance
+      extraOptions: options,
+      composeMsg: '0x',
+      oftCmd: '0x'
+    };
+    
+    const unwrapBFee = await hubOFTUSDC.quoteSend(unwrapBSendParam, false);
+    await hubOFTUSDC.connect(investor1).send(
+      unwrapBSendParam,
+      { nativeFee: unwrapBFee.nativeFee, lzTokenFee: unwrapBFee.lzTokenFee },
+      investor1.address,
+      { value: unwrapBFee.nativeFee }
+    );
+    
+    const spokeBBalance = await spokeBUSDC.balanceOf(investor1.address);
+    const expectedSpokeBUSDC = unwrapToSpokeBUSDC; // Already in USDC decimals
+    console.log('✅ Spoke B USDC received:', ethers.formatUnits(spokeBBalance, USDC_DECIMALS));
+    expect(spokeBBalance).to.equal(expectedSpokeBUSDC);
+
+    // ============================================================================
+    // PHASE 7: SETUP LIQUIDITY ON HUB (Required for unwrapping!)
+    // ============================================================================
+    console.log('\n📍 PHASE 7: SETUP LIQUIDITY ON HUB');
+    console.log('-'.repeat(80));
+
+    // Pre-fund Hub adapter with liquidity
+    const hubLiquidityUSDC = ethers.parseUnits('5000', USDC_DECIMALS);
+    
+    console.log('   Pre-funding Hub adapter with liquidity...');
+    await hubUSDC.connect(platformOwner).mint(investor3.address, hubLiquidityUSDC);
+    await hubUSDC.connect(investor3).approve(await hubAdapter.getAddress(), hubLiquidityUSDC);
+    
+    const hubLiqSendParam = {
+      dstEid: HUB_EID,
+      to: ethers.zeroPadValue(investor3.address, 32),
+      amountLD: hubLiquidityUSDC,
+      minAmountLD: hubLiquidityUSDC,
+      extraOptions: options,
+      composeMsg: '0x',
+      oftCmd: '0x'
+    };
+    const hubLiqFee = await hubAdapter.quoteSend(hubLiqSendParam, false);
+    await hubAdapter.connect(investor3).send(
+      hubLiqSendParam,
+      { nativeFee: hubLiqFee.nativeFee, lzTokenFee: hubLiqFee.lzTokenFee },
+      investor3.address,
+      { value: hubLiqFee.nativeFee }
+    );
+    
+    console.log('   ✅ Hub adapter now has liquidity:', ethers.formatUnits(hubLiquidityUSDC, USDC_DECIMALS), 'USDC');
+
+    // ============================================================================
+    // PHASE 8: TEST UNWRAP OPTION 3 - To Hub (Different from origin!)
+    // ============================================================================
+    console.log('\n📍 PHASE 8: OPTION 3 - Unwrap to Hub (OFTUSDC native chain)');
+    console.log('-'.repeat(80));
+
+    // User sends remaining OFTUSDC to Hub adapter
+    const remainingOFT = await hubOFTUSDC.balanceOf(investor1.address);
+    
+    console.log('📤 Sending', ethers.formatUnits(remainingOFT, 18), 'OFTUSDC to Hub...');
+    const unwrapHubSendParam = {
+      dstEid: HUB_EID, // To hub itself
+      to: ethers.zeroPadValue(investor1.address, 32),
+      amountLD: remainingOFT,
+      minAmountLD: remainingOFT * BigInt(99) / BigInt(100), // 1% slippage tolerance
+      extraOptions: options,
+      composeMsg: '0x',
+      oftCmd: '0x'
+    };
+    
+    const unwrapHubFee = await hubOFTUSDC.quoteSend(unwrapHubSendParam, false);
+    await hubOFTUSDC.connect(investor1).send(
+      unwrapHubSendParam,
+      { nativeFee: unwrapHubFee.nativeFee, lzTokenFee: unwrapHubFee.lzTokenFee },
+      investor1.address,
+      { value: unwrapHubFee.nativeFee }
+    );
+    
+    const hubBalance = await hubUSDC.balanceOf(investor1.address);
+    console.log('✅ Hub USDC received:', ethers.formatUnits(hubBalance, USDC_DECIMALS));
+    // Expect approximately the remaining USDC (within slippage tolerance)
+    expect(hubBalance).to.be.greaterThan(0);
+
+    // ============================================================================
+    // PHASE 9: VERIFY BALANCES ACROSS ALL CHAINS
+    // ============================================================================
+    console.log('\n📍 PHASE 9: VERIFY BALANCES ACROSS ALL CHAINS');
+    console.log('-'.repeat(80));
+
+    const finalSpokeAUSDC = await spokeAUSDC.balanceOf(investor1.address);
+    const finalSpokeBUSDC = await spokeBUSDC.balanceOf(investor1.address);
+    const finalHubUSDC = await hubUSDC.balanceOf(investor1.address);
+    const finalOFTUSDC = await hubOFTUSDC.balanceOf(investor1.address);
+
+    console.log('📊 Final Balances Across All Chains:');
+    console.log('   - Spoke A USDC:', ethers.formatUnits(finalSpokeAUSDC, USDC_DECIMALS));
+    console.log('   - Spoke B USDC:', ethers.formatUnits(finalSpokeBUSDC, USDC_DECIMALS));
+    console.log('   - Hub USDC:', ethers.formatUnits(finalHubUSDC, USDC_DECIMALS));
+    console.log('   - Hub OFTUSDC:', ethers.formatUnits(finalOFTUSDC, 18), '(should be 0)');
+
+    // Verify total approximately equals original deposit (within tolerance)
+    const totalUSDCReceived = (finalSpokeAUSDC + finalSpokeBUSDC + finalHubUSDC) * BigInt(10 ** 12); // Scale to 18 for comparison
+    console.log('\n✅ Total USDC across all chains:', ethers.formatUnits(totalUSDCReceived, 18));
+    console.log('✅ Original deposit (OFTUSDC):', ethers.formatUnits(expectedOFT, 18));
+    console.log('✅ Original deposit (USDC):', ethers.formatUnits(depositAmount, USDC_DECIMALS));
+    console.log('✅ Total USDC received:', ethers.formatUnits(finalSpokeAUSDC + finalSpokeBUSDC + finalHubUSDC, USDC_DECIMALS));
+    console.log('✅ Match:', (finalSpokeAUSDC + finalSpokeBUSDC + finalHubUSDC) === depositAmount ? '✅ EXACT' : '≈ Close (due to slippage)');
+    
+    // Verify total is close to original (within 1% tolerance)
+    const tolerance = depositAmount / BigInt(100); // 1% tolerance
+    expect(finalSpokeAUSDC + finalSpokeBUSDC + finalHubUSDC).to.be.greaterThan(depositAmount - tolerance);
+    expect(finalSpokeAUSDC + finalSpokeBUSDC + finalHubUSDC).to.be.lessThanOrEqual(depositAmount);
+    expect(finalOFTUSDC).to.equal(0);
+
+    // ============================================================================
+    // PHASE 10: SUMMARY
+    // ============================================================================
+    console.log('\n' + '='.repeat(80));
+    console.log('📊 FLEXIBLE UNWRAP SUMMARY');
+    console.log('='.repeat(80));
+
+    console.log('\n🌐 What We Proved:');
+    console.log('   ✅ User deposited on Spoke A (10,000 USDC)');
+    console.log('   ✅ Got OFTUSDC on Hub (universal token)');
+    console.log('   ✅ User chose to unwrap to 3 different chains:');
+    console.log('      → 1/3 to Spoke A (origin chain) ✅');
+    console.log('      → 1/3 to Spoke B (different spoke chain) ✅');
+    console.log('      → 1/3 to Hub (OFTUSDC native chain) ✅');
+    console.log('   ✅ All unwraps successful - total matches original deposit!');
+
+    console.log('\n💡 Architecture Flexibility (WITH Lockbox Model):');
+    console.log('   ✅ Users can unwrap to ANY chain with a USDCOFTAdapter');
+    console.log('   ✅ NOT limited to origin chain or hub chain');
+    console.log('   ⚠️  Each chain needs liquidity (someone must have deposited there)');
+    console.log('   ✅ Perfect fungibility: OFTUSDC is universal across all chains');
+    console.log('   ✅ Each adapter acts as a lockbox for its chain\'s USDC');
+    console.log('   ✅ Lockbox = locked USDC on chain A unlocks when OFTUSDC sent there');
+
+    console.log('\n🔒 Lockbox Model Benefits:');
+    console.log('   ✅ No trust required - OFTUSDC fully backed by locked USDC');
+    console.log('   ✅ No bridge risk - each chain manages its own USDC');
+    console.log('   ✅ Organic liquidity - grows with usage on each chain');
+    console.log('   ⚠️  Requires initial liquidity on destination chains');
+
+    console.log('\n🎯 Real-World Use Cases:');
+    console.log('   • User deposits on Arbitrum (Spoke A)');
+    console.log('   • Invests in properties (gets OFTUSDC on hub)');
+    console.log('   • Redeems investment (gets OFTUSDC back)');
+    console.log('   • Can choose to withdraw USDC to:');
+    console.log('     - Arbitrum (origin) ← if they still use that chain ✅');
+    console.log('     - Optimism (Spoke B) ← if they moved to a new chain ✅');
+    console.log('     - Sepolia (Hub) ← if they want it on the main chain ✅');
+    console.log('   • Flexibility = User can receive USDC on ANY supported chain!');
+
+    console.log('\n✅ FLEXIBLE UNWRAP DESTINATION TEST PASSED! 🎉');
+    console.log('   💡 This is a KEY BENEFIT of the Unified Adapter Architecture!');
+    console.log('='.repeat(80));
+  });
 });
+
 
