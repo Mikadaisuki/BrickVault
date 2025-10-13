@@ -2367,7 +2367,7 @@ export default function ManagementPage() {
             <button
               onClick={refreshProperties}
               disabled={fetchingProperties}
-              className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
+              className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
             >
               {fetchingProperties ? (
                 <>
@@ -2397,7 +2397,7 @@ export default function ManagementPage() {
             <div className="flex items-center space-x-2">
               <CheckCircle className="h-4 w-4" />
               <span>Active</span>
-              <span className="px-2 py-0.5 bg-green-100 text-green-800 rounded-full text-xs">
+              <span className="px-2 py-0.5 bg-green-500/20 text-green-400 border border-green-500/30 rounded-full text-xs">
                 {properties.filter(p => p.status === 1).length}
               </span>
             </div>
@@ -2406,14 +2406,14 @@ export default function ManagementPage() {
             onClick={() => setPropertyFilter('inactive')}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 ${
               propertyFilter === 'inactive'
-                ? 'border-gray-500 text-gray-600'
+                ? 'border-gray-500 text-slate-400'
                 : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
             <div className="flex items-center space-x-2">
               <Pause className="h-4 w-4" />
               <span>Inactive</span>
-              <span className="px-2 py-0.5 bg-gray-100 text-gray-800 rounded-full text-xs">
+              <span className="px-2 py-0.5 bg-slate-500/20 text-slate-400 border border-slate-500/30 rounded-full text-xs">
                 {properties.filter(p => p.status === 0).length}
               </span>
             </div>
@@ -2429,7 +2429,7 @@ export default function ManagementPage() {
             <div className="flex items-center space-x-2">
               <Building2 className="h-4 w-4" />
               <span>All Properties</span>
-              <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-xs">
+              <span className="px-2 py-0.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-full text-xs">
                 {properties.length}
               </span>
             </div>
@@ -2448,7 +2448,7 @@ export default function ManagementPage() {
             </div>
             <button
               onClick={refreshProperties}
-              className="mt-3 px-3 py-1 bg-red-100 text-red-800 rounded text-sm hover:bg-red-200 transition-colors"
+              className="mt-3 px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-sm hover:bg-red-200 transition-colors"
             >
               Try Again
             </button>
@@ -2514,16 +2514,16 @@ export default function ManagementPage() {
                   <div className="flex items-center space-x-2">
                     <span className={`px-2 py-1 rounded-full text-xs ${
                       property.daoStage === 4
-                        ? 'bg-red-100 text-red-800' 
+                        ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
                         : property.daoStage === 3
-                        ? 'bg-orange-100 text-orange-800'
+                        ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
                         : property.daoStage === 2
-                        ? 'bg-green-100 text-green-800' 
+                        ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
                         : property.daoStage === 1
-                        ? 'bg-blue-100 text-blue-800'
+                        ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                         : property.daoStage === 0
-                        ? 'bg-yellow-100 text-yellow-800'
-                        : 'bg-gray-100 text-gray-800'
+                        ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                        : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
                     }`}>
                       {property.daoStage === 4 ? 'Liquidated' : 
                        property.daoStage === 3 ? 'Liquidating' : 
@@ -2532,12 +2532,12 @@ export default function ManagementPage() {
                        property.daoStage === 0 ? 'Open to Fund' : 'Unknown'}
                     </span>
                     {property.status === 0 && (
-                      <span className="px-2 py-1 rounded-full text-xs bg-gray-100 text-gray-800">
+                      <span className="px-2 py-1 rounded-full text-xs bg-slate-500/20 text-slate-400 border border-slate-500/30">
                         Inactive
                       </span>
                     )}
                     {property.daoIsFullyFunded && property.daoStage < 2 && (
-                      <span className="px-2 py-1 rounded-full text-xs bg-green-100 text-green-800 flex items-center">
+                      <span className="px-2 py-1 rounded-full text-xs bg-green-500/20 text-green-400 border border-green-500/30 flex items-center">
                         <CheckCircle className="h-3 w-3 mr-1" />
                         Ready for Purchase
                       </span>
@@ -2556,7 +2556,7 @@ export default function ManagementPage() {
                       </span>
                       <span className="text-sm text-muted-foreground">{property.vaultFundingProgress.toFixed(2)}%</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="w-full bg-slate-800/50 rounded-full h-2">
                       <div 
                         className={`h-2 rounded-full transition-all duration-300 ${
                           property.vaultIsFunded ? 'bg-blue-500' : 'bg-green-500'
@@ -2579,7 +2579,7 @@ export default function ManagementPage() {
                       </span>
                       <span className="text-sm text-muted-foreground">{property.daoFundingProgress.toFixed(2)}%</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="w-full bg-slate-800/50 rounded-full h-2">
                       <div 
                         className={`h-2 rounded-full transition-all duration-300 ${
                           property.daoIsFullyFunded ? 'bg-purple-500' : 'bg-orange-500'
@@ -2615,7 +2615,7 @@ export default function ManagementPage() {
                     <Users className="mr-2 h-4 w-4 text-muted-foreground" />
                     <div>
                       <p className="text-sm text-muted-foreground">Property Status</p>
-                      <p className={`font-semibold ${property.status === 1 ? 'text-green-600' : 'text-gray-600'}`}>
+                      <p className={`font-semibold ${property.status === 1 ? 'text-green-600' : 'text-slate-400'}`}>
                         {property.status === 1 ? 'Active' : 'Inactive'}
                       </p>
                     </div>
@@ -2631,7 +2631,7 @@ export default function ManagementPage() {
                             e.stopPropagation()
                             handlePropertyClick(property)
                           }}
-                          className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded hover:bg-blue-200"
+                          className="text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-1 rounded hover:bg-blue-200"
                         >
                           <Eye className="h-3 w-3 inline mr-1" />
                           View Details
@@ -2643,7 +2643,7 @@ export default function ManagementPage() {
                               handleOpenDeactivateModal(property)
                             }}
                             disabled={loading}
-                            className="text-xs bg-gray-100 text-gray-800 px-2 py-1 rounded hover:bg-gray-200 disabled:opacity-50"
+                            className="text-xs bg-slate-500/20 text-slate-400 border border-slate-500/30 px-2 py-1 rounded hover:bg-slate-800/50 disabled:opacity-50"
                           >
                             <Pause className="h-3 w-3 inline mr-1" />
                             Deactivate
@@ -2655,7 +2655,7 @@ export default function ManagementPage() {
                               handleActivateProperty(property.id)
                             }}
                             disabled={loading}
-                            className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded hover:bg-green-200 disabled:opacity-50"
+                            className="text-xs bg-green-500/20 text-green-400 border border-green-500/30 px-2 py-1 rounded hover:bg-green-200 disabled:opacity-50"
                           >
                             <Play className="h-3 w-3 inline mr-1" />
                             Activate
@@ -2707,16 +2707,16 @@ export default function ManagementPage() {
                       <span className="text-sm text-muted-foreground">Status:</span>
                       <span className={`px-2 py-1 rounded-full text-xs ${
                         selectedProperty.daoStage === 4
-                          ? 'bg-red-100 text-red-800' 
+                          ? 'bg-red-500/20 text-red-400 border border-red-500/30' 
                           : selectedProperty.daoStage === 3
-                          ? 'bg-orange-100 text-orange-800'
+                          ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
                           : selectedProperty.daoStage === 2
-                          ? 'bg-green-100 text-green-800' 
+                          ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
                           : selectedProperty.daoStage === 1
-                          ? 'bg-blue-100 text-blue-800'
+                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                           : selectedProperty.daoStage === 0
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-gray-100 text-gray-800'
+                          ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                          : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
                       }`}>
                         {selectedProperty.daoStage === 4 ? 'Liquidated' : 
                          selectedProperty.daoStage === 3 ? 'Liquidating' : 
@@ -2766,7 +2766,7 @@ export default function ManagementPage() {
                         </span>
                         <span className="font-semibold">{selectedProperty.vaultFundingProgress.toFixed(2)}%</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div className="w-full bg-slate-800/50 rounded-full h-3">
                         <div 
                           className={`h-3 rounded-full transition-all duration-300 ${
                             selectedProperty.vaultIsFunded ? 'bg-blue-500' : 'bg-green-500'
@@ -2789,7 +2789,7 @@ export default function ManagementPage() {
                         </span>
                         <span className="font-semibold">{selectedProperty.daoFundingProgress.toFixed(2)}%</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-3">
+                      <div className="w-full bg-slate-800/50 rounded-full h-3">
                         <div 
                           className={`h-3 rounded-full transition-all duration-300 ${
                             selectedProperty.daoIsFullyFunded ? 'bg-purple-500' : 'bg-orange-500'
@@ -2822,7 +2822,7 @@ export default function ManagementPage() {
                           handleOpenRentModal(selectedProperty)
                         }}
                         disabled={loading}
-                        className="flex items-center space-x-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 disabled:opacity-50 transition-colors"
+                        className="flex items-center space-x-2 px-4 py-2 bg-green-500/20 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-200 disabled:opacity-50 transition-colors"
                       >
                         <DollarSign className="h-4 w-4" />
                         <span>Harvest Rent</span>
@@ -2833,7 +2833,7 @@ export default function ManagementPage() {
                           handleOpenNavModal(selectedProperty)
                         }}
                         disabled={loading}
-                        className="flex items-center space-x-2 px-4 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 disabled:opacity-50 transition-colors"
+                        className="flex items-center space-x-2 px-4 py-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-200 disabled:opacity-50 transition-colors"
                       >
                         <TrendingUp className="h-4 w-4" />
                         <span>Update NAV</span>
@@ -2853,7 +2853,7 @@ export default function ManagementPage() {
                           handleOpenDepositLiquidationModal(selectedProperty)
                         }}
                         disabled={loading}
-                        className="flex items-center space-x-2 px-4 py-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 disabled:opacity-50 transition-colors"
+                        className="flex items-center space-x-2 px-4 py-2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-lg hover:bg-purple-200 disabled:opacity-50 transition-colors"
                       >
                         <DollarSign className="h-4 w-4" />
                         <span>Deposit Liquidation Proceeds</span>
@@ -2864,7 +2864,7 @@ export default function ManagementPage() {
                           handleOpenFinishLiquidationModal(selectedProperty)
                         }}
                         disabled={loading}
-                        className="flex items-center space-x-2 px-4 py-2 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 disabled:opacity-50 transition-colors"
+                        className="flex items-center space-x-2 px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-200 disabled:opacity-50 transition-colors"
                       >
                         <AlertTriangle className="h-4 w-4" />
                         <span>Finish Liquidation</span>
@@ -2883,7 +2883,7 @@ export default function ManagementPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-muted-foreground">Status:</span>
-                        <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded-full text-xs">
+                        <span className="px-2 py-1 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded-full text-xs">
                           Liquidation in Progress
                         </span>
                       </div>
@@ -2910,7 +2910,7 @@ export default function ManagementPage() {
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-sm text-muted-foreground">Status:</span>
-                        <span className="px-2 py-1 bg-red-100 text-red-800 rounded-full text-xs">
+                        <span className="px-2 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded-full text-xs">
                           Liquidation Complete
                         </span>
                       </div>
@@ -2937,7 +2937,7 @@ export default function ManagementPage() {
                     <div className="space-y-3">
                       <div className="flex justify-between">
                         <span className="text-sm text-muted-foreground">Token Address:</span>
-                        <span className="font-mono text-xs bg-purple-100 text-purple-800 px-2 py-1 rounded">
+                        <span className="font-mono text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-1 rounded">
                           {selectedProperty.propertyTokenAddress.slice(0, 6)}...{selectedProperty.propertyTokenAddress.slice(-4)}
                         </span>
                       </div>
@@ -2978,7 +2978,7 @@ export default function ManagementPage() {
                     <Vote className="mr-2 h-5 w-5" />
                     Proposals ({propertyProposals.length})
                     {proposalExecutable && (
-                      <span className="ml-2 px-2 py-1 bg-yellow-100 text-yellow-800 text-xs rounded-full">
+                      <span className="ml-2 px-2 py-1 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 text-xs rounded-full">
                         Executable Available
                       </span>
                     )}
@@ -3018,15 +3018,15 @@ export default function ManagementPage() {
                             <div className="flex items-center gap-2">
                               <h4 className="font-semibold">Proposal #{proposal.id} - {selectedProperty.name}</h4>
                               <span className={`px-2 py-1 rounded-full text-xs ${
-                                proposal.proposalType === 0 ? 'bg-red-100 text-red-800' :
-                                proposal.proposalType === 1 ? 'bg-green-100 text-green-800' : 
-                                proposal.proposalType === 2 ? 'bg-purple-100 text-purple-800' :
-                                proposal.proposalType === 3 ? 'bg-blue-100 text-blue-800' :
-                                proposal.proposalType === 4 ? 'bg-yellow-100 text-yellow-800' :
-                                proposal.proposalType === 5 ? 'bg-orange-100 text-orange-800' :
+                                proposal.proposalType === 0 ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                                proposal.proposalType === 1 ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 
+                                proposal.proposalType === 2 ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
+                                proposal.proposalType === 3 ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                                proposal.proposalType === 4 ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                                proposal.proposalType === 5 ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
                                 proposal.proposalType === 6 ? 'bg-emerald-100 text-emerald-800' :
                                 proposal.proposalType === 7 ? 'bg-indigo-100 text-indigo-800' :
-                                'bg-gray-100 text-gray-800'
+                                'bg-slate-500/20 text-slate-400 border border-slate-500/30'
                               }`}>
                                 {proposal.proposalType === 0 ? 'Property Liquidation' :
                                  proposal.proposalType === 1 ? 'Property Purchase' : 
@@ -3056,15 +3056,15 @@ export default function ManagementPage() {
                           <div className="flex items-center gap-2">
                             <span className={`px-2 py-1 rounded-full text-xs ${
                               proposal.status === 'Active' 
-                                ? 'bg-green-100 text-green-800'
+                                ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                                 : proposal.executed
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-gray-100 text-gray-800'
+                                ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                                : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
                             }`}>
                               {proposal.status}
                             </span>
                             {proposal.canExecute && (
-                              <span className="px-2 py-1 rounded-full text-xs bg-yellow-100 text-yellow-800">
+                              <span className="px-2 py-1 rounded-full text-xs bg-yellow-500/20 text-yellow-400 border border-yellow-500/30">
                                 Executable
                               </span>
                             )}
@@ -3112,7 +3112,7 @@ export default function ManagementPage() {
                               <button
                                 onClick={() => handleSkipVotingPeriod(proposal.id, selectedProperty?.daoAddress || '')}
                                 disabled={skippingProposalId === proposal.id}
-                                className="px-3 py-1 bg-yellow-100 text-yellow-800 rounded text-sm hover:bg-yellow-200 disabled:opacity-50 flex items-center"
+                                className="px-3 py-1 bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 rounded text-sm hover:bg-yellow-200 disabled:opacity-50 flex items-center"
                               >
                                 {skippingProposalId === proposal.id ? (
                                   <>
@@ -3131,7 +3131,7 @@ export default function ManagementPage() {
                               <button
                                 onClick={() => handleExecuteProposal(proposal.id, selectedProperty?.daoAddress || '')}
                                 disabled={loading}
-                                className="px-3 py-1 bg-green-100 text-green-800 rounded text-sm hover:bg-green-200 disabled:opacity-50 flex items-center"
+                                className="px-3 py-1 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-sm hover:bg-green-200 disabled:opacity-50 flex items-center"
                               >
                                 <CheckCircle className="h-3 w-3 mr-1" />
                                 Execute Proposal
@@ -3141,7 +3141,7 @@ export default function ManagementPage() {
                               <button
                                 onClick={() => handleOpenCompletePurchaseModal(selectedProperty!)}
                                 disabled={loading}
-                                className="px-3 py-1 bg-blue-100 text-blue-800 rounded text-sm hover:bg-blue-200 disabled:opacity-50 flex items-center"
+                                className="px-3 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-sm hover:bg-blue-200 disabled:opacity-50 flex items-center"
                               >
                                 <Building2 className="h-3 w-3 mr-1" />
                                 Complete Purchase
@@ -3212,7 +3212,7 @@ export default function ManagementPage() {
                           ? 'bg-primary text-white shadow-lg scale-110'
                           : step < creationStep
                           ? 'bg-green-500 text-white shadow-md'
-                          : 'bg-gray-200 text-gray-600'
+                          : 'bg-slate-800/50 text-slate-400'
                       }`}>
                         {step < creationStep ? <CheckCircle2 className="h-5 w-5" /> : 
                          step === creationStep && isCreating ? <Loader2 className="h-5 w-5 animate-spin" /> : step}
@@ -3224,7 +3224,7 @@ export default function ManagementPage() {
                       </div>
                       {step < 3 && (
                         <div className={`w-16 h-1 mx-4 rounded-full transition-all duration-500 ${
-                          step < creationStep ? 'bg-green-500' : 'bg-gray-200'
+                          step < creationStep ? 'bg-green-500' : 'bg-slate-800/50'
                         }`} />
                       )}
                     </div>
@@ -3238,7 +3238,7 @@ export default function ManagementPage() {
                       <span>Progress</span>
                       <span>{creationProgress}%</span>
                     </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
+                    <div className="w-full bg-slate-800/50 rounded-full h-2">
                       <div 
                         className="bg-primary h-2 rounded-full transition-all duration-500 ease-out"
                         style={{ width: `${creationProgress}%` }}
@@ -3349,7 +3349,7 @@ export default function ManagementPage() {
                     <button
                       onClick={resetCreationFlow}
                       disabled={isCreating}
-                      className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                      className="px-6 py-2 text-slate-400 hover:text-gray-800 transition-colors disabled:opacity-50"
                     >
                       Cancel
                     </button>
@@ -3396,7 +3396,7 @@ export default function ManagementPage() {
                     <button
                       onClick={() => setCreationStep(1)}
                       disabled={isCreating}
-                      className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                      className="px-6 py-2 text-slate-400 hover:text-gray-800 transition-colors disabled:opacity-50"
                     >
                       Back
                     </button>
@@ -3507,7 +3507,7 @@ export default function ManagementPage() {
                     <button
                       onClick={() => setCreationStep(2)}
                       disabled={isCreating}
-                      className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                      className="px-6 py-2 text-slate-400 hover:text-gray-800 transition-colors disabled:opacity-50"
                     >
                       Back
                     </button>
@@ -3579,20 +3579,20 @@ export default function ManagementPage() {
                             )}
                           </div>
                           <div className="flex items-center space-x-2">
-                            <span className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs">
+                            <span className="px-2 py-1 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs">
                               Under Management
                             </span>
                             <button
                               onClick={() => handleOpenRentModal(property)}
                               disabled={loading}
-                              className="px-2 py-1 bg-green-100 text-green-800 rounded text-xs hover:bg-green-200 disabled:opacity-50"
+                              className="px-2 py-1 bg-green-500/20 text-green-400 border border-green-500/30 rounded text-xs hover:bg-green-200 disabled:opacity-50"
                             >
                               Harvest Rent
                             </button>
                             <button
                               onClick={() => handleOpenNavModal(property)}
                               disabled={loading}
-                              className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 disabled:opacity-50"
+                              className="px-2 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-xs hover:bg-blue-200 disabled:opacity-50"
                             >
                               Update NAV
                             </button>
@@ -3627,20 +3627,20 @@ export default function ManagementPage() {
                             )}
                           </div>
                           <div className="flex items-center space-x-2">
-                            <span className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs">
+                            <span className="px-2 py-1 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded text-xs">
                               Liquidating
                             </span>
                             <button
                               onClick={() => handleOpenDepositLiquidationModal(property)}
                               disabled={loading}
-                              className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs hover:bg-purple-200 disabled:opacity-50"
+                              className="px-2 py-1 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded text-xs hover:bg-purple-200 disabled:opacity-50"
                             >
                               Deposit Proceeds
                             </button>
                             <button
                               onClick={() => handleOpenFinishLiquidationModal(property)}
                               disabled={loading}
-                              className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs hover:bg-red-200 disabled:opacity-50"
+                              className="px-2 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-xs hover:bg-red-200 disabled:opacity-50"
                             >
                               Finish Liquidation
                             </button>
@@ -3675,7 +3675,7 @@ export default function ManagementPage() {
                             )}
                           </div>
                           <div className="flex items-center space-x-2">
-                            <span className="px-2 py-1 bg-red-100 text-red-800 rounded text-xs">
+                            <span className="px-2 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-xs">
                               Liquidated
                             </span>
                           </div>
@@ -3809,7 +3809,7 @@ export default function ManagementPage() {
                       setRentApprovalHash(undefined)
                     }}
                     disabled={isPending || isRentApprovalConfirming}
-                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                    className="px-6 py-2 text-slate-400 hover:text-gray-800 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -3913,7 +3913,7 @@ export default function ManagementPage() {
                       setNavUpdateValue('')
                     }}
                     disabled={isUpdatingNav}
-                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                    className="px-6 py-2 text-slate-400 hover:text-gray-800 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -4022,7 +4022,7 @@ export default function ManagementPage() {
                       setLiquidationProceedsAmount('')
                     }}
                     disabled={isDepositingProceeds}
-                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                    className="px-6 py-2 text-slate-400 hover:text-gray-800 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -4105,7 +4105,7 @@ export default function ManagementPage() {
                       setSelectedPropertyForLiquidation(null)
                     }}
                     disabled={isFinishingLiquidation}
-                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                    className="px-6 py-2 text-slate-400 hover:text-gray-800 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -4188,7 +4188,7 @@ export default function ManagementPage() {
                       setPropertyToDeactivate(null)
                     }}
                     disabled={isDeactivating}
-                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                    className="px-6 py-2 text-slate-400 hover:text-gray-800 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -4269,7 +4269,7 @@ export default function ManagementPage() {
                       setPurchasePropertyAddress('')
                     }}
                     disabled={isCompletingPurchase}
-                    className="px-6 py-2 text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                    className="px-6 py-2 text-slate-400 hover:text-gray-800 transition-colors disabled:opacity-50"
                   >
                     Cancel
                   </button>
@@ -4315,7 +4315,7 @@ export default function ManagementPage() {
                   refetchSbtcPrice()
                 }}
                 disabled={loadingStacksData}
-                className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
+                className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
               >
                 <RefreshCw className={`h-3 w-3 ${loadingStacksData ? 'animate-spin' : ''}`} />
                 <span>Refresh</span>
@@ -4470,7 +4470,7 @@ export default function ManagementPage() {
               <button
                 onClick={fetchStacksPoolData}
                 disabled={loadingStacksData}
-                className="flex items-center space-x-1 px-3 py-1 text-sm bg-orange-100 text-orange-800 rounded hover:bg-orange-200 disabled:opacity-50 transition-colors"
+                className="flex items-center space-x-1 px-3 py-1 text-sm bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded hover:bg-orange-200 disabled:opacity-50 transition-colors"
               >
                 <RefreshCw className={`h-3 w-3 ${loadingStacksData ? 'animate-spin' : ''}`} />
                 <span>Refresh</span>
@@ -4567,7 +4567,7 @@ export default function ManagementPage() {
                         }
                       }}
                       disabled={isSettingStacksPool || !stacksAccount || !poolBalance}
-                      className="px-2 py-1 bg-purple-100 text-purple-800 rounded text-xs hover:bg-purple-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+                      className="px-2 py-1 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded text-xs hover:bg-purple-200 disabled:opacity-50 transition-colors whitespace-nowrap"
                     >
                       Use EVM
                     </button>
@@ -4615,7 +4615,7 @@ export default function ManagementPage() {
                         }
                       }}
                       disabled={isUpdatingStacksPrice || !stacksAccount || !sbtcPrice}
-                      className="px-2 py-1 bg-blue-100 text-blue-800 rounded text-xs hover:bg-blue-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+                      className="px-2 py-1 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded text-xs hover:bg-blue-200 disabled:opacity-50 transition-colors whitespace-nowrap"
                     >
                       Use EVM
                     </button>
@@ -4668,7 +4668,7 @@ export default function ManagementPage() {
                         }
                       }}
                       disabled={isWithdrawingStacksSbtc || !stacksAccount}
-                      className="px-2 py-1 bg-orange-100 text-orange-800 rounded text-xs hover:bg-orange-200 disabled:opacity-50 transition-colors whitespace-nowrap"
+                      className="px-2 py-1 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded text-xs hover:bg-orange-200 disabled:opacity-50 transition-colors whitespace-nowrap"
                       title="Use current wallet address"
                     >
                       Use Wallet

@@ -187,12 +187,6 @@ async function main() {
   console.log('\n9️⃣ Skipping demo property creation...');
   console.log('   📝 Properties can be created later via frontend or management interface');
   console.log('   📝 Use PropertyRegistry.createProperty(name, depositCap, underlyingAsset)');
-  
-  // Set placeholder values for deployment info
-  const propertyVaultAddress = '';
-  const VAULT_DEPOSIT_CAP = ethers.parseUnits('100000', 18); // 100K OFTUSDC cap (example)
-  const FUNDING_TARGET = ethers.parseUnits('50000', 18);
-  const FUNDING_DEADLINE = Math.floor(Date.now() / 1000) + (60 * 24 * 60 * 60);
 
   // 11. Deploy StacksCrossChainManager for Stacks integration
   console.log('\n1️⃣1️⃣ Deploying StacksCrossChainManager on Sepolia...');
@@ -346,16 +340,13 @@ async function main() {
       note: 'Spoke chain deployment is separate - see TESTNET_DEPLOYMENT.md'
     },
     configuration: {
-      vaultDepositCap: VAULT_DEPOSIT_CAP.toString(),
-      fundingTarget: FUNDING_TARGET.toString(),
-      fundingDeadline: FUNDING_DEADLINE,
       liquidityPoolBalance: '0',
       sbtcPrice: '95000',
-      note: 'Fund liquidity pool manually after deployment'
+      note: 'Properties created via frontend with custom caps/targets. Fund liquidity pool manually after deployment.'
     },
     decimals: {
       usdc: 6,
-      oftUSDC: 18,
+      oftusdc: 18,
       vaultShares: 18
     },
     deploymentTime: new Date().toISOString(),
@@ -385,6 +376,7 @@ async function main() {
 NEXT_PUBLIC_NETWORK_NAME=sepolia
 NEXT_PUBLIC_CHAIN_ID=11155111
 NEXT_PUBLIC_RPC_URL=https://ethereum-sepolia-rpc.publicnode.com
+NEXT_PUBLIC_SPOKE_RPC_URL=
 
 # Infrastructure Contracts
 NEXT_PUBLIC_ENVIRONMENT_CONFIG_ADDRESS=${await environmentConfig.getAddress()}
@@ -416,10 +408,6 @@ NEXT_PUBLIC_LAYERZERO_SPOKE_EID=
 NEXT_PUBLIC_USDC_DECIMALS=6
 NEXT_PUBLIC_OFT_USDC_DECIMALS=18
 NEXT_PUBLIC_VAULT_SHARES_DECIMALS=18
-
-# Property Configuration
-NEXT_PUBLIC_FUNDING_TARGET=${FUNDING_TARGET.toString()}
-NEXT_PUBLIC_VAULT_DEPOSIT_CAP=${VAULT_DEPOSIT_CAP.toString()}
 `;
 
   fs.writeFileSync(frontendEnvPath, envContent);

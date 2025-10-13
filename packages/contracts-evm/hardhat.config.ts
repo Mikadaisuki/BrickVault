@@ -49,6 +49,13 @@ const config: HardhatUserConfig = {
       accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
       chainId: 11155420,
     },
+    bnbTestnet: {
+      url: process.env.EVM_RPC_BNB_TESTNET || 'https://data-seed-prebsc-1-s1.bnbchain.org:8545',
+      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : [],
+      chainId: 97,
+      gas: 30000000,
+      gasPrice: 'auto',
+    },
   },
   gasReporter: {
     enabled: process.env.REPORT_GAS !== undefined,
@@ -60,6 +67,7 @@ const config: HardhatUserConfig = {
       baseSepolia: process.env.BASESCAN_API_KEY || '',
       arbitrumSepolia: process.env.ARBISCAN_API_KEY || '',
       optimismSepolia: process.env.OPTIMISM_API_KEY || '',
+      bscTestnet: process.env.BSCSCAN_API_KEY || '',
     },
   },
   typechain: {

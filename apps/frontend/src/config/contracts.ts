@@ -26,15 +26,16 @@ export const CONTRACT_ADDRESSES = {
 } as const;
 
 export const TOKEN_DECIMALS = {
-  USDC: 6,
-  OFTUSDC: 18,
-  VAULT_SHARES: 18,
+  USDC: parseInt(process.env.NEXT_PUBLIC_USDC_DECIMALS || '6'),
+  OFTUSDC: parseInt(process.env.NEXT_PUBLIC_OFT_USDC_DECIMALS || '18'),
+  VAULT_SHARES: parseInt(process.env.NEXT_PUBLIC_VAULT_SHARES_DECIMALS || '18'),
 } as const;
 
 export const NETWORK_CONFIG = {
   name: process.env.NEXT_PUBLIC_NETWORK_NAME || 'localhost',
   chainId: parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '31337'),
   rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || 'http://localhost:8545',
+  spokeRpcUrl: process.env.NEXT_PUBLIC_SPOKE_RPC_URL || 'http://localhost:8545',
 } as const;
 
 export const LAYERZERO_CONFIG = {
@@ -44,6 +45,7 @@ export const LAYERZERO_CONFIG = {
   spokeEndpoint: CONTRACT_ADDRESSES.SpokeEndpoint,
 } as const;
 
+// Note: Properties have individual caps/targets - these are just examples/defaults if needed
 export const PROPERTY_CONFIG = {
   fundingTarget: process.env.NEXT_PUBLIC_FUNDING_TARGET || '0',
   vaultDepositCap: process.env.NEXT_PUBLIC_VAULT_DEPOSIT_CAP || '0',

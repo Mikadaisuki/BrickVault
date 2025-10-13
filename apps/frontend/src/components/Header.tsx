@@ -3,6 +3,7 @@
 import { Building2, Menu } from 'lucide-react'
 import { SimpleConnectButton } from './SimpleConnectButton'
 import { OwnerManagementLink } from './OwnerManagementLink'
+import { ThemeToggle } from './ThemeToggle'
 
 export function Header() {
   return (
@@ -34,6 +35,7 @@ export function Header() {
           </nav>
           
           <div className="flex items-center space-x-4">
+            <ThemeToggle />
             <SimpleConnectButton />
             <button className="md:hidden">
               <Menu className="h-6 w-6" />

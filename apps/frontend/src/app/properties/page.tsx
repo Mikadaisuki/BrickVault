@@ -868,17 +868,17 @@ export default function PropertiesPage() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'Open to Fund': return 'bg-yellow-100 text-yellow-800'
-      case 'Funded': return 'bg-blue-100 text-blue-800'
-      case 'Under Management': return 'bg-green-100 text-green-800'
-      case 'Liquidating': return 'bg-orange-100 text-orange-800'
-      case 'Liquidated': return 'bg-red-100 text-red-800'
-      case 'Active': return 'bg-green-100 text-green-800'
-      case 'Draft': return 'bg-gray-100 text-gray-800'
-      case 'Paused': return 'bg-yellow-100 text-yellow-800'
-      case 'Sold': return 'bg-blue-100 text-blue-800'
-      case 'Cancelled': return 'bg-red-100 text-red-800'
-      default: return 'bg-gray-100 text-gray-800'
+      case 'Open to Fund': return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+      case 'Funded': return 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+      case 'Under Management': return 'bg-green-500/20 text-green-400 border border-green-500/30'
+      case 'Liquidating': return 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
+      case 'Liquidated': return 'bg-red-500/20 text-red-400 border border-red-500/30'
+      case 'Active': return 'bg-green-500/20 text-green-400 border border-green-500/30'
+      case 'Draft': return 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
+      case 'Paused': return 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+      case 'Sold': return 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+      case 'Cancelled': return 'bg-red-500/20 text-red-400 border border-red-500/30'
+      default: return 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
     }
   }
 
@@ -945,7 +945,7 @@ export default function PropertiesPage() {
   }
 
   // Show network warning if on wrong chain
-  if (mounted && isConnected && chainId !== 31337) {
+  if (mounted && isConnected && chainId !== NETWORK_CONFIG.chainId) {
     return (
       <div className="min-h-screen bg-background">
         <Header />
@@ -1143,7 +1143,7 @@ export default function PropertiesPage() {
                         e.stopPropagation()
                         toggleFavorite(property.id)
                       }}
-                      className="p-2 bg-white/20 hover:bg-white/30 rounded-full transition-colors"
+                      className="p-2 bg-black/30 hover:bg-black/50 rounded-full transition-colors backdrop-blur-sm"
                     >
                       <Heart 
                         className={`h-4 w-4 ${
@@ -1220,7 +1220,7 @@ export default function PropertiesPage() {
                         <span className="text-xs text-muted-foreground">Vault Funding</span>
                         <span className="text-xs text-muted-foreground">{property.fundingProgress.toFixed(1)}%</span>
                       </div>
-                      <div className="w-full bg-gray-200 rounded-full h-2">
+                      <div className="w-full bg-slate-800/50 rounded-full h-2">
                         <div 
                           className="bg-primary h-2 rounded-full transition-all duration-300"
                           style={{ width: `${Math.min(property.fundingProgress, 100)}%` }}
@@ -1362,7 +1362,7 @@ export default function PropertiesPage() {
                     className={`flex-1 py-3 px-6 rounded-lg font-semibold transition-colors flex items-center justify-center gap-2 ${
                       selectedProperty.status === 'Open to Fund' 
                         ? 'bg-primary text-primary-foreground hover:bg-primary/90' 
-                        : 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
                     }`}
                     disabled={selectedProperty.status !== 'Open to Fund'}
                   >
@@ -1538,7 +1538,7 @@ export default function PropertiesPage() {
                   <button
                     onClick={approveAndInvest}
                     disabled={isPending || isApprovalConfirming || !investmentAmount}
-                    className="flex-1 px-6 py-3 bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 transition-all duration-200 font-semibold"
+                    className="flex-1 px-6 py-3 bg-primary text-primary-foreground rounded-md hover:bg-primary/90 disabled:opacity-50 transition-all duration-200 font-semibold"
                   >
                     {investmentStep === 'approving' && isPending ? 'Approving OFTUSDC...' :
                      investmentStep === 'approved' && isPending ? 'Investing...' :

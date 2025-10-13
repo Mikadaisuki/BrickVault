@@ -10,6 +10,7 @@
     "coverage": "hardhat coverage",
     "deploy:local": "hardhat run script/deploy-local.ts --network localhost",
     "deploy:testnet": "hardhat run script/deploy-testnet.ts --network sepolia",
+    "deploy:testnet:spoke": "hardhat run script/deploy-testnet-spoke.ts --network bnbTestnet",
     "mint:testnet": "hardhat run script/mint-usdc-testnet.ts --network sepolia",
     "type-check": "tsc --noEmit",
     "lint": "eslint src test script --ext .ts",

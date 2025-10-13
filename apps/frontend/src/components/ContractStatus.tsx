@@ -39,6 +39,7 @@ interface ContractStatus {
   address: string
   icon: React.ReactNode
   category: string
+  chain: 'Hub (Sepolia)' | 'Spoke (BNB Testnet)' | 'Both'
   isDeployed: boolean
   owner?: string
 }
@@ -54,92 +55,106 @@ export function ContractStatus() {
     setMounted(true)
   }, [])
 
-  // Contract definitions with icons and categories (Unified Adapter Architecture)
+  // Contract definitions with icons, categories, and chain info
   // Filter out contracts without addresses (not deployed on this network)
   const contractDefinitions = [
     {
       name: 'EnvironmentConfig',
       address: CONTRACT_ADDRESSES.EnvironmentConfig,
       icon: <Settings className="h-5 w-5" />,
-      category: 'Infrastructure'
+      category: 'Infrastructure',
+      chain: 'Hub (Sepolia)' as const
     },
     {
       name: 'Hub Endpoint',
       address: CONTRACT_ADDRESSES.HubEndpoint,
       icon: <Layers className="h-5 w-5" />,
-      category: 'Infrastructure'
+      category: 'Infrastructure',
+      chain: 'Hub (Sepolia)' as const
     },
     {
       name: 'Spoke Endpoint',
       address: CONTRACT_ADDRESSES.SpokeEndpoint,
       icon: <Layers className="h-5 w-5" />,
-      category: 'Infrastructure'
+      category: 'Infrastructure',
+      chain: 'Spoke (BNB Testnet)' as const
     },
     {
-      name: 'MockUSDC (Hub)',
+      name: 'MockUSDC',
       address: CONTRACT_ADDRESSES.MockUSDCHub,
       icon: <DollarSign className="h-5 w-5" />,
-      category: 'Token Layer'
+      category: 'Token Layer',
+      chain: 'Hub (Sepolia)' as const
     },
     {
-      name: 'MockUSDC (Spoke)',
+      name: 'MockUSDC',
       address: CONTRACT_ADDRESSES.MockUSDCSpoke,
       icon: <DollarSign className="h-5 w-5" />,
-      category: 'Token Layer'
+      category: 'Token Layer',
+      chain: 'Spoke (BNB Testnet)' as const
     },
     {
-      name: 'USDCOFTAdapter (Hub)',
+      name: 'USDCOFTAdapter',
       address: CONTRACT_ADDRESSES.USDCOFTAdapterHub,
       icon: <Layers className="h-5 w-5" />,
-      category: 'Token Layer'
+      category: 'Token Layer',
+      chain: 'Hub (Sepolia)' as const
     },
     {
-      name: 'USDCOFTAdapter (Spoke)',
+      name: 'USDCOFTAdapter',
       address: CONTRACT_ADDRESSES.USDCOFTAdapterSpoke,
       icon: <Layers className="h-5 w-5" />,
-      category: 'Token Layer'
+      category: 'Token Layer',
+      chain: 'Spoke (BNB Testnet)' as const
     },
     {
       name: 'OFTUSDC',
       address: CONTRACT_ADDRESSES.OFTUSDC,
       icon: <DollarSign className="h-5 w-5" />,
-      category: 'Token Layer'
+      category: 'Token Layer',
+      chain: 'Hub (Sepolia)' as const
     },
     {
       name: 'VaultFactory',
       address: CONTRACT_ADDRESSES.VaultFactory,
       icon: <Building2 className="h-5 w-5" />,
-      category: 'Property Layer'
+      category: 'Property Layer',
+      chain: 'Hub (Sepolia)' as const
     },
     {
       name: 'PropertyDAOFactory',
       address: CONTRACT_ADDRESSES.PropertyDAOFactory,
       icon: <Users className="h-5 w-5" />,
-      category: 'Property Layer'
+      category: 'Property Layer',
+      chain: 'Hub (Sepolia)' as const
     },
     {
       name: 'PropertyRegistry',
       address: CONTRACT_ADDRESSES.PropertyRegistry,
       icon: <Building2 className="h-5 w-5" />,
-      category: 'Property Layer'
+      category: 'Property Layer',
+      chain: 'Hub (Sepolia)' as const
     },
     {
       name: 'PropertyVault',
       address: CONTRACT_ADDRESSES.PropertyVault,
       icon: <Building2 className="h-5 w-5" />,
-      category: 'Property Layer'
+      category: 'Property Layer',
+      chain: 'Hub (Sepolia)' as const
     },
     {
       name: 'PropertyDAO',
       address: CONTRACT_ADDRESSES.PropertyDAO,
       icon: <Users className="h-5 w-5" />,
-      category: 'Property Layer'
+      category: 'Property Layer',
+      chain: 'Hub (Sepolia)' as const
     },
     {
       name: 'StacksCrossChainManager',
       address: CONTRACT_ADDRESSES.StacksCrossChainManager,
       icon: <Globe className="h-5 w-5" />,
-      category: 'Cross-Chain Layer'
+      category: 'Cross-Chain Layer',
+      chain: 'Hub (Sepolia)' as const
     }
   ].filter(contract => contract.address && contract.address.length > 0)
 
@@ -151,8 +166,13 @@ export function ContractStatus() {
       
       for (const contract of contractDefinitions) {
         try {
+          // Determine which RPC to use based on chain
+          const rpcUrl = contract.chain.includes('Spoke') 
+            ? NETWORK_CONFIG.spokeRpcUrl 
+            : NETWORK_CONFIG.rpcUrl
+          
           // Check if code exists at the address
-          const codeResult = await fetch(NETWORK_CONFIG.rpcUrl, {
+          const codeResult = await fetch(rpcUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -173,7 +193,7 @@ export function ContractStatus() {
           let owner: string | undefined
           if (isDeployed) {
             try {
-              const ownerResult = await fetch(NETWORK_CONFIG.rpcUrl, {
+              const ownerResult = await fetch(rpcUrl, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -290,7 +310,7 @@ export function ContractStatus() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
               {categoryContracts.map((contract) => (
                 <div
-                  key={contract.name}
+                  key={`${contract.name}-${contract.chain}-${contract.address}`}
                   className={`border rounded-lg p-4 ${
                     contract.isDeployed 
                       ? 'border-green-200 bg-green-50' 
@@ -302,7 +322,16 @@ export function ContractStatus() {
                       <div className={contract.isDeployed ? 'text-green-600' : 'text-red-600'}>
                         {contract.icon}
                       </div>
-                      <span className="font-medium text-sm">{contract.name}</span>
+                      <div className="flex flex-col">
+                        <span className="font-medium text-sm">{contract.name}</span>
+                        <span className={`text-xs font-medium ${
+                          contract.chain.includes('Hub') 
+                            ? 'text-blue-600' 
+                            : 'text-orange-600'
+                        }`}>
+                          {contract.chain}
+                        </span>
+                      </div>
                     </div>
                     <span className={`px-2 py-1 rounded-full text-xs ${
                       contract.isDeployed 
@@ -314,12 +343,12 @@ export function ContractStatus() {
                   </div>
                   
                   <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">
-                      Address: {contract.address}
+                    <p className="text-xs text-muted-foreground break-all">
+                      {contract.address}
                     </p>
                     {contract.owner && (
                       <p className="text-xs text-muted-foreground">
-                        Owner: {contract.owner}
+                        Owner: {contract.owner.slice(0, 6)}...{contract.owner.slice(-4)}
                       </p>
                     )}
                   </div>

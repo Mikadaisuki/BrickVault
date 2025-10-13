@@ -1,0 +1,41 @@
+{
+  "network": "bnbTestnet",
+  "chainId": 97,
+  "contracts": {
+    "BNBTestnetEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+    "MockUSDCSpoke": "0xCB7b672bCd775BB6d6844D215441F4EB9D7B2f90",
+    "USDCOFTAdapterSpoke": "0xec450038133227F16C3897E54B2777C53E25b53E"
+  },
+  "hub": {
+    "network": "sepolia",
+    "chainId": 11155111,
+    "oftUSDCAddress": "0xcd011e73EdD80a87AbC31914e906d3eb4Ed06fF3",
+    "endpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f"
+  },
+  "layerzero": {
+    "hubEID": 40161,
+    "spokeEID": 40102,
+    "hubEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
+    "spokeEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f"
+  },
+  "peerConfiguration": {
+    "spoke": {
+      "configured": true,
+      "peer": "0xcd011e73EdD80a87AbC31914e906d3eb4Ed06fF3",
+      "note": "Spoke Adapter → Hub OFTUSDC configured"
+    },
+    "hub": {
+      "configured": false,
+      "requiredAction": "Call OFTUSDC.setPeer(40102, spokeAdapterBytes32) on Sepolia",
+      "spokeAdapterAddress": "0xec450038133227F16C3897E54B2777C53E25b53E",
+      "spokeAdapterBytes32": "0x000000000000000000000000ec450038133227f16c3897e54b2777c53e25b53e",
+      "note": "MANUAL STEP: Configure on Sepolia using Etherscan or script"
+    }
+  },
+  "decimals": {
+    "usdc": 6,
+    "oftusdc": 18
+  },
+  "deploymentTime": "2025-10-12T22:43:01.565Z",
+  "deployer": "0x172859d452718A7E5BfB452c90433ca6Ad9E63ef"
+}

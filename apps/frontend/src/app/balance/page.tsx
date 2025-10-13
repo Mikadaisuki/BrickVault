@@ -76,12 +76,20 @@ interface StacksDeposit {
 type TabType = 'hub' | 'spoke' | 'stacks'
 
 export default function BalancePage() {
-  const { address: evmAddress, isConnected: isEvmConnected } = useAccount()
+  const { address: evmAddress, isConnected: isEvmConnected, chainId } = useAccount()
   const { writeContract, data: hash, isPending, error } = useWriteContract()
+  // Note: useWaitForTransactionReceipt automatically tracks on the chain where the transaction was submitted
+  // So BSC transactions are tracked on BSC, Sepolia transactions on Sepolia
   const { isLoading: isConfirming, isSuccess: isConfirmed } = useWaitForTransactionReceipt({
     hash,
   })
   const publicClient = usePublicClient()
+  
+  // Chain detection
+  const SEPOLIA_CHAIN_ID = 11155111
+  const BNB_TESTNET_CHAIN_ID = 97
+  const isOnSepoliaChain = chainId === SEPOLIA_CHAIN_ID
+  const isOnBnbTestnetChain = chainId === BNB_TESTNET_CHAIN_ID
   
   // Handle hydration by tracking if we're on the client
   const [isClient, setIsClient] = useState(false)
@@ -129,6 +137,7 @@ export default function BalancePage() {
   const [oftAmount, setOftAmount] = useState('')
   const [quotingFee, setQuotingFee] = useState(false)
   const [approvalStep, setApprovalStep] = useState<'idle' | 'approving' | 'approved' | 'sending'>('idle')
+  const [hubUnwrapStep, setHubUnwrapStep] = useState<'idle' | 'quoting' | 'sending'>('idle')
   const [showRelayNotice, setShowRelayNotice] = useState(false)
   const [isRefreshing, setIsRefreshing] = useState(false)
   
@@ -138,12 +147,187 @@ export default function BalancePage() {
   const [spokeQuotingFee, setSpokeQuotingFee] = useState(false)
   const [spokeOftAmount, setSpokeOftAmount] = useState('')
   const [spokeQuotingUnwrapFee, setSpokeQuotingUnwrapFee] = useState(false)
+  const [spokeUnwrapStep, setSpokeUnwrapStep] = useState<'idle' | 'quoting' | 'sending'>('idle')
   
   // Track approval transaction separately
   const [approvalHash, setApprovalHash] = useState<`0x${string}` | undefined>()
+  const [approvalChainId, setApprovalChainId] = useState<number | undefined>()
   const { isLoading: isApprovalConfirming, isSuccess: isApprovalConfirmed } = useWaitForTransactionReceipt({
     hash: approvalHash,
+    chainId: approvalChainId,
   })
+  
+  // Manual transaction tracking for spoke chain (BSC)
+  const [isManuallyConfirming, setIsManuallyConfirming] = useState(false)
+  const [isManuallyConfirmed, setIsManuallyConfirmed] = useState(false)
+  const [isManuallyConfirmingApproval, setIsManuallyConfirmingApproval] = useState(false)
+  const [isManuallyConfirmedApproval, setIsManuallyConfirmedApproval] = useState(false)
+  
+  // Reset manual flags when wagmi confirms (for hub chain)
+  useEffect(() => {
+    if (isConfirmed) {
+      setIsManuallyConfirming(false)
+      setIsManuallyConfirmed(false)
+    }
+    if (isApprovalConfirmed) {
+      setIsManuallyConfirmingApproval(false)
+      setIsManuallyConfirmedApproval(false)
+    }
+  }, [isConfirmed, isApprovalConfirmed])
+  
+  // Manual polling for BSC transactions only
+  useEffect(() => {
+    // Only use manual polling for BSC transactions
+    if (!hash || !chainId || chainId !== BNB_TESTNET_CHAIN_ID) return
+    if (isManuallyConfirmed) return
+    
+    // Don't poll if we're not in a sending state
+    if (approvalStep !== 'sending' && spokeApprovalStep !== 'sending') return
+    
+    setIsManuallyConfirming(true)
+    
+    let cancelled = false
+    let intervalId: NodeJS.Timeout | null = null
+    
+    const checkReceipt = async () => {
+      if (cancelled) return
+      try {
+        const rpcUrl = chainId === BNB_TESTNET_CHAIN_ID
+          ? (process.env.NEXT_PUBLIC_SPOKE_RPC_URL || 'https://data-seed-prebsc-1-s1.bnbchain.org:8545')
+          : (process.env.NEXT_PUBLIC_RPC_URL || 'http://localhost:8545')
+        
+        const response = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_getTransactionReceipt',
+            params: [hash],
+            id: 1
+          })
+        })
+        
+        const result = await response.json()
+        
+        if (cancelled) return
+        
+        if (result.result && result.result.status === '0x1') {
+          // Clear the hash to stop polling
+          cancelled = true
+          setIsManuallyConfirming(false)
+          setIsManuallyConfirmed(true)
+          
+          // Update state based on which step we're in
+          if (spokeApprovalStep === 'sending') {
+            setSpokeApprovalStep('idle')
+            setShowRelayNotice(true)
+            setTimeout(() => refreshAllBalances(), 1000)
+          }
+          
+          // Stop the interval
+          if (intervalId) {
+            clearInterval(intervalId)
+            intervalId = null
+          }
+        }
+        // If still pending, the interval will check again in 3 seconds
+      } catch (error) {
+        console.error('Error checking receipt:', error)
+        // The interval will retry in 3 seconds
+      }
+    }
+    
+    // Start checking after 2 seconds, then every 3 seconds
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) {
+        checkReceipt()
+        intervalId = setInterval(checkReceipt, 3000)
+      }
+    }, 2000)
+    
+    return () => {
+      cancelled = true
+      clearTimeout(timeoutId)
+      if (intervalId) clearInterval(intervalId)
+      setIsManuallyConfirming(false)
+    }
+  }, [hash, chainId, isManuallyConfirmed, approvalStep, spokeApprovalStep])
+  
+  // Manual polling for BSC approval transactions
+  useEffect(() => {
+    // Only use manual polling for BSC approvals
+    if (!approvalHash || !approvalChainId || approvalChainId !== BNB_TESTNET_CHAIN_ID) return
+    if (isManuallyConfirmedApproval) return
+    
+    setIsManuallyConfirmingApproval(true)
+    
+    let cancelled = false
+    let intervalId: NodeJS.Timeout | null = null
+    
+    const checkReceipt = async () => {
+      try {
+        const rpcUrl = approvalChainId === BNB_TESTNET_CHAIN_ID
+          ? (process.env.NEXT_PUBLIC_SPOKE_RPC_URL || 'https://data-seed-prebsc-1-s1.bnbchain.org:8545')
+          : (process.env.NEXT_PUBLIC_RPC_URL || 'http://localhost:8545')
+        
+        const response = await fetch(rpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_getTransactionReceipt',
+            params: [approvalHash],
+            id: 1
+          })
+        })
+        
+        const result = await response.json()
+        
+        if (cancelled) return
+        
+        if (result.result && result.result.status === '0x1') {
+          // Stop polling
+          cancelled = true
+          setIsManuallyConfirmingApproval(false)
+          setIsManuallyConfirmedApproval(true)
+          
+          // Trigger the spoke approval flow only
+          if (spokeApprovalStep === 'approving') {
+            setSpokeApprovalStep('approved')
+            fetchSpokeUsdcAllowance()
+            setTimeout(() => sendSpokeUSDCCrossChain(), 100)
+          }
+          setApprovalHash(undefined)
+          setApprovalChainId(undefined)
+          
+          // Stop the interval
+          if (intervalId) {
+            clearInterval(intervalId)
+            intervalId = null
+          }
+        }
+        // If still pending, the interval will check again in 3 seconds
+      } catch (error) {
+        console.error('Error checking approval receipt:', error)
+        // The interval will retry in 3 seconds
+      }
+    }
+    
+    // Start checking immediately, then every 3 seconds
+    const timeoutId = setTimeout(() => {
+      if (!cancelled) {
+        checkReceipt()
+        intervalId = setInterval(checkReceipt, 3000)
+      }
+    }, 1000) // Check after 1 second for approvals (faster)
+    
+    return () => {
+      cancelled = true
+      clearTimeout(timeoutId)
+      if (intervalId) clearInterval(intervalId)
+      setIsManuallyConfirmingApproval(false)
+    }
+  }, [approvalHash, approvalChainId, isManuallyConfirmedApproval, approvalStep, spokeApprovalStep])
   
   // Configuration for local devnet
   // NOTE: Contract uses 8 decimals for sBTC (min-deposit-amount is u10000000 for 0.1 sBTC)
@@ -160,18 +344,29 @@ export default function BalancePage() {
       console.error('writeContract error:', error)
     }
   }, [error])
+  
+  // Reset manual confirmation flags when starting new transactions
+  useEffect(() => {
+    if (isPending) {
+      setIsManuallyConfirmed(false)
+      setIsManuallyConfirmedApproval(false)
+    }
+  }, [isPending])
 
   // Track approval transaction hash when it's created
   useEffect(() => {
     if (hash && (approvalStep === 'approving' || spokeApprovalStep === 'approving')) {
       setApprovalHash(hash)
+      setApprovalChainId(chainId) // Track which chain the approval is on
     }
-  }, [hash, approvalStep, spokeApprovalStep])
+  }, [hash, approvalStep, spokeApprovalStep, chainId])
 
   // Auto-trigger adapter send after approval is confirmed (Hub chain)
   useEffect(() => {
     if (isApprovalConfirmed && approvalStep === 'approving') {
       setApprovalStep('approved')
+      setApprovalHash(undefined)
+      setApprovalChainId(undefined)
       setTimeout(() => {
         sendUSDCViaAdapter()
       }, 100)
@@ -179,35 +374,58 @@ export default function BalancePage() {
   }, [isApprovalConfirmed, approvalStep])
 
   // Auto-trigger cross-chain send after spoke approval is confirmed
+  // Note: For BSC transactions, manual polling handles this automatically
+  // This effect only runs if wagmi somehow confirms a BSC approval (fallback)
   useEffect(() => {
-    if (isApprovalConfirmed && spokeApprovalStep === 'approving') {
+    if (isApprovalConfirmed && spokeApprovalStep === 'approving' && approvalChainId !== BNB_TESTNET_CHAIN_ID) {
       setSpokeApprovalStep('approved')
+      setApprovalHash(undefined)
+      setApprovalChainId(undefined)
+      fetchSpokeUsdcAllowance()
       setTimeout(() => {
         sendSpokeUSDCCrossChain()
       }, 100)
     }
-  }, [isApprovalConfirmed, spokeApprovalStep])
+  }, [isApprovalConfirmed, spokeApprovalStep, approvalChainId])
 
   // Reset approval step when transaction is completed or there's an error
   useEffect(() => {
-    if (isConfirmed && approvalStep === 'sending') {
-      setApprovalStep('idle')
-      setApprovalHash(undefined)
-      // Show relay notice for testnet delay
-      setShowRelayNotice(true)
+    // Hub chain wrap/unwrap transactions (confirmed by wagmi)
+    if (isConfirmed && chainId !== BNB_TESTNET_CHAIN_ID) {
+      if (approvalStep === 'sending') {
+        setApprovalStep('idle')
+        setApprovalHash(undefined)
+        setShowRelayNotice(true)
+        setTimeout(() => refreshAllBalances(), 2000)
+      }
+      if (hubUnwrapStep === 'sending') {
+        setHubUnwrapStep('idle')
+        setShowRelayNotice(true)
+        setTimeout(() => refreshAllBalances(), 2000)
+      }
+      if (spokeUnwrapStep === 'sending') {
+        setSpokeUnwrapStep('idle')
+        setShowRelayNotice(true)
+        setTimeout(() => refreshAllBalances(), 2000)
+      }
     }
-    if (isConfirmed && spokeApprovalStep === 'sending') {
-      setSpokeApprovalStep('idle')
-      setApprovalHash(undefined)
-      // Show relay notice for cross-chain delay
-      setShowRelayNotice(true)
-    }
+    
+    // Spoke chain transactions are handled by manual polling, not this effect
+    // (Manual polling already sets spokeApprovalStep to 'idle' when confirmed)
+    
     if (error) {
       setApprovalStep('idle')
       setSpokeApprovalStep('idle')
+      setHubUnwrapStep('idle')
+      setSpokeUnwrapStep('idle')
       setApprovalHash(undefined)
+      setApprovalChainId(undefined)
+      setIsManuallyConfirming(false)
+      setIsManuallyConfirmed(false)
+      setIsManuallyConfirmingApproval(false)
+      setIsManuallyConfirmedApproval(false)
     }
-  }, [isConfirmed, error, approvalStep, spokeApprovalStep])
+  }, [isConfirmed, error, approvalStep, hubUnwrapStep, spokeUnwrapStep, chainId])
 
   // Read user balances (Hub chain)
   const { data: usdcBalance, refetch: refetchUsdcBalance } = useReadContract({
@@ -231,13 +449,57 @@ export default function BalancePage() {
     args: evmAddress ? [evmAddress] : undefined,
   })
 
-  // Read user balances (Spoke chain)
-  const { data: spokeUsdcBalance, refetch: refetchSpokeUsdcBalance } = useReadContract({
-    address: CONTRACTS.MockUSDCSpoke as `0x${string}`,
-    abi: MOCK_USDC_ABI_ARRAY,
-    functionName: 'balanceOf',
-    args: evmAddress ? [evmAddress] : undefined,
-  })
+  // Spoke chain balance state (manually fetched since it's on a different chain)
+  const [spokeUsdcBalance, setSpokeUsdcBalance] = useState<bigint>(BigInt(0))
+  const [isFetchingSpokeBalance, setIsFetchingSpokeBalance] = useState(false)
+
+  // Fetch spoke chain USDC balance (cross-chain call)
+  const fetchSpokeUsdcBalance = async () => {
+    if (!evmAddress || !CONTRACTS.MockUSDCSpoke) return
+    
+    try {
+      setIsFetchingSpokeBalance(true)
+      
+      // Encode balanceOf(address) call
+      const balanceOfSelector = '0x70a08231' // balanceOf(address)
+      const paddedAddress = evmAddress.slice(2).padStart(64, '0')
+      const data = balanceOfSelector + paddedAddress
+      
+      // Call spoke chain RPC
+      const response = await fetch(process.env.NEXT_PUBLIC_SPOKE_RPC_URL || 'http://localhost:8545', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_call',
+          params: [{
+            to: CONTRACTS.MockUSDCSpoke,
+            data: data
+          }, 'latest'],
+          id: 1
+        })
+      })
+      
+      const result = await response.json()
+      
+      if (result.result) {
+        const balance = BigInt(result.result)
+        setSpokeUsdcBalance(balance)
+      }
+    } catch (error) {
+      console.error('Error fetching spoke USDC balance:', error)
+      setSpokeUsdcBalance(BigInt(0))
+    } finally {
+      setIsFetchingSpokeBalance(false)
+    }
+  }
+
+  // Fetch spoke balance on mount and when address changes
+  useEffect(() => {
+    if (evmAddress && isClient) {
+      fetchSpokeUsdcBalance()
+    }
+  }, [evmAddress, isClient])
 
   // Refresh all balances
   const refreshAllBalances = async () => {
@@ -247,7 +509,8 @@ export default function BalancePage() {
         refetchUsdcBalance(),
         refetchOftBalance(),
         refetchVaultBalance(),
-        refetchSpokeUsdcBalance(),
+        fetchSpokeUsdcBalance(),
+        fetchSpokeUsdcAllowance(),
       ])
     } catch (error) {
       console.error('Error refreshing balances:', error)
@@ -264,13 +527,53 @@ export default function BalancePage() {
     args: evmAddress ? [evmAddress, CONTRACTS.USDCOFTAdapterHub as `0x${string}`] : undefined,
   })
 
-  // Read allowances for USDCOFTAdapterSpoke
-  const { data: spokeUsdcAllowance } = useReadContract({
-    address: CONTRACTS.MockUSDCSpoke as `0x${string}`,
-    abi: MOCK_USDC_ABI_ARRAY,
-    functionName: 'allowance',
-    args: evmAddress ? [evmAddress, CONTRACTS.USDCOFTAdapterSpoke as `0x${string}`] : undefined,
-  })
+  // Spoke chain allowance state (manually fetched since it's on a different chain)
+  const [spokeUsdcAllowance, setSpokeUsdcAllowance] = useState<bigint>(BigInt(0))
+
+  // Fetch spoke chain USDC allowance (cross-chain call)
+  const fetchSpokeUsdcAllowance = async () => {
+    if (!evmAddress || !CONTRACTS.MockUSDCSpoke || !CONTRACTS.USDCOFTAdapterSpoke) return
+    
+    try {
+      // Encode allowance(address,address) call
+      const allowanceSelector = '0xdd62ed3e' // allowance(address,address)
+      const paddedOwner = evmAddress.slice(2).padStart(64, '0')
+      const paddedSpender = CONTRACTS.USDCOFTAdapterSpoke.slice(2).padStart(64, '0')
+      const data = allowanceSelector + paddedOwner + paddedSpender
+      
+      // Call spoke chain RPC
+      const response = await fetch(process.env.NEXT_PUBLIC_SPOKE_RPC_URL || 'http://localhost:8545', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          method: 'eth_call',
+          params: [{
+            to: CONTRACTS.MockUSDCSpoke,
+            data: data
+          }, 'latest'],
+          id: 1
+        })
+      })
+      
+      const result = await response.json()
+      
+      if (result.result) {
+        const allowance = BigInt(result.result)
+        setSpokeUsdcAllowance(allowance)
+      }
+    } catch (error) {
+      console.error('Error fetching spoke USDC allowance:', error)
+      setSpokeUsdcAllowance(BigInt(0))
+    }
+  }
+
+  // Fetch spoke allowance on mount and when address changes
+  useEffect(() => {
+    if (evmAddress && isClient) {
+      fetchSpokeUsdcAllowance()
+    }
+  }, [evmAddress, isClient])
 
   // Read sBTC price from StacksCrossChainManager
   const { data: sbtcPriceData } = useReadContract({
@@ -790,6 +1093,7 @@ export default function BalancePage() {
     if (!oftAmount || !evmAddress || !publicClient) return
     
     try {
+      setHubUnwrapStep('quoting')
       setQuotingFee(true)
       const amount = parseUnits(oftAmount, TOKEN_DECIMALS.OFTUSDC)
       
@@ -798,6 +1102,7 @@ export default function BalancePage() {
       if (amount > currentBalance) {
         alert(`Insufficient OFTUSDC balance. You have ${formatUnits(currentBalance, TOKEN_DECIMALS.OFTUSDC)} but trying to unwrap ${oftAmount}`)
         setQuotingFee(false)
+        setHubUnwrapStep('idle')
         return
       }
       
@@ -837,6 +1142,7 @@ export default function BalancePage() {
       }
       
       setQuotingFee(false)
+      setHubUnwrapStep('sending')
       
       const feeTuple = {
         nativeFee: nativeFee,
@@ -854,6 +1160,7 @@ export default function BalancePage() {
     } catch (err) {
       console.error('Error unwrapping OFTUSDC:', err)
       setQuotingFee(false)
+      setHubUnwrapStep('idle')
       alert(`Error unwrapping OFTUSDC: ${err instanceof Error ? err.message : 'Unknown error'}`)
     }
   }
@@ -954,6 +1261,7 @@ export default function BalancePage() {
     if (!spokeOftAmount || !evmAddress || !publicClient) return
     
     try {
+      setSpokeUnwrapStep('quoting')
       setSpokeQuotingUnwrapFee(true)
       const amount = parseUnits(spokeOftAmount, TOKEN_DECIMALS.OFTUSDC)
       
@@ -965,13 +1273,34 @@ export default function BalancePage() {
         return
       }
 
-      // Check spoke adapter liquidity (USDC locked)
-      const spokeAdapterUsdcBalance = await publicClient.readContract({
-        address: CONTRACTS.MockUSDCSpoke as `0x${string}`,
-        abi: MOCK_USDC_ABI_ARRAY,
-        functionName: 'balanceOf',
-        args: [CONTRACTS.USDCOFTAdapterSpoke as `0x${string}`],
-      }) as bigint
+      // Check spoke adapter liquidity (USDC locked) - Manual RPC call since we're on hub chain
+      let spokeAdapterUsdcBalance: bigint
+      try {
+        // Encode balanceOf(address) call for spoke adapter
+        const balanceOfSelector = '0x70a08231'
+        const paddedAddress = CONTRACTS.USDCOFTAdapterSpoke.slice(2).padStart(64, '0')
+        const data = balanceOfSelector + paddedAddress
+        
+        const response = await fetch(process.env.NEXT_PUBLIC_SPOKE_RPC_URL || 'http://localhost:8545', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method: 'eth_call',
+            params: [{
+              to: CONTRACTS.MockUSDCSpoke,
+              data: data
+            }, 'latest'],
+            id: 1
+          })
+        })
+        
+        const result = await response.json()
+        spokeAdapterUsdcBalance = result.result ? BigInt(result.result) : BigInt(0)
+      } catch (error) {
+        console.error('Error fetching spoke adapter liquidity:', error)
+        spokeAdapterUsdcBalance = BigInt(0)
+      }
 
       const requiredUSDC = amount / BigInt(10 ** 12) // Convert from 18 to 6 decimals
       
@@ -1026,6 +1355,7 @@ export default function BalancePage() {
       }
       
       setSpokeQuotingUnwrapFee(false)
+      setSpokeUnwrapStep('sending')
       
       const feeTuple = {
         nativeFee: nativeFee,
@@ -1047,6 +1377,7 @@ export default function BalancePage() {
           `This is a deployment configuration issue. Please contact the platform administrator.`
         )
         setSpokeQuotingUnwrapFee(false)
+        setSpokeUnwrapStep('idle')
         return
       }
       
@@ -1061,6 +1392,7 @@ export default function BalancePage() {
     } catch (err) {
       console.error('Error unwrapping OFTUSDC to spoke chain:', err)
       setSpokeQuotingUnwrapFee(false)
+      setSpokeUnwrapStep('idle')
       
       // Provide more specific error messages
       const errorMessage = err instanceof Error ? err.message : 'Unknown error'
@@ -1247,15 +1579,21 @@ export default function BalancePage() {
                     <ArrowRight className="h-6 w-6 text-primary" />
                     Step 1: Convert USDC to OFTUSDC (Hub Chain)
                   </h2>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                    <div className="flex items-start gap-2">
-                      <Info className="h-4 w-4 text-blue-600 mt-0.5" />
-                      <div className="text-sm text-blue-800">
-                        <p className="font-medium">Unified Adapter Architecture</p>
-                        <p>Your USDC will be locked in the adapter and you'll receive OFTUSDC (18 decimals) on the same chain. Small LayerZero fee applies for same-chain wrapping.</p>
+                  
+                  {/* Wrong Chain Warning */}
+                  {!isOnSepoliaChain && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                        <div className="text-sm text-red-800">
+                          <p className="font-medium">⚠️ Wrong Network</p>
+                          <p>You must switch to <strong>Sepolia (Chain ID: {SEPOLIA_CHAIN_ID})</strong> to perform hub chain operations.</p>
+                          <p className="text-xs mt-1">Current chain: {chainId ? `Chain ID ${chainId}` : 'Unknown'}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
+                  
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-2">
@@ -1279,15 +1617,19 @@ export default function BalancePage() {
                     <div className="flex gap-4">
                       <button
                         onClick={approveAndSendUSDC}
-                        disabled={isPending || isApprovalConfirming || quotingFee || !usdcAmount}
+                        disabled={!isOnSepoliaChain || isPending || isApprovalConfirming || isConfirming || quotingFee || approvalStep !== 'idle' || !usdcAmount}
                         className="px-6 py-3 bg-black text-white rounded-md hover:bg-gray-800 disabled:opacity-50 transition-all duration-200 font-semibold"
                       >
                         {approvalStep === 'approving' && isPending ? 'Approving USDC...' :
+                         approvalStep === 'approving' && isApprovalConfirming ? 'Confirming Approval...' :
                          approvalStep === 'approved' && quotingFee ? 'Quoting Fee...' :
+                         approvalStep === 'approved' ? 'Preparing to Send...' :
                          approvalStep === 'sending' && isPending ? 'Sending Transaction...' :
-                         approvalStep === 'sending' && isConfirming ? 'Confirming on-chain...' :
+                         approvalStep === 'sending' && isConfirming ? 'Confirming Transaction...' :
+                         approvalStep === 'sending' ? 'Sending...' :
                          quotingFee ? 'Quoting Fee...' :
                          isPending ? 'Processing...' :
+                         isConfirming ? 'Confirming...' :
                          'Approve & Convert USDC to OFTUSDC'}
                       </button>
                     </div>
@@ -1325,8 +1667,8 @@ export default function BalancePage() {
                       </div>
                     )}
 
-                    {/* Start Investing notification - Only show after successful transaction */}
-                    {isConfirmed && approvalStep === 'idle' && (
+                    {/* Start Investing notification - Show during sending and after successful transaction */}
+                    {isConfirmed && (approvalStep === 'sending' || approvalStep === 'idle') && (
                       <div className="bg-blue-50 border border-blue-200 rounded-lg p-6">
                         <div className="flex items-start gap-4">
                           <div className="bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center flex-shrink-0">
@@ -1357,7 +1699,7 @@ export default function BalancePage() {
                                       </button>
                                       <button
                                         onClick={() => setShowRelayNotice(false)}
-                                        className="px-2 py-1 bg-white text-orange-800 border border-orange-300 rounded text-xs hover:bg-orange-50 transition-colors"
+                                        className="px-2 py-1 bg-orange-500/20 text-orange-400 border border-orange-500/30 rounded text-xs hover:bg-orange-500/30 transition-colors"
                                       >
                                         Dismiss
                                       </button>
@@ -1369,7 +1711,7 @@ export default function BalancePage() {
                             
                             <p className="text-blue-800 mb-4">
                               Now that you have OFTUSDC, you can explore and invest in tokenized real estate properties. 
-                              Browse available properties, review their details, and start building your real estate portfolio.
+                              Browse available properties.
                             </p>
                             <div className="flex gap-3">
                               <a
@@ -1381,7 +1723,7 @@ export default function BalancePage() {
                               </a>
                               <a
                                 href="/investments"
-                                className="px-6 py-3 bg-white text-blue-600 border-2 border-blue-600 rounded-lg hover:bg-blue-50 transition-colors font-semibold inline-flex items-center gap-2"
+                                className="px-6 py-3 bg-blue-500/20 text-blue-400 border-2 border-blue-500 rounded-lg hover:bg-blue-500/30 transition-colors font-semibold inline-flex items-center gap-2"
                               >
                                 <Wallet className="h-5 w-5" />
                                 My Investments
@@ -1406,13 +1748,26 @@ export default function BalancePage() {
                     <ArrowRight className="h-6 w-6 text-primary" />
                     Step 2: Unwrap OFTUSDC to Hub Chain USDC
                   </h2>
-                  <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-4">
+                  
+                  {/* Wrong Chain Warning */}
+                  {!isOnSepoliaChain && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                        <div className="text-sm text-red-800">
+                          <p className="font-medium">⚠️ Wrong Network</p>
+                          <p>You must switch to <strong>Sepolia (Chain ID: {SEPOLIA_CHAIN_ID})</strong> to unwrap OFTUSDC.</p>
+                          <p className="text-xs mt-1">Current chain: {chainId ? `Chain ID ${chainId}` : 'Unknown'}</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                  
+                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
                     <div className="flex items-start gap-2">
-                      <Info className="h-4 w-4 text-orange-600 mt-0.5" />
-                      <div className="text-sm text-orange-800">
-                        <p className="font-medium">Hub Chain Local Unwrap</p>
-                        <p className="mb-2">Send your OFTUSDC (18 decimals) back through the hub adapter on the same chain. The adapter will burn the OFTUSDC and unlock USDC (6 decimals) on hub chain. Small LayerZero fee applies.</p>
-                        <p className="font-medium text-xs">Note: This only unwraps to hub chain USDC. If you came from spoke chain, use the spoke tab to unwrap back to spoke chain.</p>
+                      <Info className="h-4 w-4 text-blue-600 mt-0.5" />
+                      <div className="text-sm text-blue-800">
+                        <p>Note: This only unwraps to hub chain USDC. If you came from spoke chain, use the spoke tab to unwrap back to spoke chain.</p>
                       </div>
                     </div>
                   </div>
@@ -1454,11 +1809,26 @@ export default function BalancePage() {
                     </div>
                     <button
                       onClick={redeemOFTUSDCToUSDC}
-                      disabled={isPending || quotingFee || !oftAmount || parseFloat(oftAmount) <= 0}
+                      disabled={!isOnSepoliaChain || hubUnwrapStep !== 'idle' || !oftAmount || parseFloat(oftAmount) <= 0}
                       className="w-full px-6 py-3 bg-orange-600 text-white rounded-md hover:bg-orange-700 disabled:opacity-50 transition-colors font-semibold"
                     >
-                      {quotingFee ? 'Quoting Fee...' : isPending ? 'Unwrapping...' : 'Unwrap OFTUSDC to USDC'}
+                      {hubUnwrapStep === 'quoting' ? 'Quoting Fee...' :
+                       hubUnwrapStep === 'sending' ? 'Unwrapping & Confirming...' :
+                       'Unwrap OFTUSDC to USDC'}
                     </button>
+                    
+                    {/* Status indicator */}
+                    {hubUnwrapStep !== 'idle' && (
+                      <div className="mt-4 p-3 bg-orange-50 border border-orange-200 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-orange-600" />
+                          <span className="text-sm text-orange-800">
+                            {hubUnwrapStep === 'quoting' && 'Calculating LayerZero fee...'}
+                            {hubUnwrapStep === 'sending' && 'Unwrapping OFTUSDC to hub chain USDC... Please confirm and wait for confirmation.'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1507,7 +1877,7 @@ export default function BalancePage() {
                           </button>
                           <button
                             onClick={() => setShowRelayNotice(false)}
-                            className="px-3 py-1.5 bg-white text-blue-800 border border-blue-300 rounded-md hover:bg-blue-50 transition-colors text-sm"
+                            className="px-3 py-1.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-md hover:bg-blue-500/30 transition-colors text-sm"
                           >
                             Dismiss
                           </button>
@@ -1623,15 +1993,34 @@ export default function BalancePage() {
                     <Globe className="h-6 w-6 text-primary" />
                     Bridge USDC from Spoke to Hub
                   </h2>
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
-                    <div className="flex items-start gap-2">
-                      <Info className="h-4 w-4 text-blue-600 mt-0.5" />
-                      <div className="text-sm text-blue-800">
-                        <p className="font-medium">Cross-Chain Bridging</p>
-                        <p>Your USDC on spoke chain (Arbitrum/Optimism) will be locked in the adapter and bridged to the hub chain. You'll receive OFTUSDC (18 decimals) on the hub chain. LayerZero fee applies for cross-chain transfer.</p>
+                  
+                  {/* Wrong Chain Warning */}
+                  {!isOnBnbTestnetChain && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                        <div className="text-sm text-red-800">
+                          <p className="font-medium">⚠️ Wrong Network</p>
+                          <p>You must switch to <strong>BNB Testnet (Chain ID: {BNB_TESTNET_CHAIN_ID})</strong> to bridge USDC from spoke chain.</p>
+                          <p className="text-xs mt-1">Current chain: {chainId ? `Chain ID ${chainId}` : 'Unknown'}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
+                  
+                  {/* Network Instructions - Only show when on correct chain */}
+                  {isOnBnbTestnetChain && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                      <div className="flex items-start gap-2">
+                        <Info className="h-4 w-4 text-blue-600 mt-0.5" />
+                        <div className="text-sm text-blue-800">
+                          <p className="font-medium">Bridge Instructions</p>
+                          <p>After bridging, switch back to Sepolia (Chain ID: {SEPOLIA_CHAIN_ID}) to see your OFTUSDC on the hub chain.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-2">
@@ -1655,13 +2044,16 @@ export default function BalancePage() {
                     <div className="flex gap-4">
                       <button
                         onClick={approveAndSendSpokeUSDC}
-                        disabled={isPending || isApprovalConfirming || spokeQuotingFee || !spokeUsdcAmount}
+                        disabled={!isOnBnbTestnetChain || isPending || isManuallyConfirmingApproval || isManuallyConfirming || spokeQuotingFee || spokeApprovalStep !== 'idle' || !spokeUsdcAmount}
                         className="px-6 py-3 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-50 transition-all duration-200 font-semibold"
                       >
                         {spokeApprovalStep === 'approving' && isPending ? 'Approving USDC...' :
+                         spokeApprovalStep === 'approving' && isManuallyConfirmingApproval ? 'Confirming Approval...' :
                          spokeApprovalStep === 'approved' && spokeQuotingFee ? 'Quoting Fee...' :
+                         spokeApprovalStep === 'approved' ? 'Preparing to Bridge...' :
                          spokeApprovalStep === 'sending' && isPending ? 'Sending Transaction...' :
-                         spokeApprovalStep === 'sending' && isConfirming ? 'Confirming on-chain...' :
+                         spokeApprovalStep === 'sending' && isManuallyConfirming ? 'Confirming Transaction...' :
+                         spokeApprovalStep === 'sending' ? 'Bridging...' :
                          spokeQuotingFee ? 'Quoting Fee...' :
                          isPending ? 'Processing...' :
                          'Approve & Bridge USDC to Hub'}
@@ -1676,7 +2068,7 @@ export default function BalancePage() {
                               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
                               <span className="text-sm text-blue-800">
                                 {isPending ? 'Step 1: Approving USDC for adapter... Please confirm in your wallet.' :
-                                 isApprovalConfirming ? 'Step 1: Waiting for approval confirmation on-chain...' :
+                                 isManuallyConfirmingApproval ? 'Step 1: Waiting for approval confirmation on BSC...' :
                                  'Step 1: Approving USDC for adapter...'}
                               </span>
                             </>
@@ -1692,7 +2084,7 @@ export default function BalancePage() {
                               <Loader2 className="h-4 w-4 animate-spin text-blue-600" />
                               <span className="text-sm text-blue-800">
                                 {isPending ? 'Step 2: Sending transaction... Please confirm in your wallet.' :
-                                 isConfirming ? 'Step 2: Confirming transaction on-chain...' :
+                                 isManuallyConfirming ? 'Step 2: Confirming transaction on BSC...' :
                                  'Step 2: Bridging USDC to hub chain...'}
                               </span>
                             </>
@@ -1715,16 +2107,34 @@ export default function BalancePage() {
                     <ArrowRight className="h-6 w-6 text-primary" />
                     Unwrap OFTUSDC to Spoke Chain USDC
                   </h2>
-                  <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
-                    <div className="flex items-start gap-2">
-                      <Info className="h-4 w-4 text-purple-600 mt-0.5" />
-                      <div className="text-sm text-purple-800">
-                        <p className="font-medium">Redeem Back to Origin Chain</p>
-                        <p className="mb-2">Send your OFTUSDC (18 decimals) from hub chain back to spoke chain. The spoke adapter will burn the OFTUSDC and unlock your original USDC (6 decimals). LayerZero cross-chain fee applies.</p>
-                        <p className="font-medium text-xs">Note: If you invested in a vault, you need to redeem your vault shares first to get OFTUSDC, then come here to unwrap it back to spoke chain USDC.</p>
+                  
+                  {/* Wrong Chain Warning */}
+                  {!isOnSepoliaChain && (
+                    <div className="bg-red-50 border border-red-200 rounded-lg p-4 mb-4">
+                      <div className="flex items-start gap-2">
+                        <AlertCircle className="h-4 w-4 text-red-600 mt-0.5" />
+                        <div className="text-sm text-red-800">
+                          <p className="font-medium">⚠️ Wrong Network</p>
+                          <p>You must switch to <strong>Sepolia (Chain ID: {SEPOLIA_CHAIN_ID})</strong> to unwrap OFTUSDC to spoke chain.</p>
+                          <p className="text-xs mt-1">Current chain: {chainId ? `Chain ID ${chainId}` : 'Unknown'}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
+                  
+                  {/* Network Instructions - Only show when on correct chain */}
+                  {isOnSepoliaChain && (
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-4">
+                      <div className="flex items-start gap-2">
+                        <Info className="h-4 w-4 text-blue-600 mt-0.5" />
+                        <div className="text-sm text-blue-800">
+                          <p className="font-medium">Cross-Chain Unwrap</p>
+                          <p>After unwrapping, your USDC will appear on BNB Testnet. Check your spoke balance above.</p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <div className="space-y-4">
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-2">
@@ -1763,11 +2173,26 @@ export default function BalancePage() {
                     </div>
                     <button
                       onClick={unwrapOFTUSDCToSpokeChain}
-                      disabled={isPending || spokeQuotingUnwrapFee || !spokeOftAmount || parseFloat(spokeOftAmount) <= 0}
+                      disabled={!isOnSepoliaChain || spokeUnwrapStep !== 'idle' || !spokeOftAmount || parseFloat(spokeOftAmount) <= 0}
                       className="w-full px-6 py-3 bg-purple-600 text-white rounded-md hover:bg-purple-700 disabled:opacity-50 transition-colors font-semibold"
                     >
-                      {spokeQuotingUnwrapFee ? 'Quoting Fee...' : isPending ? 'Unwrapping...' : 'Unwrap to Spoke Chain USDC'}
+                      {spokeUnwrapStep === 'quoting' ? 'Quoting Fee...' :
+                       spokeUnwrapStep === 'sending' ? 'Unwrapping & Confirming...' :
+                       'Unwrap to Spoke Chain USDC'}
                     </button>
+                    
+                    {/* Status indicator */}
+                    {spokeUnwrapStep !== 'idle' && (
+                      <div className="mt-4 p-3 bg-purple-50 border border-purple-200 rounded-lg">
+                        <div className="flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin text-purple-600" />
+                          <span className="text-sm text-purple-800">
+                            {spokeUnwrapStep === 'quoting' && 'Calculating LayerZero cross-chain fee...'}
+                            {spokeUnwrapStep === 'sending' && 'Unwrapping OFTUSDC to spoke chain... Please confirm and wait for confirmation.'}
+                          </span>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1816,7 +2241,7 @@ export default function BalancePage() {
                           </button>
                           <button
                             onClick={() => setShowRelayNotice(false)}
-                            className="px-3 py-1.5 bg-white text-blue-800 border border-blue-300 rounded-md hover:bg-blue-50 transition-colors text-sm"
+                            className="px-3 py-1.5 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-md hover:bg-blue-500/30 transition-colors text-sm"
                           >
                             Dismiss
                           </button>
@@ -2138,7 +2563,7 @@ export default function BalancePage() {
                               setRegistrationStep('success')
                             }}
                             disabled={isRegistering}
-                            className="px-4 py-3 rounded-lg font-semibold transition-colors bg-gray-200 text-gray-800 hover:bg-gray-300 disabled:opacity-50"
+                            className="px-4 py-3 rounded-lg font-semibold transition-colors bg-secondary text-secondary-foreground hover:bg-secondary/80 disabled:opacity-50"
                           >
                             Cancel
                           </button>

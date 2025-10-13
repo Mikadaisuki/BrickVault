@@ -815,7 +815,7 @@ export default function InvestmentsPage() {
               <button
                 onClick={refreshInvestments}
                 disabled={fetchingInvestments}
-                className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
+                className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-200 disabled:opacity-50 transition-colors"
               >
                 {fetchingInvestments ? (
                   <>
@@ -844,7 +844,7 @@ export default function InvestmentsPage() {
               </div>
               <button
                 onClick={refreshInvestments}
-                className="mt-3 px-3 py-1 bg-red-100 text-red-800 rounded text-sm hover:bg-red-200 transition-colors flex items-center"
+                className="mt-3 px-3 py-1 bg-red-500/20 text-red-400 border border-red-500/30 rounded text-sm hover:bg-red-200 transition-colors flex items-center"
               >
                 <RefreshCw className="h-3 w-3 mr-1" />
                 Try Again
@@ -896,16 +896,16 @@ export default function InvestmentsPage() {
                     <div className="flex items-center space-x-2">
                       <span                       className={`px-2 py-1 rounded-full text-xs ${
                         investment.daoStage === 4
-                          ? 'bg-red-100 text-red-800'
+                          ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                           : investment.daoStage === 3
-                          ? 'bg-orange-100 text-orange-800'
+                          ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
                           : investment.daoStage === 2
-                          ? 'bg-green-100 text-green-800'
+                          ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                           : investment.daoStage === 1
-                          ? 'bg-blue-100 text-blue-800'
+                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                           : investment.daoStage === 0
-                          ? 'bg-yellow-100 text-yellow-800'
-                          : 'bg-gray-100 text-gray-800'
+                          ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                          : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
                       }`}>
                         {investment.daoStage === 4 ? 'Liquidated' :
                          investment.daoStage === 3 ? 'Liquidating' :
@@ -914,7 +914,7 @@ export default function InvestmentsPage() {
                          investment.daoStage === 0 ? 'Open to Fund' : 'Unknown'}
                       </span>
                       {investment.proposals.filter(p => p.status === 'Active').length > 0 && (
-                        <span className="px-2 py-1 rounded-full text-xs bg-orange-100 text-orange-800 flex items-center">
+                        <span className="px-2 py-1 rounded-full text-xs bg-orange-500/20 text-orange-400 border border-orange-500/30 flex items-center">
                           <Vote className="h-3 w-3 mr-1" />
                           {investment.proposals.filter(p => p.status === 'Active').length} Active Proposals
                         </span>
@@ -958,7 +958,7 @@ export default function InvestmentsPage() {
                               e.stopPropagation()
                               handleInvestmentClick(investment)
                             }}
-                            className="text-xs bg-blue-100 text-blue-800 px-2 py-1 rounded hover:bg-blue-200"
+                            className="text-xs bg-blue-500/20 text-blue-400 border border-blue-500/30 px-2 py-1 rounded hover:bg-blue-200"
                           >
                             <Eye className="h-3 w-3 inline mr-1" />
                             View Details
@@ -1034,16 +1034,16 @@ export default function InvestmentsPage() {
                           <span className="text-sm font-medium">Current Stage</span>
                           <span className={`px-2 py-1 rounded-full text-xs ${
                             selectedInvestment.daoStage === 4
-                              ? 'bg-red-100 text-red-800'
+                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                               : selectedInvestment.daoStage === 3
-                              ? 'bg-orange-100 text-orange-800'
+                              ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30'
                               : selectedInvestment.daoStage === 2
-                              ? 'bg-green-100 text-green-800' 
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
                               : selectedInvestment.daoStage === 1
-                              ? 'bg-blue-100 text-blue-800'
+                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
                               : selectedInvestment.daoStage === 0
-                              ? 'bg-yellow-100 text-yellow-800'
-                              : 'bg-gray-100 text-gray-800'
+                              ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
+                              : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
                           }`}>
                             {selectedInvestment.daoStage === 4 ? 'Liquidated' :
                              selectedInvestment.daoStage === 3 ? 'Liquidating' :
@@ -1080,8 +1080,8 @@ export default function InvestmentsPage() {
                           <span className="text-sm text-muted-foreground">Status:</span>
                           <span className={`px-2 py-1 rounded-full text-xs ${
                             maxWithdrawable > BigInt(0) 
-                              ? 'bg-green-100 text-green-800' 
-                              : 'bg-gray-100 text-gray-800'
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                              : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
                           }`}>
                             {maxWithdrawable > BigInt(0) ? 'Income Available' : 'No Income Available'}
                           </span>
@@ -1109,7 +1109,7 @@ export default function InvestmentsPage() {
                             />
                             <button
                               onClick={() => setWithdrawalAmount(formatUnits(maxWithdrawable, 18))}
-                              className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition-colors text-sm"
+                              className="px-3 py-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-200 transition-colors text-sm"
                               disabled={isWithdrawing}
                             >
                               Max
@@ -1128,11 +1128,11 @@ export default function InvestmentsPage() {
                           }
                           className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 ${
                             withdrawalStep === 'success'
-                              ? 'bg-green-100 text-green-800'
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                               : withdrawalStep === 'error'
-                              ? 'bg-red-100 text-red-800'
+                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                               : isWithdrawing || withdrawalStep === 'confirming'
-                              ? 'bg-blue-100 text-blue-800 cursor-not-allowed'
+                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 cursor-not-allowed'
                               : 'bg-primary text-primary-foreground hover:bg-primary/90'
                           }`}
                         >
@@ -1250,7 +1250,7 @@ export default function InvestmentsPage() {
                         </div>
                         <div className="flex items-center justify-between mt-2">
                           <span className="text-sm text-muted-foreground">Status:</span>
-                          <span className="px-2 py-1 rounded-full text-xs bg-red-100 text-red-800">
+                          <span className="px-2 py-1 rounded-full text-xs bg-red-500/20 text-red-400 border border-red-500/30">
                             Property Liquidated
                           </span>
                         </div>
@@ -1276,7 +1276,7 @@ export default function InvestmentsPage() {
                             />
                             <button
                               onClick={() => setRedeemSharesAmount(formatUnits(selectedInvestment.shares, 18))}
-                              className="px-3 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition-colors text-sm"
+                              className="px-3 py-2 bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded-lg hover:bg-blue-200 transition-colors text-sm"
                               disabled={isWithdrawing}
                             >
                               Max
@@ -1295,11 +1295,11 @@ export default function InvestmentsPage() {
                           }
                           className={`w-full py-3 px-4 rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 ${
                             withdrawalStep === 'success'
-                              ? 'bg-green-100 text-green-800'
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                               : withdrawalStep === 'error'
-                              ? 'bg-red-100 text-red-800'
+                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
                               : isWithdrawing || withdrawalStep === 'confirming'
-                              ? 'bg-blue-100 text-blue-800 cursor-not-allowed'
+                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 cursor-not-allowed'
                               : 'bg-red-600 text-white hover:bg-red-700'
                           }`}
                         >
@@ -1398,7 +1398,7 @@ export default function InvestmentsPage() {
                       {(selectedInvestment.daoStage === 2 || selectedInvestment.daoStage === 3) && selectedInvestment.daoAddress && (
                         <button
                           onClick={() => handleOpenCreateProposalModal(selectedInvestment)}
-                          className="flex items-center space-x-1 px-3 py-1 text-sm bg-purple-100 text-purple-800 rounded hover:bg-purple-200 transition-colors"
+                          className="flex items-center space-x-1 px-3 py-1 text-sm bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded hover:bg-purple-200 transition-colors"
                         >
                           <Vote className="h-3 w-3" />
                           <span>Create Proposal</span>
@@ -1413,7 +1413,7 @@ export default function InvestmentsPage() {
                           }
                           setSelectedInvestment(updatedInvestment)
                         }}
-                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-100 text-blue-800 rounded hover:bg-blue-200 transition-colors"
+                        className="flex items-center space-x-1 px-3 py-1 text-sm bg-blue-500/20 text-blue-400 border border-blue-500/30 rounded hover:bg-blue-200 transition-colors"
                       >
                         <RefreshCw className="h-3 w-3" />
                         <span>Refresh Proposals</span>
@@ -1432,7 +1432,7 @@ export default function InvestmentsPage() {
                         <div className="mt-4">
                           <button
                             onClick={() => handleOpenCreateProposalModal(selectedInvestment)}
-                            className="inline-flex items-center space-x-2 px-4 py-2 bg-purple-100 text-purple-800 rounded-lg hover:bg-purple-200 transition-colors"
+                            className="inline-flex items-center space-x-2 px-4 py-2 bg-purple-500/20 text-purple-400 border border-purple-500/30 rounded-lg hover:bg-purple-200 transition-colors"
                           >
                             <Vote className="h-4 w-4" />
                             <span>Create First Proposal</span>
@@ -1449,15 +1449,15 @@ export default function InvestmentsPage() {
                               <div className="flex items-center gap-2">
                                 <h4 className="font-semibold">Proposal #{proposal.id}</h4>
                                 <span className={`px-2 py-1 rounded-full text-xs ${
-                                  proposal.proposalType === 0 ? 'bg-red-100 text-red-800' :
-                                  proposal.proposalType === 1 ? 'bg-green-100 text-green-800' : 
-                                  proposal.proposalType === 2 ? 'bg-purple-100 text-purple-800' :
-                                  proposal.proposalType === 3 ? 'bg-blue-100 text-blue-800' :
-                                  proposal.proposalType === 4 ? 'bg-yellow-100 text-yellow-800' :
-                                  proposal.proposalType === 5 ? 'bg-orange-100 text-orange-800' :
-                                  proposal.proposalType === 6 ? 'bg-emerald-100 text-emerald-800' :
-                                  proposal.proposalType === 7 ? 'bg-indigo-100 text-indigo-800' :
-                                  'bg-gray-100 text-gray-800'
+                                  proposal.proposalType === 0 ? 'bg-red-500/20 text-red-400 border border-red-500/30' :
+                                  proposal.proposalType === 1 ? 'bg-green-500/20 text-green-400 border border-green-500/30' : 
+                                  proposal.proposalType === 2 ? 'bg-purple-500/20 text-purple-400 border border-purple-500/30' :
+                                  proposal.proposalType === 3 ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' :
+                                  proposal.proposalType === 4 ? 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30' :
+                                  proposal.proposalType === 5 ? 'bg-orange-500/20 text-orange-400 border border-orange-500/30' :
+                                  proposal.proposalType === 6 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' :
+                                  proposal.proposalType === 7 ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30' :
+                                  'bg-slate-500/20 text-slate-400 border border-slate-500/30'
                                 }`}>
                                   {proposal.proposalType === 0 ? 'Property Liquidation' :
                                    proposal.proposalType === 1 ? 'Property Purchase' : 
@@ -1486,10 +1486,10 @@ export default function InvestmentsPage() {
                           </div>
                           <span className={`px-2 py-1 rounded-full text-xs ${
                             proposal.status === 'Active' 
-                              ? 'bg-green-100 text-green-800'
+                              ? 'bg-green-500/20 text-green-400 border border-green-500/30'
                               : proposal.executed
-                              ? 'bg-blue-100 text-blue-800'
-                              : 'bg-gray-100 text-gray-800'
+                              ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                              : 'bg-slate-500/20 text-slate-400 border border-slate-500/30'
                           }`}>
                             {proposal.status}
                           </span>
@@ -1544,9 +1544,9 @@ export default function InvestmentsPage() {
                                   <span className={`ml-2 px-3 py-1 rounded-full text-sm font-semibold flex items-center ${
                                     proposal.userVote.hasVoted
                                       ? proposal.userVote.support
-                                        ? 'bg-green-100 text-green-800'
-                                        : 'bg-red-100 text-red-800'
-                                      : 'bg-yellow-100 text-yellow-800'
+                                        ? 'bg-green-500/20 text-green-400 border border-green-500/30'
+                                        : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                                      : 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30'
                                   }`}>
                                     {proposal.userVote.hasVoted
                                       ? proposal.userVote.support 
@@ -1580,7 +1580,7 @@ export default function InvestmentsPage() {
                               <button
                                 onClick={() => handleVote(selectedInvestment.propertyId, proposal.id, true)}
                                 disabled={loading && votingProposal?.proposalId === proposal.id && votingSupport === true}
-                                className="flex items-center space-x-2 px-4 py-2 bg-green-100 text-green-800 rounded-lg hover:bg-green-200 disabled:opacity-50 transition-colors"
+                                className="flex items-center space-x-2 px-4 py-2 bg-green-500/20 text-green-400 border border-green-500/30 rounded-lg hover:bg-green-200 disabled:opacity-50 transition-colors"
                               >
                                 {loading && votingProposal?.proposalId === proposal.id && votingSupport === true ? (
                                   <>
@@ -1597,7 +1597,7 @@ export default function InvestmentsPage() {
                               <button
                                 onClick={() => handleVote(selectedInvestment.propertyId, proposal.id, false)}
                                 disabled={loading && votingProposal?.proposalId === proposal.id && votingSupport === false}
-                                className="flex items-center space-x-2 px-4 py-2 bg-red-100 text-red-800 rounded-lg hover:bg-red-200 disabled:opacity-50 transition-colors"
+                                className="flex items-center space-x-2 px-4 py-2 bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg hover:bg-red-200 disabled:opacity-50 transition-colors"
                               >
                                 {loading && votingProposal?.proposalId === proposal.id && votingSupport === false ? (
                                   <>
