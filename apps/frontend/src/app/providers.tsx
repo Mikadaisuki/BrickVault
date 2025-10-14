@@ -3,7 +3,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { WagmiProvider } from 'wagmi'
 import { createConfig, http } from 'wagmi'
-import { mainnet, sepolia } from 'wagmi/chains'
+import { mainnet, sepolia, bscTestnet } from 'wagmi/chains'
 import { injected } from 'wagmi/connectors'
 import { useState } from 'react'
 import { ThemeProvider } from '@/components/ThemeProvider'
@@ -26,14 +26,17 @@ const localhost = {
 }
 
 const config = createConfig({
-  chains: [localhost, mainnet, sepolia],
+  chains: [localhost, mainnet, sepolia, bscTestnet],
   connectors: [
-    injected(),
+    injected({ 
+      shimDisconnect: true,
+    }),
   ],
   transports: {
     [localhost.id]: http(),
     [mainnet.id]: http(),
     [sepolia.id]: http(),
+    [bscTestnet.id]: http(),
   },
 })
 

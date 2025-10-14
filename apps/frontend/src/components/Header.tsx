@@ -1,7 +1,7 @@
 'use client'
 
 import { Building2, Menu } from 'lucide-react'
-import { SimpleConnectButton } from './SimpleConnectButton'
+import { WalletConnectButton } from './WalletConnectButton'
 import { OwnerManagementLink } from './OwnerManagementLink'
 import { ThemeToggle } from './ThemeToggle'
 
@@ -36,7 +36,7 @@ export function Header() {
           
           <div className="flex items-center space-x-4">
             <ThemeToggle />
-            <SimpleConnectButton />
+            <WalletConnectButton />
             <button className="md:hidden">
               <Menu className="h-6 w-6" />
             </button>
