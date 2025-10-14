@@ -1,15 +1,13 @@
 {
   "name": "@brickvault/relayer",
   "version": "1.0.0",
-  "description": "Serverless cross-chain relayer for BrickVault",
+  "description": "Cross-chain relayer for BrickVault (Stacks ↔ EVM)",
   "type": "module",
   "main": "dist/index.js",
   "scripts": {
     "build": "tsc",
     "start": "tsx start.ts",
     "start:prod": "node dist/start.js",
-    "dev": "vercel dev",
-    "deploy": "vercel --prod",
     "test": "vitest",
     "test:unit": "vitest --run src/**/*.test.ts",
     "test:integration": "vitest --run test/**/*.test.ts",
@@ -37,10 +35,8 @@
   "devDependencies": {
     "@types/node": "^20.8.0",
     "@types/node-cron": "^3.0.11",
-    "@vercel/node": "^3.0.12",
     "tsx": "^4.7.0",
     "typescript": "^5.2.0",
-    "vercel": "^32.0.0",
     "vitest": "^1.0.0"
   },
   "engines": {

@@ -10,10 +10,10 @@
  * 4. Track success/failure for monitoring
  */
 
-import { StacksMonitor } from './StacksMonitor';
-import { EVMMonitor } from './EVMMonitor';
+import { StacksMonitor } from './StacksMonitor.js';
+import { EVMMonitor } from './EVMMonitor.js';
 import { RelayerConfig } from '../config/index.js';
-import { LogService } from './LogService';
+import { LogService } from './LogService.js';
 import { 
   StacksEvent, 
   ProcessedMessage 

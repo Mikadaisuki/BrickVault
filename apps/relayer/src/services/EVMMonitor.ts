@@ -13,7 +13,7 @@
 import { ethers } from 'ethers';
 import { RelayerConfig } from '../config/index.js';
 import { StacksEvent } from '../types';
-import { LogService } from './LogService';
+import { LogService } from './LogService.js';
 
 export class EVMMonitor {
   private provider: ethers.Provider;
@@ -37,16 +37,12 @@ export class EVMMonitor {
     
     if (this.useWebSocket) {
       this.provider = new ethers.WebSocketProvider(config.evm.rpcUrl);
-      console.log(`🌐 Using WebSocket provider: ${config.evm.rpcUrl}`);
     } else {
       this.provider = new ethers.JsonRpcProvider(config.evm.rpcUrl);
-      console.log(`📡 Using HTTP provider: ${config.evm.rpcUrl}`);
     }
     
     this.wallet = new ethers.Wallet(config.evm.privateKey, this.provider);
     this.stacksManagerContract = this.createStacksManagerContract();
-    
-    console.log(`🔑 EVM Wallet Address: ${this.wallet.address}`);
   }
 
   /**

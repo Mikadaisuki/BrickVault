@@ -18,7 +18,7 @@ import { connectWebSocketClient } from '@stacks/blockchain-api-client';
 import type { RpcAddressTxNotificationParams } from '@stacks/stacks-blockchain-api-types';
 import { RelayerConfig } from '../config/index.js';
 import { StacksEvent } from '../types';
-import { LogService } from './LogService';
+import { LogService } from './LogService.js';
 
 export class StacksMonitor {
   private config: RelayerConfig;
@@ -104,6 +104,11 @@ export class StacksMonitor {
       await this.wsClient.subscribeBlocks(async (block) => {
         // Only log blocks with transactions
         if (block.txs && block.txs.length > 0) {
+          this.logService.debug('stacks-monitor', `📦 Block #${block.height}`, {
+            height: block.height,
+            txCount: block.txs.length,
+            hash: block.hash
+          });
           console.log(`📦 Block #${block.height}: ${block.txs.length} transaction(s)`);
         }
         

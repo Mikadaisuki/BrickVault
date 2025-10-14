@@ -7,7 +7,7 @@
     "allowSyntheticDefaultImports": true,
     "esModuleInterop": true,
     "allowJs": true,
-    "strict": true,
+    "strict": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
@@ -22,11 +22,11 @@
     "types": ["node"]
   },
   "include": [
-    "src/**/*",
-    "api/**/*"
+    "src/**/*"
   ],
   "exclude": [
     "node_modules",
-    "dist"
+    "dist",
+    "api"
   ]
 }

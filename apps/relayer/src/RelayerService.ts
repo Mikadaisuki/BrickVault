@@ -3,10 +3,10 @@
  * Orchestrates cross-chain message processing between Stacks and EVM
  */
 
-import { MessageProcessor } from './services/MessageProcessor';
+import { MessageProcessor } from './services/MessageProcessor.js';
 import { RelayerConfig } from './config/index.js';
-import { RelayerStats } from './types';
-import { LogService, LogEntry, LogLevel } from './services/LogService';
+import { RelayerStats } from './types/index.js';
+import { LogService, LogEntry, LogLevel } from './services/LogService.js';
 
 export class RelayerService {
   private messageProcessor: MessageProcessor;
