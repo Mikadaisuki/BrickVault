@@ -1,11 +1,9 @@
 {
   "version": 2,
-  "env": {
-    "NODE_ENV": "production"
-  },
-  "functions": {
-    "api/**/*.ts": {
-      "maxDuration": 30
+  "builds": [
+    {
+      "src": "api/**/*.ts",
+      "use": "@vercel/node"
     }
-  }
+  ]
 }
