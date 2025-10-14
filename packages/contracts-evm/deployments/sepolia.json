@@ -2,15 +2,15 @@
   "network": "sepolia",
   "chainId": 11155111,
   "contracts": {
-    "EnvironmentConfig": "0x3970AFCc4d56CBE34fd55A8643a0DbB87Ef12286",
+    "EnvironmentConfig": "0xF62C2E9A372410ce1A34dd1a100bd5106de8cB0E",
     "SepoliaEndpoint": "0x6EDCE65403992e310A62460808c4b910D972f10f",
-    "MockUSDCHub": "0xc0c58CD2Fb46Ad1AE9b7Cb0685f71f4578763685",
-    "USDCOFTAdapterHub": "0x0d3eb1C3b4AE04545bA5baF6a37d61b807564076",
-    "OFTUSDC": "0xcd011e73EdD80a87AbC31914e906d3eb4Ed06fF3",
-    "VaultFactory": "0x5a4187205139bA70C211735c4a12DB5B6eBd270b",
-    "PropertyDAOFactory": "0x1a52eaF10eC4C9F595D56a6c064F7Bb40Cb46294",
-    "PropertyRegistry": "0xBB217ABf33C2b5f2882ac70D15b538AAF1C2C424",
-    "StacksCrossChainManager": "0xed2Ed3D6328F7536892265F6c661AdECC92cfAcc"
+    "MockUSDCHub": "0x983eBfaf231849D9F2aB53269FBE54b62983fE52",
+    "USDCOFTAdapterHub": "0xb10c5868FF1338E2D0Fa7961CEB80e35f83C4ddB",
+    "OFTUSDC": "0xdee7b70190FC9F4dCA4DB035a73B072c91cB8382",
+    "VaultFactory": "0xf79a034E385c0eF29B8bd2F9fcEC6834c5A0CdCf",
+    "PropertyDAOFactory": "0x82cE7866cD6aC949Df6324a99da68b393412eB82",
+    "PropertyRegistry": "0xf142d53c92E1a26C51E282d338C5BCD4324C9d45",
+    "StacksCrossChainManager": "0xa5CeCB7990F2231d97C8Dc2d47d7cFD81d23FA9b"
   },
   "note": "Properties and DAOs can be created via PropertyRegistry.createProperty()",
   "minting": {
@@ -29,9 +29,9 @@
   },
   "decimals": {
     "usdc": 6,
-    "oftUSDC": 18,
+    "oftusdc": 18,
     "vaultShares": 18
   },
-  "deploymentTime": "2025-10-12T22:21:27.224Z",
+  "deploymentTime": "2025-10-14T02:49:15.421Z",
   "deployer": "0x172859d452718A7E5BfB452c90433ca6Ad9E63ef"
 }

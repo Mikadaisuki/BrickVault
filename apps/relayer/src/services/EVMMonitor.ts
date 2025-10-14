@@ -66,10 +66,14 @@ export class EVMMonitor {
       // Main function for processing cross-chain messages
       'function processCrossChainMessage(bytes32 messageId, uint8 messageType, address evmCustodian, string calldata stacksAddress, uint256 amount, bytes32 stacksTxHash, bytes calldata proof) external',
       
-      // View functions
+      // View functions for validation
       'function isStacksTxHashUsed(bytes32 stacksTxHash) external view returns (bool)',
       'function isMessageProcessed(bytes32 messageId) external view returns (bool)',
-      'function getEvmCustodian(string calldata stacksAddress) external view returns (address)'
+      'function getEvmCustodian(string calldata stacksAddress) external view returns (address)',
+      'function emergencyPaused() external view returns (bool)',
+      'function getSbtcPrice() external view returns (uint256 price, bool isValid)',
+      'function calculateUsdValue(uint256 sbtcAmount) external view returns (uint256 usdValue)',
+      'function getPoolBalance() external view returns (uint256 balance)'
     ];
 
     return new ethers.Contract(
@@ -298,8 +302,53 @@ export class EVMMonitor {
         ethers.toUtf8Bytes(`proof-${stacksEvent.stacksTxHash}`)
       );
 
+      // ============================================================================
+      // PRE-FLIGHT CHECKS - Verify contract state before sending transaction
+      // ============================================================================
+      console.log(`\n🔍 Running Pre-Flight Checks...`);
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+
+      // Check 1: Emergency pause status
+      const emergencyPaused = await this.stacksManagerContract.emergencyPaused();
+      console.log(`  Emergency Paused:     ${emergencyPaused ? '❌ YES (BLOCKED)' : '✅ No'}`);
+      if (emergencyPaused) {
+        throw new Error('StacksCrossChainManager is emergency paused. Cannot process deposits.');
+      }
+
+      // Check 2: sBTC price and validity
+      const priceInfo = await this.stacksManagerContract.getSbtcPrice();
+      const sbtcPrice = priceInfo[0];
+      const isPriceValid = priceInfo[1];
+      console.log(`  sBTC Price:           $${ethers.formatUnits(sbtcPrice, 8)}`);
+      console.log(`  Price Valid:          ${isPriceValid ? '✅ Yes' : '❌ NO (STALE/INVALID)'}`);
+      if (!isPriceValid) {
+        throw new Error('sBTC price is invalid or stale (older than 1 hour). Update price before processing deposits.');
+      }
+
+      // Check 3: Calculate expected USD value
+      const usdValue = await this.stacksManagerContract.calculateUsdValue(stacksEvent.amount);
+      console.log(`  Expected USD Value:   ${ethers.formatUnits(usdValue, 18)} OFTUSDC`);
+
+      // Check 4: Liquidity pool balance
+      const poolBalance = await this.stacksManagerContract.getPoolBalance();
+      console.log(`  Pool Balance:         ${ethers.formatUnits(poolBalance, 18)} OFTUSDC`);
+      console.log(`  Pool Sufficient:      ${poolBalance >= usdValue ? '✅ Yes' : '❌ NO (INSUFFICIENT)'}`);
+      if (poolBalance < usdValue) {
+        throw new Error(`Insufficient liquidity pool balance. Required: ${ethers.formatUnits(usdValue, 18)} OFTUSDC, Available: ${ethers.formatUnits(poolBalance, 18)} OFTUSDC`);
+      }
+
+      // Check 5: Message already processed
+      const isMessageProcessed = await this.stacksManagerContract.isMessageProcessed(messageId);
+      console.log(`  Message Processed:    ${isMessageProcessed ? '⚠️  Already processed' : '✅ New'}`);
+      if (isMessageProcessed) {
+        throw new Error(`Message ${messageId} already processed on EVM`);
+      }
+
+      console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
+      console.log(`✅ All pre-flight checks passed!\n`);
+
       // Log the exact message that will be sent to EVM
-      console.log(`\n📤 Preparing EVM Transaction:`);
+      console.log(`📤 Preparing EVM Transaction:`);
       console.log(`━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`);
       console.log(`Contract: StacksCrossChainManager.processCrossChainMessage()`);
       console.log(`Address:  ${this.config.evm.stacksManagerAddress}`);

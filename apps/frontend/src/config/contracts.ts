@@ -51,8 +51,8 @@ const STACKS_API_URL = process.env.NEXT_PUBLIC_STACKS_API_URL || 'http://localho
 export const STACKS_CONFIG = {
   apiUrl: STACKS_API_URL,
   network: process.env.NEXT_PUBLIC_STACKS_NETWORK || 'devnet',
-  gatewayContract: process.env.NEXT_PUBLIC_STACKS_GATEWAY_CONTRACT || 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
-  sbtcTokenContract: process.env.NEXT_PUBLIC_STACKS_SBTC_TOKEN_CONTRACT || 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-token',
+  gatewayContract: process.env.NEXT_PUBLIC_STACKS_GATEWAY_CONTRACT || 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway-v1',
+  sbtcTokenContract: process.env.NEXT_PUBLIC_STACKS_SBTC_TOKEN_CONTRACT || 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token',
   explorerUrl: `${STACKS_API_URL}/extended/v1`,
 } as const;
 

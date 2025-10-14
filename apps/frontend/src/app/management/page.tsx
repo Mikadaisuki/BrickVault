@@ -259,8 +259,9 @@ export default function ManagementPage() {
     },
   })
 
-  // Extract price from tuple (price, isValid)
+  // Extract price and validity from tuple (price, isValid)
   const sbtcPrice = sbtcPriceData ? (sbtcPriceData as [bigint, boolean])[0] : BigInt(0)
+  const sbtcPriceIsValid = sbtcPriceData ? (sbtcPriceData as [bigint, boolean])[1] : false
 
 
   // Fetch all properties using contract calls
@@ -2251,16 +2252,18 @@ export default function ManagementPage() {
           Network, Connection & Owner Status
         </h2>
         
-        {/* Sepolia Requirement Notice */}
-        <div className="mb-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-          <div className="flex items-start gap-2">
-            <AlertTriangle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-            <div className="text-sm text-blue-800 dark:text-blue-300">
-              <p className="font-semibold mb-1">Sepolia Testnet Required</p>
-              <p>All property management operations must be performed on Sepolia Testnet (Chain ID: {expectedChainId}). The page will automatically prompt you to switch if you connect with a different network.</p>
+        {/* Sepolia Requirement Notice - Only show if on wrong network */}
+        {chainId !== expectedChainId && (
+          <div className="mb-4 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+              <div className="text-sm text-red-800 dark:text-red-300">
+                <p className="font-semibold mb-1">⚠️ Wrong Network</p>
+                <p>Please switch to Sepolia Testnet (Chain ID: {expectedChainId}). You are currently on Chain ID: {chainId}.</p>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         <div className="space-y-4">
           {/* Connection Status Row */}
@@ -4376,16 +4379,58 @@ export default function ManagementPage() {
       {/* Pool Management Tab */}
       {activeTab === 'pool' && (
         <>
-          {/* Sepolia Network Requirement Notice */}
-          <div className="mb-6 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
-            <div className="flex items-start gap-2">
-              <AlertTriangle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-              <div className="text-sm text-blue-800 dark:text-blue-300">
-                <p className="font-semibold mb-1">⚠️ Sepolia Testnet Required for Pool Management</p>
-                <p>All liquidity pool operations (funding, withdrawals, price updates) must be performed on Sepolia Testnet where the StacksCrossChainManager and gateway contracts are deployed. You are currently connected to Sepolia (Chain ID: {chainId}).</p>
+          {/* Network Status Notice - Only show if on wrong network */}
+          {chainId !== expectedChainId && (
+            <div className="mb-6 bg-red-50 dark:bg-red-950 border border-red-200 dark:border-red-800 rounded-lg p-4">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 mt-0.5" />
+                <div className="text-sm text-red-800 dark:text-red-300">
+                  <p className="font-semibold mb-1">⚠️ Wrong Network</p>
+                  <p>Please switch to Sepolia Testnet (Chain ID: {expectedChainId}). You are currently on Chain ID: {chainId}.</p>
+                </div>
               </div>
             </div>
-          </div>
+          )}
+
+          {/* Critical Configuration Warning */}
+          {(!sbtcPriceIsValid || sbtcPrice === BigInt(0) || !poolBalance || poolBalance === BigInt(0)) && (
+            <div className="mb-6 bg-red-50 dark:bg-red-950 border-2 border-red-300 dark:border-red-800 rounded-lg p-6">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-6 w-6 text-red-600 dark:text-red-400 mt-0.5" />
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-red-800 dark:text-red-300 mb-2">
+                    ⚠️ Pool Not Ready for Deposits
+                  </h3>
+                  <p className="text-sm text-red-700 dark:text-red-400 mb-3">
+                    The following critical settings must be configured before the relayer can process Stacks deposits:
+                  </p>
+                  <ul className="space-y-2">
+                    {(!sbtcPriceIsValid || sbtcPrice === BigInt(0)) && (
+                      <li className="flex items-start gap-2">
+                        <X className="h-4 w-4 text-red-600 mt-0.5" />
+                        <div className="text-sm text-red-800 dark:text-red-300">
+                          <span className="font-semibold">sBTC Price Not Set:</span> Update the sBTC price to enable USD value calculation
+                        </div>
+                      </li>
+                    )}
+                    {(!poolBalance || poolBalance === BigInt(0)) && (
+                      <li className="flex items-start gap-2">
+                        <X className="h-4 w-4 text-red-600 mt-0.5" />
+                        <div className="text-sm text-red-800 dark:text-red-300">
+                          <span className="font-semibold">Pool Balance Empty:</span> Fund the pool with OFTUSDC to provide liquidity
+                        </div>
+                      </li>
+                    )}
+                  </ul>
+                  <div className="mt-4 p-3 bg-red-100 dark:bg-red-900 rounded-lg">
+                    <p className="text-xs text-red-800 dark:text-red-300">
+                      <strong>Note:</strong> Without these settings, the relayer's pre-flight checks will fail and deposits will be rejected before reaching the blockchain.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Pool Overview - EVM */}
           <div className="bg-card rounded-lg border p-6 mb-6">
@@ -4411,17 +4456,45 @@ export default function ManagementPage() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               <div className="bg-accent rounded-lg p-4">
                 <h3 className="text-sm text-muted-foreground mb-2">EVM Pool Balance</h3>
-                <p className="text-2xl font-bold text-primary">
-                  {poolBalance ? formatUnits(poolBalance as bigint, 18) : '0'} OFTUSDC
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">Available for Stacks deposits</p>
+                {!poolBalance || poolBalance === BigInt(0) ? (
+                  <>
+                    <p className="text-2xl font-bold text-orange-600">
+                      0 OFTUSDC
+                    </p>
+                    <p className="text-xs text-orange-500 mt-1 flex items-center">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      Pool is empty - fund it to enable deposits
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-primary">
+                      {formatUnits(poolBalance as bigint, 18)} OFTUSDC
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">Available for Stacks deposits</p>
+                  </>
+                )}
               </div>
               <div className="bg-accent rounded-lg p-4">
                 <h3 className="text-sm text-muted-foreground mb-2">EVM sBTC Price</h3>
-                <p className="text-2xl font-bold text-green-600">
-                  ${sbtcPrice ? parseFloat(formatUnits(sbtcPrice, 8)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">Current price (8 decimals)</p>
+                {!sbtcPriceIsValid || sbtcPrice === BigInt(0) ? (
+                  <>
+                    <p className="text-2xl font-bold text-red-600">
+                      NOT SET
+                    </p>
+                    <p className="text-xs text-red-500 mt-1 flex items-center">
+                      <AlertTriangle className="h-3 w-3 mr-1" />
+                      Price must be set before processing deposits
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-2xl font-bold text-green-600">
+                      ${parseFloat(formatUnits(sbtcPrice, 8)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">Current price (8 decimals)</p>
+                  </>
+                )}
               </div>
             </div>
 

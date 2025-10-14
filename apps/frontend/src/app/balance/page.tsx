@@ -938,6 +938,7 @@ export default function BalancePage() {
 
   // Deposit sBTC tokens
   const depositAsset = async () => {
+    
     if (!depositAmount || !stacksAccount?.address) {
       alert('Please enter amount and ensure Stacks wallet is connected')
       return
@@ -1022,10 +1023,12 @@ export default function BalancePage() {
         }
       }
       
+      
       // Check if user has sBTC from the correct contract
       const ftBalancesResponse = await fetch(
         `${STACKS_CONFIG.apiUrl}/extended/v2/addresses/${stacksAccount.address}/balances/ft`
       )
+     
       
       if (ftBalancesResponse.ok) {
         const ftData = await ftBalancesResponse.json()
@@ -1036,6 +1039,7 @@ export default function BalancePage() {
         )
         
         if (!userHasCorrectToken) {
+          console.log(ftData)
           const availableTokens = ftData.results?.filter((t: { token: string }) => 
             t.token.includes('sbtc')
           ).map((t: { token: string; balance: string }) => `${t.token} (${(parseInt(t.balance) / 100000000).toFixed(8)} sBTC)`)

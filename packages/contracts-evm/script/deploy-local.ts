@@ -474,6 +474,7 @@ async function main() {
 NEXT_PUBLIC_NETWORK_NAME=localhost
 NEXT_PUBLIC_CHAIN_ID=31337
 NEXT_PUBLIC_RPC_URL=http://localhost:8545
+NEXT_PUBLIC_SPOKE_RPC_URL=http://localhost:8545
 
 # Infrastructure Contracts
 NEXT_PUBLIC_ENVIRONMENT_CONFIG_ADDRESS=${await environmentConfig.getAddress()}
@@ -496,6 +497,12 @@ NEXT_PUBLIC_PROPERTY_DAO_ADDRESS=${await propertyDAO.getAddress()}
 
 # Cross-Chain Contracts
 NEXT_PUBLIC_STACKS_CROSS_CHAIN_MANAGER_ADDRESS=${await stacksManager.getAddress()}
+
+# Stacks Configuration (Devnet)
+NEXT_PUBLIC_STACKS_API_URL=http://localhost:3999
+NEXT_PUBLIC_STACKS_NETWORK=devnet
+NEXT_PUBLIC_STACKS_GATEWAY_CONTRACT=ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway-v1
+NEXT_PUBLIC_STACKS_SBTC_TOKEN_CONTRACT=SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token
 
 # LayerZero Configuration
 NEXT_PUBLIC_LAYERZERO_HUB_EID=${HUB_EID}
@@ -597,15 +604,16 @@ export const CONTRACT_ADDRESSES = {
 } as const;
 
 export const TOKEN_DECIMALS = {
-  USDC: 6,
-  OFTUSDC: 18,
-  VAULT_SHARES: 18,
+  USDC: parseInt(process.env.NEXT_PUBLIC_USDC_DECIMALS || '6'),
+  OFTUSDC: parseInt(process.env.NEXT_PUBLIC_OFT_USDC_DECIMALS || '18'),
+  VAULT_SHARES: parseInt(process.env.NEXT_PUBLIC_VAULT_SHARES_DECIMALS || '18'),
 } as const;
 
 export const NETWORK_CONFIG = {
   name: process.env.NEXT_PUBLIC_NETWORK_NAME || 'localhost',
   chainId: parseInt(process.env.NEXT_PUBLIC_CHAIN_ID || '31337'),
   rpcUrl: process.env.NEXT_PUBLIC_RPC_URL || 'http://localhost:8545',
+  spokeRpcUrl: process.env.NEXT_PUBLIC_SPOKE_RPC_URL || 'http://localhost:8545',
 } as const;
 
 export const LAYERZERO_CONFIG = {
@@ -615,6 +623,18 @@ export const LAYERZERO_CONFIG = {
   spokeEndpoint: CONTRACT_ADDRESSES.SpokeEndpoint,
 } as const;
 
+// Stacks blockchain configuration
+const STACKS_API_URL = process.env.NEXT_PUBLIC_STACKS_API_URL || 'http://localhost:3999';
+
+export const STACKS_CONFIG = {
+  apiUrl: STACKS_API_URL,
+  network: process.env.NEXT_PUBLIC_STACKS_NETWORK || 'devnet',
+  gatewayContract: process.env.NEXT_PUBLIC_STACKS_GATEWAY_CONTRACT || 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway-v1',
+  sbtcTokenContract: process.env.NEXT_PUBLIC_STACKS_SBTC_TOKEN_CONTRACT || 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token',
+  explorerUrl: \`\${STACKS_API_URL}/extended/v1\`,
+} as const;
+
+// Note: Properties have individual caps/targets - these are just examples/defaults if needed
 export const PROPERTY_CONFIG = {
   fundingTarget: process.env.NEXT_PUBLIC_FUNDING_TARGET || '0',
   vaultDepositCap: process.env.NEXT_PUBLIC_VAULT_DEPOSIT_CAP || '0',
@@ -642,9 +662,9 @@ NODE_ENV=development
 # ============================================
 # Stacks Configuration
 # ============================================
-STACKS_NETWORK=testnet
+STACKS_NETWORK=devnet
 STACKS_API_URL=http://localhost:3999
-STACKS_CONTRACT_ADDRESS=ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway
+STACKS_CONTRACT_ADDRESS=ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway-v1
 STACKS_PRIVATE_KEY=753b7cc01a1a2e86221266a154af739463fce51219d97e4f856cd7200c3bd2a601
 STACKS_FEE_RATE=0.000001
 STACKS_MAX_RETRIES=3
@@ -652,7 +672,7 @@ STACKS_MAX_RETRIES=3
 # ============================================
 # EVM Configuration (Auto-configured from deployment)
 # ============================================
-EVM_NETWORK=sepolia
+EVM_NETWORK=localhost
 
 # Using WebSocket for real-time event monitoring (recommended)
 # For HTTP polling, use: http://localhost:8545
@@ -686,7 +706,8 @@ LOG_ENABLE_FILE=false
   console.log('✅ Relayer .env generated:', relayerEnvPath);
   console.log('   📍 StacksCrossChainManager:', await stacksManager.getAddress());
   console.log('   🔑 Relayer Address:', deployer.address);
-  console.log('   ⚠️  Update STACKS_CONTRACT_ADDRESS after deploying Stacks contract!');
+  console.log('   📝 Stacks Gateway: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway-v1');
+  console.log('   ⚠️  Deploy Stacks contract using: cd packages/contracts-stacks && clarinet deployments apply');
 }
 
 main()
