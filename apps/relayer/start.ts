@@ -8,8 +8,8 @@
  *   node dist/start.js
  */
 
-import { RelayerService } from './src/RelayerService';
-import { getConfig, validateConfig, getConfigSummary } from './src/config/index';
+import { RelayerService } from './src/RelayerService.js';
+import { getConfig, validateConfig, getConfigSummary } from './src/config/index.js';
 import * as dotenv from 'dotenv';
 
 // Load environment variables

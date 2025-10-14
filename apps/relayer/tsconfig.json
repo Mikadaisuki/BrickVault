@@ -22,7 +22,8 @@
     "types": ["node"]
   },
   "include": [
-    "src/**/*"
+    "src/**/*",
+    "start.ts"
   ],
   "exclude": [
     "node_modules",
