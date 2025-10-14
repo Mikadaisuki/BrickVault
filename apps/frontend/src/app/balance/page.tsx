@@ -5,7 +5,7 @@ import { useAccount, useReadContract, useWriteContract, useWaitForTransactionRec
 import { parseUnits, formatUnits, pad } from 'viem'
 import { MOCK_USDC_ABI, OFT_USDC_ABI, USDC_OFT_ADAPTER_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, STACKS_CROSS_CHAIN_MANAGER_ABI } from '@brickvault/abi'
 import { Options } from '@layerzerolabs/lz-v2-utilities'
-import { CONTRACT_ADDRESSES, TOKEN_DECIMALS, LAYERZERO_CONFIG } from '../../config/contracts'
+import { CONTRACT_ADDRESSES, TOKEN_DECIMALS, LAYERZERO_CONFIG, STACKS_CONFIG } from '../../config/contracts'
 import { Header } from '@/components/Header'
 import { 
   ArrowRight, 
@@ -681,7 +681,7 @@ export default function BalancePage() {
   // Fetch real STX balance from Stacks API
   const fetchStxBalance = async (address: string): Promise<string> => {
     try {
-      const response = await fetch(`http://localhost:3999/v2/accounts/${address}`)
+      const response = await fetch(`${STACKS_CONFIG.apiUrl}/v2/accounts/${address}`)
       const data = await response.json()
       
       if (data.balance) {
@@ -698,7 +698,7 @@ export default function BalancePage() {
   // Fetch sBTC balance from Stacks Extended API
   const fetchSbtcBalance = async (address: string): Promise<string> => {
     try {
-      const response = await fetch(`http://localhost:3999/extended/v2/addresses/${address}/balances/ft`)
+      const response = await fetch(`${STACKS_CONFIG.apiUrl}/extended/v2/addresses/${address}/balances/ft`)
       const data = await response.json()
       
       if (data.results && Array.isArray(data.results)) {
@@ -736,7 +736,7 @@ export default function BalancePage() {
   // Fetch transaction status from Stacks API
   const fetchTransactionStatus = async (txid: string): Promise<'pending' | 'confirmed' | 'failed'> => {
     try {
-      const response = await fetch(`http://localhost:3999/extended/v1/tx/${txid}`)
+      const response = await fetch(`${STACKS_CONFIG.explorerUrl}/tx/${txid}`)
       const data = await response.json()
       
       console.log('Transaction status:', data.tx_status)
@@ -797,8 +797,10 @@ export default function BalancePage() {
       const { cvToHex } = await import('@stacks/transactions')
       const principalHex = cvToHex(principalCv)
       
+      const [contractAddress, contractName] = STACKS_CONFIG.gatewayContract.split('.')
+      
       const response = await fetch(
-        'http://localhost:3999/v2/contracts/call-read/ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM/brick-vault-gateway/get-evm-custodian',
+        `${STACKS_CONFIG.apiUrl}/v2/contracts/call-read/${contractAddress}/${contractName}/get-evm-custodian`,
         {
           method: 'POST',
           headers: {
@@ -870,10 +872,10 @@ export default function BalancePage() {
       const evmAddressBuffer = Cl.buffer(Buffer.from(evmAddressHex, 'hex'))
       
       const response = await stacksRequest('stx_callContract', {
-        contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
+        contract: STACKS_CONFIG.gatewayContract as `${string}.${string}`,
         functionName: 'register-stacks-address',
         functionArgs: [evmAddressBuffer],
-        network: 'devnet'
+        network: STACKS_CONFIG.network
       })
       
       console.log('Registration transaction ID:', response.txid)
@@ -914,10 +916,10 @@ export default function BalancePage() {
       const evmAddressBuffer = Cl.buffer(Buffer.from(evmAddressHex, 'hex'))
       
       const response = await stacksRequest('stx_callContract', {
-        contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
+        contract: STACKS_CONFIG.gatewayContract as `${string}.${string}`,
         functionName: 'update-evm-custodian',
         functionArgs: [evmAddressBuffer],
-        network: 'devnet'
+        network: STACKS_CONFIG.network
       })
       
       console.log('Update transaction ID:', response.txid)
@@ -942,9 +944,114 @@ export default function BalancePage() {
     }
 
     const amount = parseFloat(depositAmount)
+    
     if (amount < parseFloat(mockMinDeposit)) {
       alert(`Minimum deposit amount is ${mockMinDeposit} sBTC`)
       return  
+    }
+
+    // Pre-check: Verify pool liquidity before attempting deposit
+    try {
+      const [contractAddress, contractName] = STACKS_CONFIG.gatewayContract.split('.')
+      
+      // Get pool amount (USD with 6 decimals)
+      const poolResponse = await fetch(
+        `${STACKS_CONFIG.apiUrl}/v2/contracts/call-read/${contractAddress}/${contractName}/get-pool-amount-usd`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sender: stacksAccount.address,
+            arguments: []
+          })
+        }
+      )
+      
+      if (poolResponse.ok) {
+        const poolData = await poolResponse.json()
+        
+        if (poolData.okay && poolData.result) {
+          const resultHex = poolData.result
+          // Parse the uint result from hex
+          // Clarity serialization: 0x07 = some, 01 = uint type prefix
+          // Remove 0x0701 prefix and parse the remaining hex as the uint value
+          const cleanHex = resultHex.replace('0x0701', '')
+          const poolAmountUsd = parseInt(cleanHex, 16)
+          
+          // Calculate required USD (amount in sBTC * price per sBTC)
+          // sBTC amount with 8 decimals, price with 8 decimals, result in 6 decimals
+          const amountMicro = Math.floor(amount * 100000000) // 8 decimals
+          const requiredUsd = Math.floor((amountMicro * SBTC_PRICE_USD) / 100000000) // Convert to 6 decimals
+          
+          if (poolAmountUsd < requiredUsd) {
+            alert(
+              `⚠️ Insufficient Pool Liquidity!\n\n` +
+              `Required: $${(requiredUsd / 1000000).toFixed(2)} USD\n` +
+              `Available: $${(poolAmountUsd / 1000000).toFixed(2)} USD\n\n` +
+              `The pool doesn't have enough liquidity for this deposit.\n` +
+              `Please try a smaller amount or contact the platform administrator.`
+            )
+            return
+          }
+        }
+      }
+      
+      // Get contract paused status
+      const pausedResponse = await fetch(
+        `${STACKS_CONFIG.apiUrl}/v2/contracts/call-read/${contractAddress}/${contractName}/is-contract-paused`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            sender: stacksAccount.address,
+            arguments: []
+          })
+        }
+      )
+      
+      if (pausedResponse.ok) {
+        const pausedData = await pausedResponse.json()
+        
+        if (pausedData.okay && pausedData.result) {
+          const isPaused = pausedData.result.includes('0x03') // true in Clarity
+          
+          if (isPaused) {
+            alert('⚠️ Contract is currently paused. Deposits are not allowed at this time.')
+            return
+          }
+        }
+      }
+      
+      // Check if user has sBTC from the correct contract
+      const ftBalancesResponse = await fetch(
+        `${STACKS_CONFIG.apiUrl}/extended/v2/addresses/${stacksAccount.address}/balances/ft`
+      )
+      
+      if (ftBalancesResponse.ok) {
+        const ftData = await ftBalancesResponse.json()
+        const expectedTokenId = `${STACKS_CONFIG.sbtcTokenContract}::sbtc-token`
+        
+        const userHasCorrectToken = ftData.results?.some((token: { token: string; balance: string }) => 
+          token.token === expectedTokenId
+        )
+        
+        if (!userHasCorrectToken) {
+          const availableTokens = ftData.results?.filter((t: { token: string }) => 
+            t.token.includes('sbtc')
+          ).map((t: { token: string; balance: string }) => `${t.token} (${(parseInt(t.balance) / 100000000).toFixed(8)} sBTC)`)
+          
+          alert(
+            `⚠️ Wrong sBTC Token Contract!\n\n` +
+            `Expected: ${expectedTokenId}\n\n` +
+            `You have sBTC from:\n${availableTokens?.join('\n') || 'No sBTC tokens found'}\n\n` +
+            `The gateway contract expects sBTC from the deployed contract.\n` +
+            `Please acquire sBTC from the correct contract or update the configuration.`
+          )
+          return
+        }
+      }
+    } catch (error) {
+      console.warn('Error during pre-checks:', error)
     }
 
     setDepositStep('depositing')
@@ -953,17 +1060,18 @@ export default function BalancePage() {
       const amountMicro = Math.floor(amount * 100000000)
       const arg = uintCV(amountMicro);
       
+      // Post-condition: User will send exactly `amount` of sbtc-token to the contract
+      // The contract receives the tokens, so we specify willSendEq (exact amount)
       const postCondition = Pc.principal(stacksAccount.address)
-        .willSendLte(amountMicro)
-        .ft('ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-token', 'sbtc-token');
+        .willSendEq(amountMicro)
+        .ft(STACKS_CONFIG.sbtcTokenContract as `${string}.${string}`, 'sbtc-token');
       
-      // @ts-ignore - v8+ API may not have complete type definitions yet
       const response = await stacksRequest('stx_callContract', {
-        contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
+        contract: STACKS_CONFIG.gatewayContract as `${string}.${string}`,
         functionName: 'deposit-sbtc',
         functionArgs: [arg],
         postConditions: [postCondition],
-        network: 'devnet'
+        network: STACKS_CONFIG.network
       })
 
       if (!response.txid) {
@@ -972,6 +1080,7 @@ export default function BalancePage() {
       
       const depositId = Date.now().toString()
       const expectedOFTUSDC = (parseFloat(depositAmount) * SBTC_PRICE_USD).toLocaleString()
+      
       setDeposits(prev => [{
         id: depositId,
         amount: `${depositAmount} sBTC`,
@@ -984,6 +1093,7 @@ export default function BalancePage() {
       setDepositStep('success')
       
       await refreshBalances()
+      
       setDepositAmount('')
       
       alert(`sBTC deposit transaction submitted! Transaction ID: ${response.txid}. We'll track the status automatically.`)
@@ -2801,7 +2911,7 @@ export default function BalancePage() {
                               <Copy className="h-3 w-3" />
                             </button>
                             <a
-                              href={`http://localhost:3999/extended/v1/tx/${deposit.txHash}`}
+                              href={`${STACKS_CONFIG.explorerUrl}/tx/${deposit.txHash}`}
                               target="_blank"
                               rel="noopener noreferrer"
                               className="p-1 hover:bg-accent rounded"

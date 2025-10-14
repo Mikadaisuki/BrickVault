@@ -313,21 +313,21 @@ export function ContractStatus() {
                   key={`${contract.name}-${contract.chain}-${contract.address}`}
                   className={`border rounded-lg p-4 ${
                     contract.isDeployed 
-                      ? 'border-green-200 bg-green-50' 
-                      : 'border-red-200 bg-red-50'
+                      ? 'border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950/30' 
+                      : 'border-red-200 bg-red-50 dark:border-red-800 dark:bg-red-950/30'
                   }`}
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center space-x-2">
-                      <div className={contract.isDeployed ? 'text-green-600' : 'text-red-600'}>
+                      <div className={contract.isDeployed ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}>
                         {contract.icon}
                       </div>
                       <div className="flex flex-col">
                         <span className="font-medium text-sm">{contract.name}</span>
                         <span className={`text-xs font-medium ${
                           contract.chain.includes('Hub') 
-                            ? 'text-blue-600' 
-                            : 'text-orange-600'
+                            ? 'text-blue-600 dark:text-blue-400' 
+                            : 'text-orange-600 dark:text-orange-400'
                         }`}>
                           {contract.chain}
                         </span>
@@ -335,8 +335,8 @@ export function ContractStatus() {
                     </div>
                     <span className={`px-2 py-1 rounded-full text-xs ${
                       contract.isDeployed 
-                        ? 'bg-green-100 text-green-800' 
-                        : 'bg-red-100 text-red-800'
+                        ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' 
+                        : 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300'
                     }`}>
                       {contract.isDeployed ? 'Deployed' : 'Not Found'}
                     </span>

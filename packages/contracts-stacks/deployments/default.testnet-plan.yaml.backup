@@ -1,0 +1,37 @@
+---
+id: 0
+name: Testnet deployment
+network: testnet
+stacks-node: "https://api.testnet.hiro.so"
+bitcoin-node: "http://blockstack:blockstacksystem@bitcoind.testnet.stacks.co:18332"
+plan:
+  batches:
+    - id: 0
+      transactions:
+        - requirement-publish:
+            contract-id: ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT.sbtc-registry
+            remap-sender: STJ66DVR0C6MDYYZ19X8DDC1VZHEB60Q8XAGW691
+            remap-principals:
+              ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT: STJ66DVR0C6MDYYZ19X8DDC1VZHEB60Q8XAGW691
+            cost: 112090
+            path: "./.cache/requirements/ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT.sbtc-registry.clar"
+            clarity-version: 3
+        - requirement-publish:
+            contract-id: ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT.sbtc-token
+            remap-sender: STJ66DVR0C6MDYYZ19X8DDC1VZHEB60Q8XAGW691
+            remap-principals:
+              ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT: STJ66DVR0C6MDYYZ19X8DDC1VZHEB60Q8XAGW691
+            cost: 47600
+            path: "./.cache/requirements/ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT.sbtc-token.clar"
+            clarity-version: 3
+      epoch: "3.1"
+    - id: 1
+      transactions:
+        - contract-publish:
+            contract-name: brick-vault-gateway-v1
+            expected-sender: STJ66DVR0C6MDYYZ19X8DDC1VZHEB60Q8XAGW691
+            cost: 90240
+            path: contracts/brick-vault-gateway.clar
+            anchor-block-only: true
+            clarity-version: 3
+      epoch: "3.2"

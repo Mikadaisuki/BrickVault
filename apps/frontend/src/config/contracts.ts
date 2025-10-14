@@ -45,6 +45,17 @@ export const LAYERZERO_CONFIG = {
   spokeEndpoint: CONTRACT_ADDRESSES.SpokeEndpoint,
 } as const;
 
+// Stacks blockchain configuration
+const STACKS_API_URL = process.env.NEXT_PUBLIC_STACKS_API_URL || 'http://localhost:3999';
+
+export const STACKS_CONFIG = {
+  apiUrl: STACKS_API_URL,
+  network: process.env.NEXT_PUBLIC_STACKS_NETWORK || 'devnet',
+  gatewayContract: process.env.NEXT_PUBLIC_STACKS_GATEWAY_CONTRACT || 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
+  sbtcTokenContract: process.env.NEXT_PUBLIC_STACKS_SBTC_TOKEN_CONTRACT || 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-token',
+  explorerUrl: `${STACKS_API_URL}/extended/v1`,
+} as const;
+
 // Note: Properties have individual caps/targets - these are just examples/defaults if needed
 export const PROPERTY_CONFIG = {
   fundingTarget: process.env.NEXT_PUBLIC_FUNDING_TARGET || '0',

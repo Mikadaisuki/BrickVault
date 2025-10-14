@@ -74,7 +74,7 @@
   (let ((current-locked (var-get total-sbtc-locked)))
     (if (is-eq tx-sender (var-get contract-owner))
       (if (> amount u0)
-        (match (as-contract (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
+        (match (as-contract (contract-call? 'ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT.sbtc-token transfer 
                  amount 
                  tx-sender 
                  recipient 
@@ -141,7 +141,7 @@
           (>= amount (var-get min-deposit-amount))
           (is-some (map-get? stacks-to-evm-custodian {stacks-address: tx-sender}))
           (>= current-pool usd-value))
-      (match (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token transfer 
+      (match (contract-call? 'ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT.sbtc-token transfer 
                amount 
                tx-sender 
                (as-contract tx-sender) 
@@ -209,7 +209,7 @@
 
 ;; Demo/Status function for testing
 (define-read-only (get-contract-sbtc-balance)
-  (ok (contract-call? 'SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-token get-balance (as-contract tx-sender))))
+  (ok (contract-call? 'ST1F7QA2MDF17S807EPA36TSS8AMEFY4KA9TVGWXT.sbtc-token get-balance (as-contract tx-sender))))
 
 (define-read-only (get-demo-status)
   (ok (tuple 

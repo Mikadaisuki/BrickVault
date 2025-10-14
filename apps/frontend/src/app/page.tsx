@@ -3,6 +3,7 @@
 import React from 'react'
 import { motion } from 'framer-motion'
 import Link from 'next/link'
+import Image from 'next/image'
 import { ArrowRight, BookOpen } from 'lucide-react'
 import { GridBackground } from '@/components/GridBackground'
 import { BackgroundBeams } from '@/components/BackgroundBeams'
@@ -35,21 +36,39 @@ export default function Home() {
                 <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
                 <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
               </span>
-              <span className="text-sm text-blue-300">Tokenized Real Estate Platform</span>
+              <span className="text-sm text-blue-300">Cross-Chain Tokenized Real Estate Platform</span>
             </div>
           </motion.div>
 
-          {/* Main Title with Gradient Effect */}
+          {/* Main Logo */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
+            className="mb-8"
           >
-            <h1 className="text-7xl md:text-9xl font-bold mb-6 tracking-tight">
-              <span className="inline-block bg-gradient-to-r from-white via-blue-200 to-blue-400 bg-clip-text text-transparent">
-                BrickVault
-              </span>
-            </h1>
+            {/* Dark mode logo */}
+            <div className="dark:block hidden">
+              <Image
+                src="/BrickVault_white.png"
+                alt="BrickVault"
+                width={600}
+                height={200}
+                className="mx-auto max-w-full h-auto"
+                priority
+              />
+            </div>
+            {/* Light mode logo */}
+            <div className="dark:hidden block">
+              <Image
+                src="/BrickVault_black.png"
+                alt="BrickVault"
+                width={600}
+                height={200}
+                className="mx-auto max-w-full h-auto"
+                priority
+              />
+            </div>
           </motion.div>
 
           {/* Subtitle */}
@@ -57,7 +76,7 @@ export default function Home() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="text-xl md:text-2xl text-gray-400 mb-12 max-w-3xl mx-auto leading-relaxed"
+            className="text-xl md:text-2xl text-gray-400 dark:text-gray-300 mb-12 max-w-3xl mx-auto leading-relaxed"
           >
             The future of real estate investment powered by blockchain technology
           </motion.p>

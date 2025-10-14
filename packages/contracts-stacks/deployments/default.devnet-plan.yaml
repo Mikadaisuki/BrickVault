@@ -9,17 +9,6 @@ plan:
     - id: 0
       transactions:
         - requirement-publish:
-            contract-id: SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard
-            remap-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            remap-principals:
-              SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
-            cost: 8400
-            path: "./.cache/requirements/SP3FBR2AGK5H9QBDH3EEN6DF8EK8JY7RX8QJ5SVTE.sip-010-trait-ft-standard.clar"
-            clarity-version: 1
-      epoch: "2.0"
-    - id: 1
-      transactions:
-        - requirement-publish:
             contract-id: SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-registry
             remap-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             remap-principals:
@@ -44,10 +33,10 @@ plan:
             path: "./.cache/requirements/SM3VDXK3WZZSA84XXFKAFAF15NNZX32CTSG82JFQ4.sbtc-deposit.clar"
             clarity-version: 3
       epoch: "3.0"
-    - id: 2
+    - id: 1
       transactions:
         - contract-publish:
-            contract-name: brick-vault-gateway
+            contract-name: brick-vault-gateway-v1
             expected-sender: ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM
             cost: 90240
             path: contracts/brick-vault-gateway.clar

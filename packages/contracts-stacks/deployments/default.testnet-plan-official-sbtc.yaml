@@ -9,7 +9,7 @@ plan:
     - id: 0
       transactions:
         - contract-publish:
-            contract-name: brick-vault-gateway-v4
+            contract-name: brick-vault-gateway-v3
             expected-sender: STJ66DVR0C6MDYYZ19X8DDC1VZHEB60Q8XAGW691
             cost: 90240
             path: contracts/brick-vault-gateway.clar

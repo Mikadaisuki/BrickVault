@@ -47,7 +47,6 @@ async function main() {
     console.log('   - Network:', summary.stacks.network);
     console.log('   - API URL:', summary.stacks.apiUrl);
     console.log('   - Contract:', summary.stacks.contractAddress);
-    console.log('   - Private Key:', summary.stacks.privateKey);
     console.log('   \n   EVM:');
     console.log('   - Network:', summary.evm.network);
     console.log('   - RPC URL:', summary.evm.rpcUrl);

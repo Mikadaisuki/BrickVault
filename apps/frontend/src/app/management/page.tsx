@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from 'wagmi'
 import { Building2, Users, Settings, Plus, Pause, Play, DollarSign, AlertTriangle, Eye, MapPin, Calendar, CheckCircle, FileText, TrendingUp, X, Clock, Vote, Loader2, ExternalLink, Copy, CheckCircle2, Coins, RefreshCw } from 'lucide-react'
 import { PROPERTY_REGISTRY_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, PROPERTY_DAO_ABI, PROPERTY_DAO_FACTORY_ABI, STACKS_CROSS_CHAIN_MANAGER_ABI } from '@brickvault/abi'
-import { CONTRACT_ADDRESSES, NETWORK_CONFIG } from '../../config/contracts'
+import { CONTRACT_ADDRESSES, NETWORK_CONFIG, STACKS_CONFIG } from '../../config/contracts'
 import { Header } from '@/components/Header'
 import { formatUnits, parseUnits } from 'viem'
 import { Pc, uintCV, principalCV, deserializeCV } from '@stacks/transactions'
@@ -469,13 +469,15 @@ export default function ManagementPage() {
     setLoadingStacksData(true)
     try {
       // Fetch pool amount
+      const [contractAddress, contractName] = STACKS_CONFIG.gatewayContract.split('.')
+      
       const poolResponse = await fetch(
-        'http://localhost:3999/v2/contracts/call-read/ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM/brick-vault-gateway/get-pool-amount-usd',
+        `${STACKS_CONFIG.apiUrl}/v2/contracts/call-read/${contractAddress}/${contractName}/get-pool-amount-usd`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            sender: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+            sender: contractAddress,
             arguments: []
           })
         }
@@ -507,12 +509,12 @@ export default function ManagementPage() {
 
       // Fetch sBTC price
       const priceResponse = await fetch(
-        'http://localhost:3999/v2/contracts/call-read/ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM/brick-vault-gateway/get-sbtc-price-usd',
+        `${STACKS_CONFIG.apiUrl}/v2/contracts/call-read/${contractAddress}/${contractName}/get-sbtc-price-usd`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            sender: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+            sender: contractAddress,
             arguments: []
           })
         }
@@ -542,12 +544,12 @@ export default function ManagementPage() {
 
       // Fetch contract sBTC balance
       const balanceResponse = await fetch(
-        'http://localhost:3999/v2/contracts/call-read/ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM/brick-vault-gateway/get-contract-sbtc-balance',
+        `${STACKS_CONFIG.apiUrl}/v2/contracts/call-read/${contractAddress}/${contractName}/get-contract-sbtc-balance`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            sender: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM',
+            sender: contractAddress,
             arguments: []
           })
         }
@@ -1521,7 +1523,7 @@ export default function ManagementPage() {
 
   // Function to deposit liquidation proceeds
   const handleDepositLiquidationProceeds = async () => {
-    if (!isOwner || !selectedPropertyForLiquidationProceeds || !liquidationProceedsAmount) return
+    if (!isOwner || !selectedPropertyForLiquidationProceeds || !liquidationProceedsAmount || !publicClient) return
 
     if (isNaN(Number(liquidationProceedsAmount)) || Number(liquidationProceedsAmount) <= 0) {
       showToast('Please enter a valid amount', 'error')
@@ -1534,7 +1536,7 @@ export default function ManagementPage() {
       const amountInWei = parseUnits(liquidationProceedsAmount, 18)
       
       // First approve OFTUSDC
-      await writeContractAsync({
+      const approveHash = await writeContractAsync({
         address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
         abi: [
           {
@@ -1552,13 +1554,19 @@ export default function ManagementPage() {
         args: [selectedPropertyForLiquidationProceeds.vault as `0x${string}`, amountInWei]
       })
 
+      // Wait for approval to be confirmed
+      await publicClient.waitForTransactionReceipt({ hash: approveHash })
+
       // Then deposit liquidation proceeds
-      const hash = await writeContractAsync({
+      const depositHash = await writeContractAsync({
         address: selectedPropertyForLiquidationProceeds.vault as `0x${string}`,
         abi: PROPERTY_VAULT_GOVERNANCE_ABI,
         functionName: 'depositLiquidationProceeds',
         args: [amountInWei]
       })
+      
+      // Wait for deposit to be confirmed
+      await publicClient.waitForTransactionReceipt({ hash: depositHash })
       
       showToast(`Successfully deposited ${liquidationProceedsAmount} OFTUSDC liquidation proceeds`, 'success')
       
@@ -1722,7 +1730,7 @@ export default function ManagementPage() {
 
   // Fund EVM pool
   const handleFundPool = async () => {
-    if (!isOwner || !fundPoolAmount) return
+    if (!isOwner || !fundPoolAmount || !publicClient) return
 
     if (isNaN(Number(fundPoolAmount)) || Number(fundPoolAmount) <= 0) {
       showToast('Please enter a valid amount', 'error')
@@ -1734,7 +1742,7 @@ export default function ManagementPage() {
       const amountInWei = parseUnits(fundPoolAmount, 18)
       
       // First approve OFTUSDC
-      await writeContractAsync({
+      const approveHash = await writeContractAsync({
         address: CONTRACT_ADDRESSES.OFTUSDC as `0x${string}`,
         abi: [
           {
@@ -1752,13 +1760,19 @@ export default function ManagementPage() {
         args: [stacksManagerAddress as `0x${string}`, amountInWei]
       })
 
+      // Wait for approval to be confirmed
+      await publicClient.waitForTransactionReceipt({ hash: approveHash })
+
       // Then fund the pool
-      await writeContractAsync({
+      const fundHash = await writeContractAsync({
         address: stacksManagerAddress as `0x${string}`,
         abi: STACKS_CROSS_CHAIN_MANAGER_ABI,
         functionName: 'fundLiquidityPool',
         args: [amountInWei]
       })
+
+      // Wait for funding transaction to be confirmed
+      await publicClient.waitForTransactionReceipt({ hash: fundHash })
 
       showToast(`Successfully funded pool with ${fundPoolAmount} OFTUSDC`, 'success')
       setFundPoolAmount('')
@@ -1863,10 +1877,10 @@ export default function ManagementPage() {
       const amountWithDecimals = Math.floor(parseFloat(stacksPoolAmountInput) * 1_000_000)
       
       const response = await stacksRequest('stx_callContract', {
-        contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
+        contract: STACKS_CONFIG.gatewayContract as `${string}.${string}`,
         functionName: 'set-pool-amount-usd',
         functionArgs: [uintCV(amountWithDecimals)],
-        network: 'devnet'
+        network: STACKS_CONFIG.network
       })
 
       if (response.txid) {
@@ -1906,10 +1920,10 @@ export default function ManagementPage() {
       const priceWith8Decimals = Math.floor(parseFloat(stacksSbtcPriceInput) * 100000000)
       
       const response = await stacksRequest('stx_callContract', {
-        contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
+        contract: STACKS_CONFIG.gatewayContract as `${string}.${string}`,
         functionName: 'set-sbtc-price-usd',
         functionArgs: [uintCV(priceWith8Decimals)],
-        network: 'devnet'
+        network: STACKS_CONFIG.network
       })
 
       if (response.txid) {
@@ -1952,17 +1966,17 @@ export default function ManagementPage() {
       const recipientCV = principalCV(stacksWithdrawRecipient)
       
       // Post condition: Contract will send sBTC tokens to recipient
-      const postCondition = Pc.principal('ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway')
+      const postCondition = Pc.principal(STACKS_CONFIG.gatewayContract as `${string}.${string}`)
         .willSendLte(amountWith8Decimals)
-        .ft('ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.sbtc-token', 'sbtc-token')
+        .ft(STACKS_CONFIG.sbtcTokenContract as `${string}.${string}`, 'sbtc-token')
       
       // @ts-ignore - Stacks Connect API types
       const response = await stacksRequest('stx_callContract', {
-        contract: 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM.brick-vault-gateway',
+        contract: STACKS_CONFIG.gatewayContract as `${string}.${string}`,
         functionName: 'withdraw-sbtc',
         functionArgs: [amountCV, recipientCV],
         postConditions: [postCondition],
-        network: 'devnet'
+        network: STACKS_CONFIG.network
       })
 
       if (response.txid) {
@@ -1973,7 +1987,7 @@ export default function ManagementPage() {
         setTimeout(async () => {
           try {
             const txidClean = txid.startsWith('0x') ? txid.slice(2) : txid
-            const txResponse = await fetch(`http://localhost:3999/extended/v1/tx/0x${txidClean}`)
+            const txResponse = await fetch(`${STACKS_CONFIG.explorerUrl}/tx/0x${txidClean}`)
             if (txResponse.ok) {
               const txData = await txResponse.json()
               
@@ -2055,22 +2069,50 @@ export default function ManagementPage() {
   // Show network warning if not on expected network
   if (mounted && isConnected && chainId !== expectedChainId) {
     return (
-      <div className="container mx-auto px-4 py-8">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-6">
-          <div className="flex items-center">
-            <AlertTriangle className="h-5 w-5 text-yellow-400 mr-2" />
-            <h2 className="text-lg font-semibold text-yellow-800">Wrong Network</h2>
-          </div>
-          <p className="text-yellow-700 mt-2">
-            Please switch to {NETWORK_CONFIG.name} network (Chain ID: {expectedChainId}) to access the management panel.
-          </p>
-          <div className="mt-4">
-            <button
-              onClick={() => switchChain({ chainId: expectedChainId })}
-              className="bg-yellow-600 hover:bg-yellow-700 text-white px-4 py-2 rounded text-sm"
-            >
-              Switch to {NETWORK_CONFIG.name}
-            </button>
+      <div className="min-h-screen bg-background">
+        <Header />
+        <div className="container mx-auto px-4 py-8">
+          <div className="bg-red-50 dark:bg-red-950 border-2 border-red-300 dark:border-red-800 rounded-lg p-8">
+            <div className="flex items-center mb-4">
+              <AlertTriangle className="h-8 w-8 text-red-500 mr-3" />
+              <h2 className="text-2xl font-bold text-red-800 dark:text-red-300">⚠️ Wrong Network Detected</h2>
+            </div>
+            <div className="space-y-4">
+              <p className="text-red-700 dark:text-red-400 text-lg">
+                The Management Panel requires connection to <strong>Sepolia Testnet</strong> (Chain ID: {expectedChainId}).
+              </p>
+              <div className="bg-red-100 dark:bg-red-900 border border-red-200 dark:border-red-700 rounded-lg p-4">
+                <div className="space-y-2 text-sm text-red-800 dark:text-red-300">
+                  <p><strong>Current Network:</strong> {NETWORK_CONFIG.name} (Chain ID: {chainId})</p>
+                  <p><strong>Required Network:</strong> Sepolia Testnet (Chain ID: {expectedChainId})</p>
+                  <p><strong>Your Address:</strong> <span className="font-mono">{address}</span></p>
+                </div>
+              </div>
+              <div className="bg-yellow-50 dark:bg-yellow-950 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+                <div className="flex items-start">
+                  <AlertTriangle className="h-5 w-5 text-yellow-600 dark:text-yellow-400 mr-2 mt-0.5" />
+                  <div className="text-sm text-yellow-800 dark:text-yellow-300">
+                    <p className="font-semibold mb-1">Why Sepolia?</p>
+                    <p>All property management operations, including creating properties, deploying DAOs, and managing the liquidity pool, must be performed on the Sepolia testnet where the core contracts are deployed.</p>
+                  </div>
+                </div>
+              </div>
+              <div className="flex gap-4 pt-4">
+                <button
+                  onClick={() => switchChain({ chainId: expectedChainId })}
+                  className="flex items-center gap-2 bg-red-600 hover:bg-red-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors shadow-lg"
+                >
+                  <RefreshCw className="h-5 w-5" />
+                  Switch to Sepolia Testnet
+                </button>
+                <a
+                  href="/"
+                  className="flex items-center gap-2 bg-gray-600 hover:bg-gray-700 text-white px-6 py-3 rounded-lg font-semibold transition-colors"
+                >
+                  Go to Home
+                </a>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -2148,6 +2190,26 @@ export default function ManagementPage() {
       )}
       
       <div className="container mx-auto px-4 py-8">
+        {/* Network Status Banner */}
+        <div className="mb-6 bg-green-50 dark:bg-green-950 border-2 border-green-300 dark:border-green-700 rounded-lg p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="flex items-center">
+                <div className="w-3 h-3 rounded-full bg-green-500 mr-2 animate-pulse"></div>
+                <span className="text-sm font-semibold text-green-800 dark:text-green-300">
+                  ✓ Connected to Sepolia Testnet
+                </span>
+              </div>
+              <div className="text-xs text-green-700 dark:text-green-400 font-mono bg-green-100 dark:bg-green-900 px-2 py-1 rounded">
+                Chain ID: {chainId}
+              </div>
+            </div>
+            <div className="text-xs text-green-600 dark:text-green-400">
+              All management functions are available
+            </div>
+          </div>
+        </div>
+
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2">Platform Management</h1>
           <p className="text-muted-foreground">Manage your BrickVault platform and properties</p>
@@ -2188,6 +2250,18 @@ export default function ManagementPage() {
           <Settings className="mr-2 h-5 w-5" />
           Network, Connection & Owner Status
         </h2>
+        
+        {/* Sepolia Requirement Notice */}
+        <div className="mb-4 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+            <div className="text-sm text-blue-800 dark:text-blue-300">
+              <p className="font-semibold mb-1">Sepolia Testnet Required</p>
+              <p>All property management operations must be performed on Sepolia Testnet (Chain ID: {expectedChainId}). The page will automatically prompt you to switch if you connect with a different network.</p>
+            </div>
+          </div>
+        </div>
+
         <div className="space-y-4">
           {/* Connection Status Row */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2198,7 +2272,7 @@ export default function ManagementPage() {
                   chainId === expectedChainId ? 'bg-green-500' : 'bg-red-500'
                 }`}></div>
                 <p className="font-semibold text-sm">
-                  {chainId === expectedChainId ? `${NETWORK_CONFIG.name} (${expectedChainId})` : `Chain ID: ${chainId}`}
+                  {chainId === expectedChainId ? `Sepolia (${expectedChainId})` : `Chain ID: ${chainId}`}
                 </p>
               </div>
             </div>
@@ -3308,7 +3382,7 @@ export default function ManagementPage() {
                       value={propertyName}
                       onChange={(e) => setPropertyName(e.target.value)}
                       placeholder="e.g., Miami Luxury Condo"
-                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
+                      className="w-full p-3 border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                       required
                     />
                     {!propertyName && (
@@ -3328,7 +3402,7 @@ export default function ManagementPage() {
                         placeholder="1000000"
                         min="1"
                         step="1"
-                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 pr-12"
+                        className="w-full p-3 border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 pr-12"
                         required
                       />
                       <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">
@@ -3434,7 +3508,7 @@ export default function ManagementPage() {
                             value={manualVaultAddress}
                             onChange={(e) => setManualVaultAddress(e.target.value)}
                             placeholder="0x..."
-                            className="w-full p-2 border rounded text-sm"
+                            className="w-full p-2 border rounded text-sm bg-background text-foreground placeholder:text-muted-foreground"
                           />
                         </div>
                         <div className="flex space-x-2">
@@ -3492,7 +3566,7 @@ export default function ManagementPage() {
                       value={fundingDeadline}
                       onChange={(e) => setFundingDeadline(e.target.value)}
                       min={new Date().toISOString().slice(0, 16)}
-                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
+                      className="w-full p-3 border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                       required
                     />
                     {fundingDeadline && new Date(fundingDeadline) <= new Date() && (
@@ -3741,7 +3815,7 @@ export default function ManagementPage() {
                       placeholder="0.00"
                       min="0"
                       step="0.01"
-                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200 pr-12"
+                      className="w-full p-3 border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all duration-200 pr-12"
                       required
                     />
                     <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">
@@ -3878,7 +3952,7 @@ export default function ManagementPage() {
                       onChange={(e) => setNavUpdateValue(e.target.value)}
                       placeholder="0.00"
                       step="0.01"
-                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 pr-12"
+                      className="w-full p-3 border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 pr-12"
                       required
                     />
                     <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">
@@ -3987,7 +4061,7 @@ export default function ManagementPage() {
                       placeholder="0.00"
                       min="0"
                       step="0.01"
-                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 pr-12"
+                      className="w-full p-3 border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200 pr-12"
                       required
                     />
                     <div className="absolute right-3 top-1/2 transform -translate-y-1/2 text-sm text-muted-foreground">
@@ -4256,7 +4330,7 @@ export default function ManagementPage() {
                     value={purchasePropertyAddress}
                     onChange={(e) => setPurchasePropertyAddress(e.target.value)}
                     placeholder="Enter property address"
-                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    className="w-full p-3 border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                     required
                   />
                 </div>
@@ -4302,6 +4376,17 @@ export default function ManagementPage() {
       {/* Pool Management Tab */}
       {activeTab === 'pool' && (
         <>
+          {/* Sepolia Network Requirement Notice */}
+          <div className="mb-6 bg-blue-50 dark:bg-blue-950 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <div className="flex items-start gap-2">
+              <AlertTriangle className="h-5 w-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+              <div className="text-sm text-blue-800 dark:text-blue-300">
+                <p className="font-semibold mb-1">⚠️ Sepolia Testnet Required for Pool Management</p>
+                <p>All liquidity pool operations (funding, withdrawals, price updates) must be performed on Sepolia Testnet where the StacksCrossChainManager and gateway contracts are deployed. You are currently connected to Sepolia (Chain ID: {chainId}).</p>
+              </div>
+            </div>
+          </div>
+
           {/* Pool Overview - EVM */}
           <div className="bg-card rounded-lg border p-6 mb-6">
             <div className="flex items-center justify-between mb-4">
@@ -4323,7 +4408,7 @@ export default function ManagementPage() {
             </div>
             
             {/* Pool Stats */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
               <div className="bg-accent rounded-lg p-4">
                 <h3 className="text-sm text-muted-foreground mb-2">EVM Pool Balance</h3>
                 <p className="text-2xl font-bold text-primary">
@@ -4337,13 +4422,6 @@ export default function ManagementPage() {
                   ${sbtcPrice ? parseFloat(formatUnits(sbtcPrice, 8)).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '0.00'}
                 </p>
                 <p className="text-xs text-muted-foreground mt-1">Current price (8 decimals)</p>
-              </div>
-              <div className="bg-accent rounded-lg p-4">
-                <h3 className="text-sm text-muted-foreground mb-2">EVM Pool USD Value</h3>
-                <p className="text-2xl font-bold text-blue-600">
-                  {poolBalance ? `$${(parseFloat(formatUnits(poolBalance as bigint, 18))).toLocaleString()}` : '$0'}
-                </p>
-                <p className="text-xs text-muted-foreground mt-1">OFTUSDC value in USD</p>
               </div>
             </div>
 
@@ -4362,7 +4440,7 @@ export default function ManagementPage() {
                     value={fundPoolAmount}
                     onChange={(e) => setFundPoolAmount(e.target.value)}
                     placeholder="Amount (OFTUSDC)"
-                    className="w-full p-2 border rounded mb-2 text-sm"
+                    className="w-full p-2 border rounded mb-2 text-sm bg-background text-foreground placeholder:text-muted-foreground"
                     disabled={isFundingPool}
                   />
                   <button
@@ -4392,7 +4470,7 @@ export default function ManagementPage() {
                     value={evmSbtcPrice}
                     onChange={(e) => setEvmSbtcPrice(e.target.value)}
                     placeholder="Price (USD)"
-                    className="w-full p-2 border rounded mb-2 text-sm"
+                    className="w-full p-2 border rounded mb-2 text-sm bg-background text-foreground placeholder:text-muted-foreground"
                     disabled={isUpdatingEvmPrice}
                   />
                   <button
@@ -4422,7 +4500,7 @@ export default function ManagementPage() {
                     value={withdrawPoolAmount}
                     onChange={(e) => setWithdrawPoolAmount(e.target.value)}
                     placeholder="Amount (OFTUSDC)"
-                    className="w-full p-2 border rounded mb-2 text-sm"
+                    className="w-full p-2 border rounded mb-2 text-sm bg-background text-foreground placeholder:text-muted-foreground"
                     disabled={isWithdrawingPool}
                   />
                   <button
@@ -4557,7 +4635,7 @@ export default function ManagementPage() {
                       value={stacksPoolAmountInput}
                       onChange={(e) => setStacksPoolAmountInput(e.target.value)}
                       placeholder="Amount (USD)"
-                      className="flex-1 p-2 border rounded text-sm"
+                      className="flex-1 p-2 border rounded text-sm bg-background text-foreground placeholder:text-muted-foreground"
                       disabled={isSettingStacksPool || !stacksAccount}
                     />
                     <button
@@ -4602,7 +4680,7 @@ export default function ManagementPage() {
                       value={stacksSbtcPriceInput}
                       onChange={(e) => setStacksSbtcPriceInput(e.target.value)}
                       placeholder="Price (USD)"
-                      className="flex-1 p-2 border rounded text-sm"
+                      className="flex-1 p-2 border rounded text-sm bg-background text-foreground placeholder:text-muted-foreground"
                       disabled={isUpdatingStacksPrice || !stacksAccount}
                     />
                     <button
@@ -4649,7 +4727,7 @@ export default function ManagementPage() {
                     value={stacksWithdrawAmount}
                     onChange={(e) => setStacksWithdrawAmount(e.target.value)}
                     placeholder="Amount (sBTC)"
-                    className="w-full p-2 border rounded mb-2 text-sm"
+                    className="w-full p-2 border rounded mb-2 text-sm bg-background text-foreground placeholder:text-muted-foreground"
                     disabled={isWithdrawingStacksSbtc || !stacksAccount}
                   />
                   <div className="flex gap-2 mb-2">
@@ -4658,7 +4736,7 @@ export default function ManagementPage() {
                       value={stacksWithdrawRecipient}
                       onChange={(e) => setStacksWithdrawRecipient(e.target.value)}
                       placeholder="Recipient (Stacks Address)"
-                      className="flex-1 p-2 border rounded text-sm"
+                      className="flex-1 p-2 border rounded text-sm bg-background text-foreground placeholder:text-muted-foreground"
                       disabled={isWithdrawingStacksSbtc || !stacksAccount}
                     />
                     <button

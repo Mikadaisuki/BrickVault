@@ -110,7 +110,6 @@ function generateEnvFile(environment: Environment) {
   envContent += `STACKS_NETWORK=${config.stacks.network}\n`;
   envContent += `STACKS_API_URL=${config.stacks.apiUrl}\n`;
   envContent += `STACKS_CONTRACT_ADDRESS=${config.stacks.contractAddress}\n`;
-  envContent += `STACKS_PRIVATE_KEY=${config.stacks.privateKey}\n`;
   envContent += `STACKS_FEE_RATE=${config.stacks.feeRate}\n\n`;
   
   envContent += `# EVM Configuration\n`;

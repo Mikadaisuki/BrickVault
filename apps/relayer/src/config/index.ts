@@ -9,7 +9,6 @@ export interface StacksConfig {
   network: 'mainnet' | 'testnet';
   apiUrl: string;
   contractAddress: string;
-  privateKey: string;
   feeRate?: number;
   maxRetries?: number;
 }
@@ -51,7 +50,6 @@ const DEFAULT_CONFIGS: Record<Environment, RelayerConfig> = {
       network: 'testnet',
       apiUrl: 'https://api.testnet.hiro.so',
       contractAddress: 'SP[TEST-CONTRACT].brick-vault-gateway',
-      privateKey: '0x[TEST-STACKS-KEY]',
       feeRate: 0.000001,
       maxRetries: 3
     },
@@ -83,7 +81,6 @@ const DEFAULT_CONFIGS: Record<Environment, RelayerConfig> = {
       network: 'testnet',
       apiUrl: 'https://api.testnet.hiro.so',
       contractAddress: 'SP[DEV-CONTRACT].brick-vault-gateway',
-      privateKey: process.env.STACKS_PRIVATE_KEY || '0x[DEV-STACKS-KEY]',
       feeRate: 0.000001, // 1 micro-STX
       maxRetries: 3
     },
@@ -115,7 +112,6 @@ const DEFAULT_CONFIGS: Record<Environment, RelayerConfig> = {
       network: 'testnet',
       apiUrl: 'https://api.testnet.hiro.so',
       contractAddress: 'SP[STAGING-CONTRACT].brick-vault-gateway',
-      privateKey: process.env.STACKS_PRIVATE_KEY || '0x[STAGING-STACKS-KEY]',
       feeRate: 0.000001,
       maxRetries: 5
     },
@@ -147,7 +143,6 @@ const DEFAULT_CONFIGS: Record<Environment, RelayerConfig> = {
       network: 'mainnet',
       apiUrl: 'https://api.hiro.so',
       contractAddress: 'SP[PROD-CONTRACT].brick-vault-gateway',
-      privateKey: process.env.STACKS_PRIVATE_KEY || '',
       feeRate: 0.000001,
       maxRetries: 10
     },
@@ -206,9 +201,6 @@ export function getConfig(environment?: Environment): RelayerConfig {
   if (process.env.STACKS_CONTRACT_ADDRESS) {
     config.stacks.contractAddress = process.env.STACKS_CONTRACT_ADDRESS;
   }
-  if (process.env.STACKS_PRIVATE_KEY) {
-    config.stacks.privateKey = process.env.STACKS_PRIVATE_KEY;
-  }
   if (process.env.STACKS_FEE_RATE) {
     config.stacks.feeRate = parseFloat(process.env.STACKS_FEE_RATE);
   }
@@ -265,9 +257,6 @@ export function validateConfig(config: RelayerConfig): { isValid: boolean; error
   const errors: string[] = [];
 
   // Validate required fields
-  if (!config.stacks.privateKey || config.stacks.privateKey.includes('[DEV-') || config.stacks.privateKey.includes('[STAGING-') || config.stacks.privateKey.includes('[PROD-')) {
-    errors.push('Stacks private key is required and must be set');
-  }
   if (!config.evm.privateKey || config.evm.privateKey.includes('[DEV-') || config.evm.privateKey.includes('[STAGING-') || config.evm.privateKey.includes('[PROD-')) {
     errors.push('EVM private key is required and must be set');
   }
@@ -316,8 +305,7 @@ export function getConfigSummary(config: RelayerConfig) {
       apiUrl: config.stacks.apiUrl,
       contractAddress: config.stacks.contractAddress,
       feeRate: config.stacks.feeRate,
-      maxRetries: config.stacks.maxRetries,
-      privateKey: config.stacks.privateKey ? '***' + config.stacks.privateKey.slice(-4) : 'not set'
+      maxRetries: config.stacks.maxRetries
     },
     evm: {
       network: config.evm.network,
