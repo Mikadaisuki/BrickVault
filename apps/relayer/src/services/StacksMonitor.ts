@@ -18,9 +18,11 @@ import { connectWebSocketClient } from '@stacks/blockchain-api-client';
 import type { RpcAddressTxNotificationParams } from '@stacks/stacks-blockchain-api-types';
 import { RelayerConfig } from '../config/index.js';
 import { StacksEvent } from '../types';
+import { LogService } from './LogService';
 
 export class StacksMonitor {
   private config: RelayerConfig;
+  private logService: LogService;
   private lastProcessedBlock: number = 0;
   private isMonitoring: boolean = false;
   private processedTransactions: Set<string> = new Set();
@@ -28,8 +30,9 @@ export class StacksMonitor {
   private wsClient: Awaited<ReturnType<typeof connectWebSocketClient>> | null = null;
   private subscription: { unsubscribe: () => Promise<void> } | null = null;
 
-  constructor(config: RelayerConfig) {
+  constructor(config: RelayerConfig, logService: LogService) {
     this.config = config;
+    this.logService = logService;
   }
 
   private getNetwork(): StacksNetwork {
@@ -227,6 +230,12 @@ export class StacksMonitor {
           continue;
         }
 
+        this.logService.info('stacks-monitor', '📡 sBTC Deposit Detected', {
+          txId: uniqueId,
+          amount: asset.amount,
+          sender: asset.sender
+        });
+
         console.log(`\n📡 sBTC Deposit Detected: ${uniqueId}`);
         console.log(`   Amount: ${asset.amount} sBTC`);
         console.log(`   From: ${asset.sender}`);
@@ -234,6 +243,7 @@ export class StacksMonitor {
         // Extract sender from event
         const sender = asset.sender;
         if (!sender) {
+          this.logService.warn('stacks-monitor', 'No sender address, skipping event');
           console.warn('   ⚠️ No sender address, skipping');
           continue;
         }
@@ -244,10 +254,19 @@ export class StacksMonitor {
         const evmCustodian = await this.getEVMCustodian(sender);
         
         if (!evmCustodian) {
+          this.logService.warn('stacks-monitor', 'No EVM custodian registered', {
+            sender,
+            hint: 'User must call register-stacks-address first'
+          });
           console.warn(`   ⚠️ No EVM custodian registered for ${sender}`);
           console.warn(`   💡 User must call register-stacks-address first\n`);
           continue;
         }
+
+        this.logService.info('stacks-monitor', 'EVM custodian found for deposit', {
+          sender,
+          evmCustodian
+        });
 
         console.log(`   To: ${evmCustodian} (EVM custodian)`);
 

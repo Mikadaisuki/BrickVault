@@ -13,11 +13,13 @@
 import { ethers } from 'ethers';
 import { RelayerConfig } from '../config/index.js';
 import { StacksEvent } from '../types';
+import { LogService } from './LogService';
 
 export class EVMMonitor {
   private provider: ethers.Provider;
   private wallet: ethers.Wallet;
   private config: RelayerConfig;
+  private logService: LogService;
   private lastProcessedBlock: number = 0;
   private isMonitoring: boolean = false;
   private stacksManagerContract: ethers.Contract;
@@ -26,8 +28,9 @@ export class EVMMonitor {
   private messageConfirmationCallback: ((messageId: string, messageType: number) => void) | null = null;
   private useWebSocket: boolean = false;
 
-  constructor(config: RelayerConfig) {
+  constructor(config: RelayerConfig, logService: LogService) {
     this.config = config;
+    this.logService = logService;
     
     // Use WebSocket if URL starts with ws:// or wss://
     this.useWebSocket = config.evm.rpcUrl.startsWith('ws://') || config.evm.rpcUrl.startsWith('wss://');
@@ -377,11 +380,24 @@ export class EVMMonitor {
         }
       );
 
+      this.logService.info('evm-transaction', '📤 Transaction sent to EVM', {
+        txHash: tx.hash,
+        stacksTxHash: stacksEvent.stacksTxHash,
+        amount: stacksEvent.amount
+      });
+
       console.log(`📤 Transaction sent to EVM: ${tx.hash}`);
       console.log(`⏳ Waiting for confirmation...`);
 
       // Wait for transaction to be mined
       const receipt = await tx.wait();
+
+      this.logService.info('evm-transaction', '✅ Stacks deposit processed on EVM', {
+        txHash: receipt.hash,
+        blockNumber: receipt.blockNumber,
+        gasUsed: receipt.gasUsed.toString(),
+        stacksTxHash: stacksEvent.stacksTxHash
+      });
 
       console.log(`✅ Stacks deposit processed on EVM!`);
       console.log(`   Transaction: ${receipt.hash}`);
@@ -390,6 +406,11 @@ export class EVMMonitor {
 
       return receipt.hash;
     } catch (error) {
+      this.logService.error('evm-transaction', '❌ Error processing Stacks deposit on EVM', {
+        error: error instanceof Error ? error.message : String(error),
+        stacksTxHash: stacksEvent.stacksTxHash,
+        amount: stacksEvent.amount
+      });
       console.error('❌ Error processing Stacks deposit on EVM:', error);
       // Remove from processing set on error
       this.processedStacksTxHashes.delete(stacksEvent.stacksTxHash);

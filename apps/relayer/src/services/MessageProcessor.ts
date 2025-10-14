@@ -13,6 +13,7 @@
 import { StacksMonitor } from './StacksMonitor';
 import { EVMMonitor } from './EVMMonitor';
 import { RelayerConfig } from '../config/index.js';
+import { LogService } from './LogService';
 import { 
   StacksEvent, 
   ProcessedMessage 
@@ -22,14 +23,16 @@ export class MessageProcessor {
   private stacksMonitor: StacksMonitor;
   private evmMonitor: EVMMonitor;
   private config: RelayerConfig;
+  private logService: LogService;
   private processedMessages: Map<string, ProcessedMessage> = new Map();
   private successCount: number = 0;
   private failureCount: number = 0;
 
-  constructor(config: RelayerConfig) {
+  constructor(config: RelayerConfig, logService: LogService) {
     this.config = config;
-    this.stacksMonitor = new StacksMonitor(config);
-    this.evmMonitor = new EVMMonitor(config);
+    this.logService = logService;
+    this.stacksMonitor = new StacksMonitor(config, logService);
+    this.evmMonitor = new EVMMonitor(config, logService);
     
     // Set up callback for Stacks events
     this.stacksMonitor.setEventCallback(this.handleStacksEvent.bind(this));
@@ -42,6 +45,11 @@ export class MessageProcessor {
    * Start the message processor
    */
   async start(): Promise<void> {
+    this.logService.info('message-processor', '🚀 Starting cross-chain relayer...', {
+      stacksContract: this.config.stacks.contractAddress,
+      evmContract: this.config.evm.stacksManagerAddress
+    });
+
     console.log('🚀 Starting cross-chain relayer...');
     console.log('📍 Stacks Contract:', this.config.stacks.contractAddress);
     console.log('📍 EVM Contract:', this.config.evm.stacksManagerAddress);
@@ -50,6 +58,7 @@ export class MessageProcessor {
     await this.stacksMonitor.startMonitoring();
     await this.evmMonitor.startMonitoring();
 
+    this.logService.info('message-processor', '✅ Relayer started successfully - watching for events');
     console.log('✅ Relayer started successfully');
     console.log('👀 Watching for Stacks deposit events...');
   }
@@ -74,6 +83,14 @@ export class MessageProcessor {
     const messageId = this.generateMessageId(stacksEvent);
     
     try {
+      this.logService.info('stacks-event', '🔔 New Stacks deposit detected', {
+        eventId: stacksEvent.id,
+        user: stacksEvent.user,
+        amount: stacksEvent.amount,
+        evmCustodian: stacksEvent.evmCustodian,
+        stacksTxHash: stacksEvent.stacksTxHash
+      });
+
       console.log(`\n🔔 New Stacks deposit detected!`);
       console.log(`   Event ID: ${stacksEvent.id}`);
       console.log(`   User: ${stacksEvent.user}`);
@@ -83,17 +100,25 @@ export class MessageProcessor {
 
       // Check if already processed
       if (this.processedMessages.has(messageId)) {
+        this.logService.warn('stacks-event', 'Message already processed', { messageId });
         console.log(`⚠️ Message already processed: ${messageId}`);
         return;
       }
 
       // Forward to EVM
+      this.logService.info('stacks-event', '🔄 Forwarding to EVM...');
       console.log(`\n🔄 Forwarding to EVM...`);
       const evmTxHash = await this.evmMonitor.processStacksDeposit(stacksEvent);
 
       // Mark as successful
       this.markMessageProcessed(messageId, true, evmTxHash);
       this.successCount++;
+
+      this.logService.info('stacks-event', '✅ Successfully processed deposit', {
+        evmTxHash,
+        totalSuccessful: this.successCount,
+        totalFailed: this.failureCount
+      });
 
       console.log(`\n✅ Successfully processed deposit!`);
       console.log(`   EVM TX: ${evmTxHash}`);
@@ -102,6 +127,12 @@ export class MessageProcessor {
     } catch (error) {
       this.markMessageProcessed(messageId, false, undefined, error instanceof Error ? error.message : String(error));
       this.failureCount++;
+
+      this.logService.error('stacks-event', '❌ Failed to process deposit', {
+        error: error instanceof Error ? error.message : String(error),
+        totalSuccessful: this.successCount,
+        totalFailed: this.failureCount
+      });
 
       console.error(`\n❌ Failed to process deposit!`);
       console.error(`   Error: ${error instanceof Error ? error.message : String(error)}`);

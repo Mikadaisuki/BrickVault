@@ -6,16 +6,19 @@
 import { MessageProcessor } from './services/MessageProcessor';
 import { RelayerConfig } from './config/index.js';
 import { RelayerStats } from './types';
+import { LogService, LogEntry, LogLevel } from './services/LogService';
 
 export class RelayerService {
   private messageProcessor: MessageProcessor;
   private config: RelayerConfig;
   private isRunning: boolean = false;
   private startTime: number = 0;
+  private logService: LogService;
 
   constructor(config: RelayerConfig) {
     this.config = config;
-    this.messageProcessor = new MessageProcessor(config);
+    this.logService = new LogService(1000); // Keep last 1000 logs
+    this.messageProcessor = new MessageProcessor(config, this.logService);
   }
 
   /**
@@ -23,9 +26,18 @@ export class RelayerService {
    */
   async start(): Promise<void> {
     if (this.isRunning) {
+      this.logService.warn('relayer', 'Relayer service is already running');
       console.log('⚠️ Relayer service is already running');
       return;
     }
+
+    this.logService.info('relayer', '🚀 Starting BrickVault Cross-Chain Relayer...', {
+      stacksNetwork: this.config.stacks.network,
+      stacksApi: this.config.stacks.apiUrl,
+      evmNetwork: this.config.evm.network,
+      evmRpc: this.config.evm.rpcUrl,
+      monitoringInterval: this.config.monitoring.interval
+    });
 
     console.log('🚀 Starting BrickVault Cross-Chain Relayer...');
     console.log(`📊 Configuration:`);
@@ -40,9 +52,13 @@ export class RelayerService {
       this.isRunning = true;
       this.startTime = Date.now();
       
+      this.logService.info('relayer', '✅ Relayer service started successfully');
       console.log('✅ Relayer service started successfully');
       console.log('🔄 Monitoring cross-chain events...');
     } catch (error) {
+      this.logService.error('relayer', '❌ Failed to start relayer service', {
+        error: error instanceof Error ? error.message : String(error)
+      });
       console.error('❌ Failed to start relayer service:', error);
       throw error;
     }
@@ -53,18 +69,24 @@ export class RelayerService {
    */
   async stop(): Promise<void> {
     if (!this.isRunning) {
+      this.logService.warn('relayer', 'Relayer service is not running');
       console.log('⚠️ Relayer service is not running');
       return;
     }
 
+    this.logService.info('relayer', '⏹️ Stopping BrickVault Cross-Chain Relayer...');
     console.log('⏹️ Stopping BrickVault Cross-Chain Relayer...');
 
     try {
       await this.messageProcessor.stop();
       this.isRunning = false;
       
+      this.logService.info('relayer', '✅ Relayer service stopped successfully');
       console.log('✅ Relayer service stopped successfully');
     } catch (error) {
+      this.logService.error('relayer', '❌ Error stopping relayer service', {
+        error: error instanceof Error ? error.message : String(error)
+      });
       console.error('❌ Error stopping relayer service:', error);
       throw error;
     }
@@ -228,5 +250,46 @@ export class RelayerService {
       monitoring: this.config.monitoring,
       logging: this.config.logging
     };
+  }
+
+  /**
+   * Get logs with optional filtering
+   */
+  getLogs(options?: {
+    level?: LogLevel;
+    category?: string;
+    limit?: number;
+    offset?: number;
+    since?: number;
+  }): LogEntry[] {
+    return this.logService.getLogs(options);
+  }
+
+  /**
+   * Get log statistics
+   */
+  getLogStats() {
+    return this.logService.getStats();
+  }
+
+  /**
+   * Get available log categories
+   */
+  getLogCategories(): string[] {
+    return this.logService.getCategories();
+  }
+
+  /**
+   * Clear all logs
+   */
+  clearLogs(): void {
+    this.logService.clear();
+  }
+
+  /**
+   * Get the log service instance (for internal use by other services)
+   */
+  getLogService(): LogService {
+    return this.logService;
   }
 }
