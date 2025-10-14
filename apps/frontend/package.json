@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev",
     "build": "next build",
+    "build:deps": "pnpm --filter @brickvault/abi build",
     "start": "next start",
     "lint": "next lint",
     "test": "vitest",

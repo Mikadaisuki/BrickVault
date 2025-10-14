@@ -1,0 +1,6 @@
+{
+  "buildCommand": "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @brickvault/abi build && cd apps/frontend && next build",
+  "installCommand": "cd ../.. && pnpm install --frozen-lockfile",
+  "framework": "nextjs"
+}
+

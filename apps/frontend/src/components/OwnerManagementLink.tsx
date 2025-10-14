@@ -28,7 +28,7 @@ export function OwnerManagementLink() {
 
   useEffect(() => {
     if (mounted && owner && address) {
-      setIsOwner(address.toLowerCase() === owner.toLowerCase())
+      setIsOwner(address.toLowerCase() === (owner as string).toLowerCase())
     }
   }, [mounted, owner, address])
 

@@ -1,12 +1,8 @@
 'use client'
 
-import dynamic from 'next/dynamic'
 import { Header } from '@/components/Header'
 import { Building2, Settings, Activity, TrendingUp, Globe, Zap, Bitcoin } from 'lucide-react'
 import Link from 'next/link'
-
-// Dynamically import components that use wagmi hooks with SSR disabled
-const PropertyOverview = dynamic(() => import('@/components/PropertyOverview').then(mod => ({ default: mod.PropertyOverview })), { ssr: false })
 
 export default function Dashboard() {
   return (
@@ -126,11 +122,6 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
-        </div>
-
-        {/* Property Preview */}
-        <div className="mt-8">
-          <PropertyOverview />
         </div>
       </main>
     </div>
