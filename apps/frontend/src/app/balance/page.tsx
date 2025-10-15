@@ -93,7 +93,7 @@ export default function BalancePage() {
   
   // Handle hydration by tracking if we're on the client
   const [isClient, setIsClient] = useState(false)
-  const [activeTab, setActiveTab] = useState<TabType>('hub')
+  const [activeTab, setActiveTab] = useState<TabType>('stacks')
   
   // Stacks wallet state
   const [stacksAccount, setStacksAccount] = useState<StacksAccount | null>(null)
@@ -1598,30 +1598,6 @@ export default function BalancePage() {
         {/* Tab Switcher */}
         <div className="bg-card rounded-lg border p-2 mb-8 grid grid-cols-3 gap-2">
           <button
-            onClick={() => setActiveTab('hub')}
-            className={`py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
-              activeTab === 'hub'
-                ? 'bg-primary text-primary-foreground shadow-md'
-                : 'bg-transparent text-muted-foreground hover:bg-accent'
-            }`}
-          >
-            <Zap className="h-5 w-5" />
-            <span className="hidden sm:inline">Hub Chain</span>
-            <span className="sm:hidden">Hub</span>
-          </button>
-          <button
-            onClick={() => setActiveTab('spoke')}
-            className={`py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
-              activeTab === 'spoke'
-                ? 'bg-primary text-primary-foreground shadow-md'
-                : 'bg-transparent text-muted-foreground hover:bg-accent'
-            }`}
-          >
-            <Globe className="h-5 w-5" />
-            <span className="hidden sm:inline">Spoke Chain</span>
-            <span className="sm:hidden">Spoke</span>
-          </button>
-          <button
             onClick={() => setActiveTab('stacks')}
             className={`py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
               activeTab === 'stacks'
@@ -1632,6 +1608,30 @@ export default function BalancePage() {
             <Bitcoin className="h-5 w-5" />
             <span className="hidden sm:inline">Stacks</span>
             <span className="sm:hidden">Stacks</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('hub')}
+            className={`py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+              activeTab === 'hub'
+                ? 'bg-primary text-primary-foreground shadow-md'
+                : 'bg-transparent text-muted-foreground hover:bg-accent'
+            }`}
+          >
+            <Zap className="h-5 w-5" />
+            <span className="hidden sm:inline">Sepolia (Hub)</span>
+            <span className="sm:hidden">Sepolia</span>
+          </button>
+          <button
+            onClick={() => setActiveTab('spoke')}
+            className={`py-3 px-4 rounded-lg font-semibold transition-all duration-200 flex items-center justify-center gap-2 ${
+              activeTab === 'spoke'
+                ? 'bg-primary text-primary-foreground shadow-md'
+                : 'bg-transparent text-muted-foreground hover:bg-accent'
+            }`}
+          >
+            <Globe className="h-5 w-5" />
+            <span className="hidden sm:inline">BSC Testnet (Spoke)</span>
+            <span className="sm:hidden">BSC</span>
           </button>
         </div>
 
@@ -1653,7 +1653,7 @@ export default function BalancePage() {
                   <div className="flex items-center justify-between mb-4">
                     <h2 className="text-2xl font-semibold flex items-center gap-2">
                       <DollarSign className="h-6 w-6 text-primary" />
-                      Your EVM Balances
+                      Your EVM Balances on Sepolia (Hub chain)
                     </h2>
                     <button
                       onClick={refreshAllBalances}
@@ -1667,19 +1667,34 @@ export default function BalancePage() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div className="bg-accent p-4 rounded-lg">
-                      <h3 className="font-semibold text-foreground">MockUSDC</h3>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-foreground">MockUSDC</h3>
+                        <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-1 rounded">
+                          Sepolia (Hub)
+                        </span>
+                      </div>
                       <p className="text-2xl font-bold text-primary">
                         {usdcBalance ? formatUnits(usdcBalance as bigint, TOKEN_DECIMALS.USDC) : '0'} USDC
                       </p>
                     </div>
                     <div className="bg-accent p-4 rounded-lg">
-                      <h3 className="font-semibold text-foreground">OFTUSDC</h3>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-foreground">OFTUSDC</h3>
+                        <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-1 rounded">
+                          Sepolia (Hub)
+                        </span>
+                      </div>
                       <p className="text-2xl font-bold text-primary">
                         {oftBalance ? formatUnits(oftBalance as bigint, TOKEN_DECIMALS.OFTUSDC) : '0'} OFTUSDC
                       </p>
                     </div>
                     <div className="bg-accent p-4 rounded-lg">
-                      <h3 className="font-semibold text-foreground">Vault Shares</h3>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-foreground">Vault Shares</h3>
+                        <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-1 rounded">
+                          Sepolia (Hub)
+                        </span>
+                      </div>
                       <p className="text-2xl font-bold text-primary">
                         {vaultBalance ? formatUnits(vaultBalance as bigint, TOKEN_DECIMALS.VAULT_SHARES) : '0'} Shares
                       </p>
@@ -1691,7 +1706,7 @@ export default function BalancePage() {
                 <div className="bg-card rounded-lg border p-6 mb-8">
                   <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
                     <ArrowRight className="h-6 w-6 text-primary" />
-                    Step 1: Convert USDC to OFTUSDC (Hub Chain)
+                    Convert USDC to OFTUSDC (Hub Chain)
                   </h2>
                   
                   {/* Wrong Chain Warning */}
@@ -1856,11 +1871,11 @@ export default function BalancePage() {
                   </div>
                 </div>
 
-                {/* Step 2: Unwrap OFTUSDC back to USDC */}
+                {/* Unwrap OFTUSDC back to USDC */}
                 <div className="bg-card rounded-lg border p-6 mb-8">
                   <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
                     <ArrowRight className="h-6 w-6 text-primary" />
-                    Step 2: Unwrap OFTUSDC to Hub Chain USDC
+                    Unwrap OFTUSDC to Hub Chain USDC
                   </h2>
                   
                   {/* Wrong Chain Warning */}
@@ -2085,18 +2100,26 @@ export default function BalancePage() {
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="bg-accent p-4 rounded-lg">
-                      <h3 className="font-semibold text-foreground">Spoke MockUSDC</h3>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-foreground">Spoke MockUSDC</h3>
+                        <span className="text-xs bg-orange-100 text-orange-800 dark:bg-orange-900/30 dark:text-orange-300 px-2 py-1 rounded">
+                          BSC Testnet
+                        </span>
+                      </div>
                       <p className="text-2xl font-bold text-primary">
                         {spokeUsdcBalance ? formatUnits(spokeUsdcBalance as bigint, TOKEN_DECIMALS.USDC) : '0'} USDC
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">On Spoke Chain (Arbitrum/Optimism)</p>
                     </div>
                     <div className="bg-accent p-4 rounded-lg">
-                      <h3 className="font-semibold text-foreground">Hub OFTUSDC</h3>
+                      <div className="flex items-center justify-between mb-2">
+                        <h3 className="font-semibold text-foreground">Hub OFTUSDC</h3>
+                        <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-1 rounded">
+                          Sepolia (Hub)
+                        </span>
+                      </div>
                       <p className="text-2xl font-bold text-green-600">
                         {oftBalance ? formatUnits(oftBalance as bigint, TOKEN_DECIMALS.OFTUSDC) : '0'} OFTUSDC
                       </p>
-                      <p className="text-xs text-muted-foreground mt-1">After bridging to hub</p>
                     </div>
                   </div>
                 </div>
@@ -2506,10 +2529,15 @@ export default function BalancePage() {
 
                 {/* EVM Connection */}
                 <div className="bg-accent rounded-lg p-4">
-                  <h3 className="font-semibold mb-3 flex items-center gap-2">
-                    <Zap className="h-5 w-5 text-blue-500" />
-                    EVM Network
-                  </h3>
+                  <div className="flex items-start justify-between mb-3">
+                    <h3 className="font-semibold flex items-center gap-2">
+                      <Zap className="h-5 w-5 text-blue-500" />
+                      EVM Network
+                    </h3>
+                    <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 px-2 py-1 rounded">
+                      Sepolia (Hub)
+                    </span>
+                  </div>
                   <div className="space-y-2">
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-muted-foreground">Status:</span>
@@ -2834,28 +2862,6 @@ export default function BalancePage() {
                 </div>
               </div>
             )}
-
-            {/* Platform Statistics */}
-            <div className="bg-card rounded-lg border p-6 mb-8">
-              <h2 className="text-2xl font-semibold mb-4 flex items-center gap-2">
-                <TrendingUp className="h-6 w-6 text-primary" />
-                Platform Statistics
-              </h2>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="bg-accent p-4 rounded-lg">
-                  <h3 className="font-semibold text-foreground">Total Value Locked</h3>
-                  <p className="text-2xl font-bold text-orange-600">${mockTotalLocked}M</p>
-                </div>
-                <div className="bg-accent p-4 rounded-lg">
-                  <h3 className="font-semibold text-foreground">Total Deposits</h3>
-                  <p className="text-2xl font-bold text-primary">{deposits.length}</p>
-                </div>
-                <div className="bg-accent p-4 rounded-lg">
-                  <h3 className="font-semibold text-foreground">Active Users</h3>
-                  <p className="text-2xl font-bold text-green-600">1,247</p>
-                </div>
-              </div>
-            </div>
 
             {/* Deposit History */}
             {deposits.length > 0 && (

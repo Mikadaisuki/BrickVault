@@ -18,6 +18,15 @@ export default function CrossChainPage() {
         </p>
       </div>
 
+      <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 my-6">
+        <p className="text-yellow-900 dark:text-yellow-100 font-medium mb-2">
+          📝 Implementation Note
+        </p>
+        <p className="text-yellow-700 dark:text-yellow-300 text-sm mb-0">
+          Currently using <strong>BSC Testnet</strong> as spoke chain. All EVM chains are theoretically adaptable via LayerZero OFT.
+        </p>
+      </div>
+
       <p className="text-gray-600 dark:text-gray-400 text-lg">
         BrickVault operates on a hub-and-spoke model with <strong className="text-gray-900 dark:text-white">Sepolia as the central hub</strong>, 
         connecting multiple spoke chains and Stacks blockchain for seamless cross-chain property investment.
@@ -30,7 +39,7 @@ export default function CrossChainPage() {
       <div className="space-y-6">
         <div className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-l-4 border-blue-500 dark:border-blue-400 rounded-lg">
           <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">
-            🌐 Spoke Chains → Hub (Sepolia)
+            🌐 Spoke Chains(BSC or other) → Hub (Sepolia)
           </h3>
           <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
             <div className="flex items-center justify-center space-x-2">
