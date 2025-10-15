@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAccount, useReadContract, useWriteContract, useWaitForTransactionReceipt, useChainId, useSwitchChain, usePublicClient } from 'wagmi'
-import { Building2, Users, DollarSign, Vote, Clock, CheckCircle, AlertTriangle, Eye, MapPin, Calendar, TrendingUp, Loader2, ExternalLink, Copy, CheckCircle2, X, RefreshCw, Info, CheckCircle as CheckIcon, XCircle, AlertCircle } from 'lucide-react'
+import { Building2, Users, DollarSign, Vote, Clock, CheckCircle, AlertTriangle, Eye, MapPin, Calendar, TrendingUp, Loader2, ExternalLink, Copy, CheckCircle2, X, RefreshCw, Info, CheckCircle as CheckIcon, XCircle, AlertCircle, Coins } from 'lucide-react'
 import { PROPERTY_REGISTRY_ABI, PROPERTY_VAULT_GOVERNANCE_ABI, PROPERTY_DAO_ABI, OFT_USDC_ABI } from '@brickvault/abi'
 import { CONTRACT_ADDRESSES, NETWORK_CONFIG } from '../../config/contracts'
 import { Header } from '@/components/Header'
@@ -18,6 +18,9 @@ interface UserInvestment {
   totalShares: bigint
   sharePercentage: number
   daoStage: number
+  // Property token information
+  propertyTokenAddress?: string
+  propertyTokenTotalSupply?: bigint
   // Proposal information
   proposals: Proposal[]
 }
@@ -200,6 +203,44 @@ export default function InvestmentsPage() {
               // DAO info fetch failed, use defaults
             }
 
+            // Get property token address and total supply if exists
+            let propertyTokenAddress: string | undefined
+            let propertyTokenTotalSupply: bigint | undefined
+
+            try {
+              const tokenAddress = await publicClient.readContract({
+                address: property.vault as `0x${string}`,
+                abi: PROPERTY_VAULT_GOVERNANCE_ABI,
+                functionName: 'getPropertyToken',
+              }) as string
+              
+              if (tokenAddress && tokenAddress !== '0x0000000000000000000000000000000000000000') {
+                propertyTokenAddress = tokenAddress
+                
+                // Get total supply of the property token
+                try {
+                  const totalSupply = await publicClient.readContract({
+                    address: tokenAddress as `0x${string}`,
+                    abi: [
+                      {
+                        "inputs": [],
+                        "name": "totalSupply",
+                        "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
+                        "stateMutability": "view",
+                        "type": "function"
+                      }
+                    ],
+                    functionName: 'totalSupply',
+                  }) as bigint
+                  propertyTokenTotalSupply = totalSupply
+                } catch (error) {
+                  // Total supply fetch failed
+                }
+              }
+            } catch (error) {
+              // Property token address not available
+            }
+
             // Fetch proposals for this property
             const proposals = await fetchPropertyProposals(daoAddress, i)
 
@@ -213,6 +254,8 @@ export default function InvestmentsPage() {
               totalShares,
               sharePercentage,
               daoStage,
+              propertyTokenAddress,
+              propertyTokenTotalSupply,
               proposals
             })
           }
@@ -1053,6 +1096,41 @@ export default function InvestmentsPage() {
                           </span>
                         </div>
                       </div>
+
+                      {/* Property Token Status */}
+                      {selectedInvestment.propertyTokenAddress && (
+                        <div className="border-t pt-4">
+                          <div className="flex items-center mb-3">
+                            <Coins className="h-4 w-4 mr-2 text-purple-600" />
+                            <span className="text-sm font-medium">Property Token</span>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <span className="text-sm text-muted-foreground">Token Address:</span>
+                              <span className="font-mono text-xs bg-purple-500/20 text-purple-400 border border-purple-500/30 px-2 py-1 rounded">
+                                {selectedInvestment.propertyTokenAddress.slice(0, 6)}...{selectedInvestment.propertyTokenAddress.slice(-4)}
+                              </span>
+                            </div>
+                            {selectedInvestment.propertyTokenTotalSupply !== undefined && (
+                              <div className="flex justify-between">
+                                <span className="text-sm text-muted-foreground">Total Supply (NAV):</span>
+                                <span className="font-semibold text-purple-800">
+                                  {formatUnits(selectedInvestment.propertyTokenTotalSupply, 18)} PROP
+                                </span>
+                              </div>
+                            )}
+                          </div>
+                          <div className="mt-3 bg-purple-50 border border-purple-200 rounded-lg p-3">
+                            <div className="flex items-start">
+                              <Coins className="h-4 w-4 text-purple-600 mr-2 mt-0.5" />
+                              <div className="text-sm text-purple-800">
+                                <p className="font-medium">Property Token:</p>
+                                <p>This token represents ownership stake in the physical property and its NAV(1:1USDC) value.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

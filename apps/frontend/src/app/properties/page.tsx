@@ -1129,12 +1129,6 @@ export default function PropertiesPage() {
                     className="w-full h-full object-cover"
                   />
                   
-                  {/* Status Badge */}
-                  <div className="absolute top-4 left-4">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(property.status)}`}>
-                      {property.status}
-                    </span>
-                  </div>
                   
                   {/* Favorite Button */}
                   <div className="absolute top-4 right-4">
@@ -1175,7 +1169,12 @@ export default function PropertiesPage() {
                   {/* Header */}
                   <div className="mb-4">
                     <div className="flex items-start justify-between mb-2">
-                      <h3 className="text-xl font-semibold line-clamp-1 text-orange-600">{property.name}</h3>
+                      <div className="flex items-center gap-3 flex-1">
+                        <h3 className="text-xl font-semibold line-clamp-1 text-orange-600">{property.name}</h3>
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(property.status)}`}>
+                          {property.status}
+                        </span>
+                      </div>
                     </div>
                     <p className="text-muted-foreground flex items-center text-sm">
                       <MapPin className="h-3 w-3 mr-1" />
