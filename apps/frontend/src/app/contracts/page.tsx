@@ -5,7 +5,6 @@ import { Header } from '@/components/Header'
 
 // Dynamically import components that use wagmi hooks with SSR disabled
 const ContractStatus = dynamic(() => import('@/components/ContractStatus').then(mod => ({ default: mod.ContractStatus })), { ssr: false })
-const CrossChainStatus = dynamic(() => import('@/components/CrossChainStatus').then(mod => ({ default: mod.CrossChainStatus })), { ssr: false })
 
 export default function ContractsPage() {
   return (
@@ -18,13 +17,12 @@ export default function ContractsPage() {
             Contracts
           </h1>
           <p className="text-muted-foreground">
-            Monitor contract status and cross-chain operations
+            Monitor contract status and deployment information
           </p>
         </div>
 
         <div className="space-y-8">
           <ContractStatus />
-          <CrossChainStatus />
         </div>
       </main>
     </div>

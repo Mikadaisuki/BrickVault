@@ -24,36 +24,20 @@ export default function Home() {
       {/* Main Content */}
       <div className="relative z-10 flex items-center justify-center min-h-screen px-4">
         <div className="text-center max-w-5xl mx-auto">
-          {/* Animated Badge */}
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
-            className="mb-8 inline-block"
-          >
-            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-blue-500/20 bg-blue-500/10 backdrop-blur-sm">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
-              </span>
-              <span className="text-sm text-blue-300">Cross-Chain Tokenized Real Estate Platform</span>
-            </div>
-          </motion.div>
-
           {/* Main Logo */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.1 }}
-            className="mb-8"
+            transition={{ duration: 0.5 }}
+            className="mb-1"
           >
             {/* Dark mode logo */}
             <div className="dark:block hidden">
               <Image
                 src="/BrickVault_white.png"
                 alt="BrickVault"
-                width={600}
-                height={200}
+                width={700}
+                height={267}
                 className="mx-auto max-w-full h-auto"
                 priority
               />
@@ -63,23 +47,29 @@ export default function Home() {
               <Image
                 src="/BrickVault_black.png"
                 alt="BrickVault"
-                width={600}
-                height={200}
+                width={700}
+                height={267}
                 className="mx-auto max-w-full h-auto"
                 priority
               />
             </div>
           </motion.div>
 
-          {/* Subtitle */}
-          <motion.p
+          {/* Animated Badge */}
+          <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5, delay: 0.2 }}
-            className="text-xl md:text-2xl text-gray-400 dark:text-gray-300 mb-12 max-w-3xl mx-auto leading-relaxed"
+            transition={{ duration: 0.5, delay: 0.1 }}
+            className="mb-1 inline-block"
           >
-            The future of real estate investment powered by blockchain technology
-          </motion.p>
+            <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-blue-500/20 bg-blue-500/10 backdrop-blur-sm">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-600"></span>
+              </span>
+              <span className="text-lg text-blue-300">Cross-Chain Tokenized Real Estate Platform</span>
+            </div>
+          </motion.div>
 
           {/* CTA Buttons */}
           <motion.div
@@ -88,7 +78,7 @@ export default function Home() {
             transition={{ duration: 0.5, delay: 0.3 }}
             className="flex flex-col sm:flex-row gap-4 justify-center items-center"
           >
-            <Link href="/dashboard">
+            <Link href="/docs">
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
@@ -112,32 +102,6 @@ export default function Home() {
                 Explore Properties
               </motion.button>
             </Link>
-          </motion.div>
-
-          {/* Floating Elements */}
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 1, delay: 0.5 }}
-            className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-8 max-w-4xl mx-auto"
-          >
-            {[
-              { label: 'Cross-Chain', value: 'LayerZero', icon: '🌐' },
-              { label: 'Blockchain', value: 'Ethereum & Stacks', icon: '⛓️' },
-              { label: 'Security', value: 'Audited Contracts', icon: '🔒' },
-            ].map((item, index) => (
-              <motion.div
-                key={index}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.6 + index * 0.1 }}
-                className="p-6 rounded-2xl border border-blue-500/20 bg-blue-500/5 backdrop-blur-sm hover:border-blue-500/40 hover:bg-blue-500/10 transition-all duration-300"
-              >
-                <div className="text-3xl mb-3">{item.icon}</div>
-                <div className="text-sm text-gray-400 mb-1">{item.label}</div>
-                <div className="text-white font-semibold">{item.value}</div>
-              </motion.div>
-            ))}
           </motion.div>
         </div>
       </div>

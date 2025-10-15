@@ -1,6 +1,6 @@
 'use client'
 
-import { Building2, Menu } from 'lucide-react'
+import { Building2, Menu, BookOpen } from 'lucide-react'
 import { WalletConnectButton } from './WalletConnectButton'
 import { OwnerManagementLink } from './OwnerManagementLink'
 import { ThemeToggle } from './ThemeToggle'
@@ -30,6 +30,10 @@ export function Header() {
             </a>
             <a href="/contracts" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors">
               Contracts
+            </a>
+            <a href="/docs" className="text-sm font-medium text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1">
+              <BookOpen className="h-4 w-4" />
+              Docs
             </a>
             <OwnerManagementLink />
           </nav>

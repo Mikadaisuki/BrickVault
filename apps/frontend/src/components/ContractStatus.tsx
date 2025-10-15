@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useAccount, useReadContract } from 'wagmi'
 import { Building2, Layers, Users, DollarSign, Globe, Shield, Activity, Settings } from 'lucide-react'
-import { CONTRACT_ADDRESSES as SHARED_CONTRACT_ADDRESSES, NETWORK_CONFIG } from '../config/contracts'
+import { CONTRACT_ADDRESSES as SHARED_CONTRACT_ADDRESSES, NETWORK_CONFIG, STACKS_CONFIG } from '../config/contracts'
 
 // Use shared contract addresses from config
 const CONTRACT_ADDRESSES = {
@@ -39,9 +39,10 @@ interface ContractStatus {
   address: string
   icon: React.ReactNode
   category: string
-  chain: 'Hub (Sepolia)' | 'Spoke (BNB Testnet)' | 'Both'
+  chain: 'Hub (Sepolia)' | 'Spoke (BNB Testnet)' | 'Stacks' | 'Both'
   isDeployed: boolean
   owner?: string
+  isStacksContract?: boolean
 }
 
 export function ContractStatus() {
@@ -155,6 +156,14 @@ export function ContractStatus() {
       icon: <Globe className="h-5 w-5" />,
       category: 'Cross-Chain Layer',
       chain: 'Hub (Sepolia)' as const
+    },
+    {
+      name: 'Stacks Gateway',
+      address: STACKS_CONFIG.gatewayContract,
+      icon: <Shield className="h-5 w-5" />,
+      category: 'Cross-Chain Layer',
+      chain: 'Stacks' as const,
+      isStacksContract: true
     }
   ].filter(contract => contract.address && contract.address.length > 0)
 
@@ -166,6 +175,15 @@ export function ContractStatus() {
       
       for (const contract of contractDefinitions) {
         try {
+         
+          if (contract.isStacksContract) {
+            contractStatuses.push({
+              ...contract,
+              isDeployed: true 
+            })
+            continue
+          }
+          
           // Determine which RPC to use based on chain
           const rpcUrl = contract.chain.includes('Spoke') 
             ? NETWORK_CONFIG.spokeRpcUrl 
@@ -327,6 +345,8 @@ export function ContractStatus() {
                         <span className={`text-xs font-medium ${
                           contract.chain.includes('Hub') 
                             ? 'text-blue-600 dark:text-blue-400' 
+                            : contract.chain === 'Stacks'
+                            ? 'text-purple-600 dark:text-purple-400'
                             : 'text-orange-600 dark:text-orange-400'
                         }`}>
                           {contract.chain}
