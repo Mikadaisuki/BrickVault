@@ -1,6 +1,7 @@
 'use client'
 
-import { Building2, Menu, BookOpen } from 'lucide-react'
+import { Menu, BookOpen } from 'lucide-react'
+import Image from 'next/image'
 import { WalletConnectButton } from './WalletConnectButton'
 import { OwnerManagementLink } from './OwnerManagementLink'
 import { ThemeToggle } from './ThemeToggle'
@@ -11,7 +12,15 @@ export function Header() {
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           <div className="flex items-center space-x-4">
-            <Building2 className="h-8 w-8 text-primary" />
+            <Image 
+              src="/BrickVault_white.png" 
+              alt="BrickVault Logo" 
+              width={48} 
+              height={48} 
+              className="h-12 w-12"
+              quality={100}
+              priority
+            />
             <h1 className="text-xl font-bold text-foreground">BrickVault</h1>
           </div>
           
