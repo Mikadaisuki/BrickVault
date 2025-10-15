@@ -1736,7 +1736,7 @@ export default function InvestmentsPage() {
                     <select
                       value={proposalType}
                       onChange={(e) => setProposalType(e.target.value)}
-                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
+                      className="w-full p-3 border border-border rounded-lg bg-background text-foreground focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                       disabled={isCreatingProposal}
                     >
                       <option value="0">Property Liquidation</option>
@@ -1764,7 +1764,7 @@ export default function InvestmentsPage() {
                       onChange={(e) => setProposalDescription(e.target.value)}
                       placeholder="Describe your proposal in detail..."
                       rows={4}
-                      className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
+                      className="w-full p-3 border border-border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200"
                       disabled={isCreatingProposal}
                       required
                     />
@@ -1780,7 +1780,7 @@ export default function InvestmentsPage() {
                         type="number"
                         step="0.01"
                         placeholder="Liquidation Price (USDC)"
-                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                        className="w-full p-3 border border-border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary focus:border-transparent"
                         value={proposalData}
                         onChange={(e) => setProposalData(e.target.value)}
                         disabled={isCreatingProposal}
@@ -1802,7 +1802,7 @@ export default function InvestmentsPage() {
                         min="0"
                         max="100"
                         placeholder="Enter new threshold percentage"
-                        className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-primary focus:border-transparent"
+                        className="w-full p-3 border border-border rounded-lg bg-background text-foreground placeholder:text-muted-foreground focus:ring-2 focus:ring-primary focus:border-transparent"
                         value={proposalData}
                         onChange={(e) => setProposalData(e.target.value)}
                         disabled={isCreatingProposal}
