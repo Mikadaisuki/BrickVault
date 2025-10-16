@@ -15,15 +15,16 @@ export default function VideoDemoPage() {
       {/* Video Player */}
       <div className="my-8">
         <div className="relative bg-black rounded-lg overflow-hidden shadow-lg">
-          <video 
-            className="w-full h-auto max-h-[600px]"
-            controls
-            preload="metadata"
-            poster="/BrickVault.png"
-          >
-            <source src="/Brickdemo.mp4" type="video/mp4" />
-            Your browser does not support the video tag.
-          </video>
+          <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+            <iframe
+              className="absolute top-0 left-0 w-full h-full rounded-lg"
+              src="https://www.youtube.com/embed/6EC4nemkdYw"
+              title="BrickVault Demo Video"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          </div>
         </div>
       </div>
 
