@@ -12,14 +12,6 @@ export default function IntroductionPage() {
         Introduction to BrickVault
       </h1>
       
-      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 my-6">
-        <p className="text-blue-900 dark:text-blue-100 font-medium mb-2">
-          📹 Video Tutorial Coming Soon
-        </p>
-        <p className="text-blue-700 dark:text-blue-300 text-sm">
-          A comprehensive video walkthrough will be added here to help you understand BrickVault.
-        </p>
-      </div>
 
       <h2 className="text-2xl font-bold mt-8 mb-4 text-gray-900 dark:text-white">
         What is BrickVault?
@@ -108,7 +100,7 @@ export default function IntroductionPage() {
           href="/docs/getting-started/installation"
           className="inline-flex items-center text-blue-600 dark:text-blue-400 hover:underline"
         >
-          Continue to Installation
+          Learn Why I Built BrickVault
           <ArrowRight className="w-4 h-4 ml-1" />
         </Link>
       </div>

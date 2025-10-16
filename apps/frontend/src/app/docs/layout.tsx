@@ -3,7 +3,7 @@
 import React, { useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { Menu, X, ChevronDown, ChevronRight, BookOpen, Home } from 'lucide-react'
+import { Menu, X, ChevronDown, ChevronRight, BookOpen, Home, Github } from 'lucide-react'
 import { ThemeToggle } from '@/components/ThemeToggle'
 
 interface NavItem {
@@ -18,8 +18,8 @@ const navigation: NavItem[] = [
     href: '/docs/getting-started',
     items: [
       { title: 'Introduction', href: '/docs/getting-started/introduction' },
-      { title: 'Installation', href: '/docs/getting-started/installation' },
-      { title: 'Quick Start', href: '/docs/getting-started/quick-start' },
+      { title: 'Why I Built BrickVault', href: '/docs/getting-started/installation' },
+      { title: 'Video Demo', href: '/docs/getting-started/quick-start' },
     ],
   },
   {
@@ -123,6 +123,15 @@ export default function DocsLayout({
               >
                 <Home className="w-4 h-4" />
                 <span>Home</span>
+              </Link>
+              <Link
+                href="https://github.com/Mikadaisuki/BrickVault"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+              >
+                <Github className="w-4 h-4" />
+                <span className="hidden sm:inline">GitHub</span>
               </Link>
               <ThemeToggle />
             </div>

@@ -9,14 +9,6 @@ export default function CrossChainPage() {
         Cross-Chain Capabilities
       </h1>
       
-      <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 rounded-lg p-4 my-6">
-        <p className="text-blue-900 dark:text-blue-100 font-medium mb-2">
-          📹 Video Tutorial Coming Soon
-        </p>
-        <p className="text-blue-700 dark:text-blue-300 text-sm">
-          Learn about cross-chain functionality through our upcoming video guide.
-        </p>
-      </div>
 
       <div className="bg-yellow-50 dark:bg-yellow-950/30 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4 my-6">
         <p className="text-yellow-900 dark:text-yellow-100 font-medium mb-2">
