@@ -15,6 +15,11 @@ For complete documentation, guides, and technical details, visit:
 
 **[📚 BrickVault Documentation](https://brick-vault-frontend.vercel.app/docs)**
 
+## Videos
+
+- **[🎥 Project Presentation](https://youtu.be/hPiBzkNbKIA)** - Comprehensive slides overview of BrickVault
+- **[🎬 Platform Demo](https://youtu.be/g4hohpKgSII)** - Live demonstration of the platform features
+
 ## Project Structure
 
 ```

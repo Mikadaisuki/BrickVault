@@ -12,8 +12,26 @@ export default function VideoDemoPage() {
       </h1>
       
 
-      {/* Video Player */}
+      {/* Slides Presentation Video */}
       <div className="my-8">
+        <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Project Presentation</h3>
+        <div className="relative bg-black rounded-lg overflow-hidden shadow-lg">
+          <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+            <iframe
+              className="absolute top-0 left-0 w-full h-full rounded-lg"
+              src="https://www.youtube.com/embed/hPiBzkNbKIA"
+              title="BrickVault Slides Presentation"
+              frameBorder="0"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+              allowFullScreen
+            />
+          </div>
+        </div>
+      </div>
+
+      {/* Demo Video */}
+      <div className="my-8">
+        <h3 className="text-xl font-semibold mb-4 text-gray-900 dark:text-white">Platform Demo</h3>
         <div className="relative bg-black rounded-lg overflow-hidden shadow-lg">
           <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
             <iframe
