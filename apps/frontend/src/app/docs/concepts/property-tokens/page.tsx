@@ -38,6 +38,7 @@ export default function PropertyTokenizationPage() {
           <ul className="text-sm text-gray-700 dark:text-gray-300 space-y-1 ml-4">
             <li>• Standardized deposit/withdraw interface</li>
             <li>• Automatic share calculation based on contribution</li>
+            <li>• <strong className="text-green-700 dark:text-green-300">Tradeable vault shares as secondary market</strong> - shares can be bought/sold on DEXs</li>
             <li>• Composable with DeFi protocols</li>
             <li>• Built-in accounting and NAV management</li>
           </ul>

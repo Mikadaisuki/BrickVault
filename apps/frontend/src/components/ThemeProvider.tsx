@@ -19,10 +19,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     setMounted(true)
     // Get theme from localStorage or default to 'dark'
     const savedTheme = localStorage.getItem('theme') as Theme | null
-    if (savedTheme) {
-      setTheme(savedTheme)
-      document.documentElement.classList.toggle('light', savedTheme === 'light')
-    }
+    const initialTheme = savedTheme || 'dark'
+    setTheme(initialTheme)
+    document.documentElement.classList.toggle('light', initialTheme === 'light')
   }, [])
 
   const toggleTheme = () => {

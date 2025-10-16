@@ -29,46 +29,6 @@ export default function CrossChainPage() {
       </h2>
       
       <div className="space-y-6">
-        <div className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-l-4 border-blue-500 dark:border-blue-400 rounded-lg">
-          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">
-            🌐 Spoke Chains(BSC or other) → Hub (Sepolia)
-          </h3>
-          <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
-            <div className="flex items-center justify-center space-x-2">
-              <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
-              <span>User deposits USDC on spoke chain (BSC, others)</span>
-            </div>
-            <div className="flex justify-center">
-              <span className="text-blue-500">↓</span>
-            </div>
-            <div className="flex items-center justify-center space-x-2">
-              <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
-              <span>USDC locked in <strong>OFT Adapter Lockbox</strong> on spoke chain</span>
-            </div>
-            <div className="flex justify-center">
-              <span className="text-blue-500">↓</span>
-            </div>
-            <div className="flex items-center justify-center space-x-2">
-              <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
-              <span>LayerZero message sent to Sepolia hub</span>
-            </div>
-            <div className="flex justify-center">
-              <span className="text-blue-500">↓</span>
-            </div>
-            <div className="flex items-center justify-center space-x-2">
-              <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">4</span>
-              <span>USDC <strong>wrapped to HUB OFTUSDC</strong> on Sepolia hub for user</span>
-            </div>
-            <div className="flex justify-center">
-              <span className="text-blue-500">↓</span>
-            </div>
-            <div className="flex items-center justify-center space-x-2">
-              <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">5</span>
-              <span>User can invest in properties using <strong>HUB OFTUSDC</strong></span>
-            </div>
-          </div>
-        </div>
-
         <div className="p-4 bg-gradient-to-r from-purple-50 to-pink-50 dark:from-purple-950/30 dark:to-pink-950/30 border-l-4 border-purple-500 dark:border-purple-400 rounded-lg">
           <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">
             ⛓️ Stacks → Hub (Sepolia)
@@ -105,6 +65,46 @@ export default function CrossChainPage() {
             <div className="flex items-center justify-center space-x-2">
               <span className="w-6 h-6 bg-purple-500 text-white rounded-full flex items-center justify-center text-xs font-bold">5</span>
               <span>User receives equivalent USDC for property investment</span>
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 border-l-4 border-blue-500 dark:border-blue-400 rounded-lg">
+          <h3 className="text-lg font-bold text-gray-900 dark:text-white mb-3">
+            🌐 Spoke Chains(BSC or other) → Hub (Sepolia)
+          </h3>
+          <div className="space-y-2 text-sm text-gray-700 dark:text-gray-300">
+            <div className="flex items-center justify-center space-x-2">
+              <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">1</span>
+              <span>User deposits USDC on spoke chain (BSC, others)</span>
+            </div>
+            <div className="flex justify-center">
+              <span className="text-blue-500">↓</span>
+            </div>
+            <div className="flex items-center justify-center space-x-2">
+              <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">2</span>
+              <span>USDC locked in <strong>OFT Adapter Lockbox</strong> on spoke chain</span>
+            </div>
+            <div className="flex justify-center">
+              <span className="text-blue-500">↓</span>
+            </div>
+            <div className="flex items-center justify-center space-x-2">
+              <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">3</span>
+              <span>LayerZero message sent to Sepolia hub</span>
+            </div>
+            <div className="flex justify-center">
+              <span className="text-blue-500">↓</span>
+            </div>
+            <div className="flex items-center justify-center space-x-2">
+              <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">4</span>
+              <span>USDC <strong>wrapped to HUB OFTUSDC</strong> on Sepolia hub for user</span>
+            </div>
+            <div className="flex justify-center">
+              <span className="text-blue-500">↓</span>
+            </div>
+            <div className="flex items-center justify-center space-x-2">
+              <span className="w-6 h-6 bg-blue-500 text-white rounded-full flex items-center justify-center text-xs font-bold">5</span>
+              <span>User can invest in properties using <strong>HUB OFTUSDC</strong></span>
             </div>
           </div>
         </div>
