@@ -54,7 +54,6 @@ contract StacksCrossChainManager is Ownable {
     PriceInfo public currentPriceInfo;
     address public priceOracle;
     uint256 public constant PRICE_DECIMALS = 8;
-    uint256 public constant MAX_PRICE_AGE = 1 hours;
     uint256 public constant MAX_PRICE_DEVIATION = 500;
     bool public emergencyPaused;
     mapping(string => StacksUserInfo) public stacksUsers;
@@ -76,7 +75,6 @@ contract StacksCrossChainManager is Ownable {
 
     modifier validPrice() {
         require(currentPriceInfo.isValid);
-        require((block.timestamp - currentPriceInfo.lastUpdated) <= MAX_PRICE_AGE);
         _;
     }
 
@@ -152,13 +150,11 @@ contract StacksCrossChainManager is Ownable {
 
     function getSbtcPrice() external view returns (uint256 price, bool isValid) {
         price = currentPriceInfo.sbtcPriceUsd;
-        isValid = currentPriceInfo.isValid && 
-                 (block.timestamp - currentPriceInfo.lastUpdated) <= MAX_PRICE_AGE;
+        isValid = currentPriceInfo.isValid;
     }
 
     function calculateUsdValue(uint256 sbtcAmount) public view returns (uint256 usdValue) {
         require(currentPriceInfo.isValid);
-        require((block.timestamp - currentPriceInfo.lastUpdated) <= MAX_PRICE_AGE);
         usdValue = (sbtcAmount * currentPriceInfo.sbtcPriceUsd) * 100;
     }
 
