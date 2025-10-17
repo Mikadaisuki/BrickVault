@@ -14,6 +14,7 @@ A cross-chain tokenized real estate investment platform that enables users to in
 For complete documentation, guides, and technical details, visit:
 
 **[📚 BrickVault Documentation](https://brick-vault-frontend.vercel.app/docs)**
+**[View the live site:](https://brick-vault-frontend.vercel.app)**
 
 ## Videos
 
